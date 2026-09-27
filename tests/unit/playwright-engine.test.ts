@@ -114,6 +114,52 @@ describe("PlaywrightEngine", () => {
     });
   });
 
+  it("converts automation.stop to a contextual stopped-session error", async () => {
+    const page = createPage({
+      evaluate: vi.fn(async () => ({
+        status: "stopped",
+        logs: ["stopping"],
+        reason: "done"
+      })),
+      waitForTimeout: vi.fn(async () => undefined)
+    });
+    const application = createApplication(page);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    await expect(
+      engine.executeStep({
+        sessionId: "session-1",
+        stepIndex: 4,
+        defaults,
+        step: {
+          id: "custom-stop",
+          type: "customCode",
+          enabled: true,
+          language: "javascript",
+          apiVersion: 1,
+          executionContext: "page",
+          source: 'automation.stop("done");'
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "session-stopped",
+      context: {
+        sessionId: "session-1",
+        tabId: 42,
+        stepId: "custom-stop",
+        stepIndex: 4
+      },
+      cause: {
+        name: "CustomJavaScriptStopError",
+        reason: "done",
+        logs: ["stopping"]
+      }
+    });
+  });
+
   it("attaches a tab once and returns its page snapshot", async () => {
     const page = createPage();
     const application = createApplication(page);

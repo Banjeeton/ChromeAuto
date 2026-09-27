@@ -247,6 +247,31 @@ describe("Playwright step executor", () => {
     expect(page.reload).not.toHaveBeenCalled();
     expect(page.waitForTimeout).not.toHaveBeenCalled();
   });
+
+  it("returns custom JavaScript output and applies its post-action delay", async () => {
+    const page = createPage({
+      evaluate: vi.fn(async () => ({
+        status: "completed",
+        logs: ["custom log"],
+        value: 42
+      }))
+    });
+    const step: AutomationStep = {
+      id: "custom-code",
+      type: "customCode",
+      enabled: true,
+      postActionDelayMs: 30,
+      language: "javascript",
+      apiVersion: 1,
+      executionContext: "page",
+      source: "automation.log('custom log'); return 42;"
+    };
+
+    await expect(
+      executePlaywrightStep(page, createRequest(step))
+    ).resolves.toEqual({ logs: ["custom log"], value: 42 });
+    expect(page.waitForTimeout).toHaveBeenCalledWith(30);
+  });
 });
 
 function createRequest(step: AutomationStep): ExecuteAutomationStepRequest {

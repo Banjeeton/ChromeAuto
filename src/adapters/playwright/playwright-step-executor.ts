@@ -7,6 +7,7 @@ import type {
   WaitStep
 } from "../../core/domain/automation-step";
 import type { ExecuteAutomationStepRequest } from "../../core/ports/automation-engine";
+import { executeCustomJavaScript } from "./custom-javascript-executor";
 
 export interface PlaywrightStepExecutorOptions {
   readonly random?: () => number;
@@ -24,6 +25,7 @@ export async function executePlaywrightStep(
   }
 
   const timeout = step.timeoutMs ?? request.defaults.timeoutMs;
+  let output: unknown;
 
   switch (step.type) {
     case "click": {
@@ -60,6 +62,10 @@ export async function executePlaywrightStep(
       });
       break;
 
+    case "customCode":
+      output = await executeCustomJavaScript(page, step, timeout);
+      break;
+
     default:
       throw new Error(`Step type ${step.type} is not implemented`);
   }
@@ -70,7 +76,7 @@ export async function executePlaywrightStep(
     await page.waitForTimeout(postActionDelay);
   }
 
-  return undefined;
+  return output;
 }
 
 async function executeInputStep(

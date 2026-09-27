@@ -18,6 +18,10 @@ import type {
   StopAllAutomationsRequest,
   StopAutomationRequest
 } from "../../core/ports/automation-engine";
+import {
+  CustomJavaScriptStopError,
+  CustomJavaScriptTimeoutError
+} from "./custom-javascript-executor";
 import { executePlaywrightStep } from "./playwright-step-executor";
 
 export type PlaywrightPageSnapshot = {
@@ -109,7 +113,12 @@ export class PlaywrightEngine implements AutomationEngine {
         output
       };
     } catch (error) {
-      const code = isPlaywrightTimeout(error) ? "step-timeout" : "step-failed";
+      const code =
+        error instanceof CustomJavaScriptStopError
+          ? "session-stopped"
+          : isStepTimeout(error)
+            ? "step-timeout"
+            : "step-failed";
       throw this.#toEngineError(
         code,
         `Automation step ${request.step.id} failed`,
@@ -315,7 +324,11 @@ export class PlaywrightEngine implements AutomationEngine {
   }
 
   #toEngineError(
-    code: "engine-unavailable" | "step-failed" | "step-timeout",
+    code:
+      | "engine-unavailable"
+      | "session-stopped"
+      | "step-failed"
+      | "step-timeout",
     message: string,
     error: unknown,
     context: {
@@ -332,6 +345,9 @@ export class PlaywrightEngine implements AutomationEngine {
   }
 }
 
-function isPlaywrightTimeout(error: unknown): boolean {
-  return error instanceof Error && error.name === "TimeoutError";
+function isStepTimeout(error: unknown): boolean {
+  return (
+    error instanceof CustomJavaScriptTimeoutError ||
+    (error instanceof Error && error.name === "TimeoutError")
+  );
 }
