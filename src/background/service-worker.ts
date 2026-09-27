@@ -1,4 +1,8 @@
 import { PlaywrightEngine } from "../adapters/playwright/playwright-engine";
+import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
+import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
+import { AutomationRunner } from "../core/application/automation-runner";
+import { ManualRunController } from "../core/application/manual-run-controller";
 import { AutomationRuntimeController } from "../core/application/automation-runtime-controller";
 import { TabSessionManager } from "../core/application/tab-session-manager";
 import {
@@ -17,6 +21,18 @@ import {
 const playwrightEngine = new PlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
 const runtimeController = new AutomationRuntimeController(tabSessionManager);
+const executionLog = new InMemoryExecutionLog();
+const presetRepository = new ChromePresetRepository(chrome.storage.local);
+const automationRunner = new AutomationRunner(
+  playwrightEngine,
+  tabSessionManager,
+  executionLog
+);
+const manualRunController = new ManualRunController(
+  presetRepository,
+  automationRunner,
+  tabSessionManager
+);
 
 chrome.runtime.onInstalled.addListener(() => {
   void chrome.sidePanel
@@ -89,7 +105,11 @@ function isAutomationRuntimeMessage(
   }
 
   return (
-    candidate.action === "stop" &&
+    (candidate.action === "manual-status" ||
+      candidate.action === "run" ||
+      candidate.action === "stop" ||
+      candidate.action === "logs" ||
+      candidate.action === "clear-logs") &&
     "tabId" in candidate &&
     typeof candidate.tabId === "number"
   );
@@ -99,13 +119,46 @@ async function handleAutomationRuntimeMessage(
   message: AutomationRuntimeMessage
 ): Promise<AutomationRuntimeResult> {
   switch (message.action) {
+    case "manual-status": {
+      const tabUrl = await getTabUrl(message.tabId);
+      return {
+        kind: "manual-status",
+        status: await manualRunController.status(message.tabId, tabUrl)
+      };
+    }
+    case "run": {
+      const tabUrl = await getTabUrl(message.tabId);
+      return {
+        kind: "run",
+        run: await manualRunController.run(message.tabId, tabUrl)
+      };
+    }
     case "stop":
-      return runtimeController.stopByTabId(message.tabId);
+      return {
+        kind: "stop",
+        stop: await runtimeController.stopByTabId(message.tabId)
+      };
     case "stop-all":
-      return runtimeController.stopAll();
+      return { kind: "stop-all", stopAll: await runtimeController.stopAll() };
     case "sessions":
-      return runtimeController.sessions();
+      return { kind: "sessions", sessions: runtimeController.sessions() };
+    case "logs":
+      return {
+        kind: "logs",
+        entries: await executionLog.list({ tabId: message.tabId })
+      };
+    case "clear-logs":
+      await executionLog.clear({ tabId: message.tabId });
+      return { kind: "clear-logs" };
   }
+}
+
+async function getTabUrl(tabId: number): Promise<string> {
+  const tab = await chrome.tabs.get(tabId);
+  if (tab.url === undefined) {
+    throw new Error(`Chrome did not expose the URL for tab ${tabId}.`);
+  }
+  return tab.url;
 }
 
 function isPlaywrightSpikeMessage(

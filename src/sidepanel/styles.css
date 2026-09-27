@@ -108,6 +108,24 @@ h2 {
   line-height: 1.5;
 }
 
+.notice.ready {
+  border-color: #285e4a;
+  color: #b9ead0;
+  background: #142a22;
+}
+
+.notice.running {
+  border-color: #6a5125;
+  color: #f1d79c;
+  background: #2c2415;
+}
+
+.notice.muted {
+  border-color: #303944;
+  color: #aab5c0;
+  background: #171d23;
+}
+
 .card {
   margin-bottom: 12px;
   padding: 16px;
@@ -122,6 +140,48 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
   margin-top: 16px;
+}
+
+.primary-actions {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.target-heading {
+  min-width: 0;
+}
+
+.tab-title {
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: #84919e;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-summary {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid #28333d;
+  border-radius: 10px;
+  background: #10161b;
+  font-size: 12px;
+}
+
+.preset-summary > span,
+.preset-summary > small {
+  color: #84919e;
+}
+
+.preset-summary > strong {
+  overflow: hidden;
+  color: #dce4eb;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .action-button,
@@ -246,6 +306,19 @@ button:disabled {
 
 .log-entry.error > span {
   color: #ff8d8d;
+}
+
+.log-entry.succeeded > span {
+  color: #62dc98;
+}
+
+.log-entry.failed > span,
+.log-entry.stopped > span {
+  color: #ff8d8d;
+}
+
+.log-entry.skipped > span {
+  color: #e7c676;
 }
 
 .log-entry p {

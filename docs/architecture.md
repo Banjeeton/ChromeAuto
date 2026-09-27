@@ -130,3 +130,29 @@ Background service worker принимает команды `stop`, `stop-all` �
 `InMemoryExecutionLog` хранит не более 500 последних записей и поддерживает
 фильтрацию и очистку по сессии, пресету или вкладке. Журнал является временным
 runtime-состоянием и не экспортируется вместе с пресетом.
+
+## Ручной запуск из side panel
+
+Side panel не выполняет автоматизацию самостоятельно. Он передаёт в background
+только `tabId`, а background получает актуальный URL через Chrome Tabs API. Это
+не позволяет интерфейсу подменить адрес целевой вкладки.
+
+`ManualRunController` читает пресеты через порт `PresetRepository`, выбирает
+единственный preset v1 по точному hostname и разрешённому протоколу, проверяет
+`siteSettings.enabled` и run-only правила. Только после этих проверок он
+передаёт автоматизацию в `AutomationRunner`.
+
+```text
+side panel -> automation/runtime -> ManualRunController
+                                      |-> PresetRepository <- Chrome storage
+                                      |-> AutomationRunner -> AutomationEngine
+```
+
+`ChromePresetRepository` хранит массив portable preset v1 в
+`chrome.storage.local` под одним версионированным ключом. При сохранении
+hostname приводится к нижнему регистру, а попытка назначить два разных пресета
+одному hostname отклоняется. База данных для этого слоя не используется.
+
+Side panel показывает состояние `ready`, `running` или `unavailable`, разрешает
+ручной Run только для валидного включённого пресета, предоставляет Stop и Stop
+All и читает журнал шагов активной вкладки через тот же runtime-контракт.
