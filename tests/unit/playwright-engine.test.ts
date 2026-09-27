@@ -160,6 +160,230 @@ describe("PlaywrightEngine", () => {
     });
   });
 
+  it("rejects duplicate session and tab reservations before attaching", async () => {
+    const page = createPage();
+    const application = createApplication(page);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    await expect(
+      engine.start({ sessionId: "session-1", target: { tabId: 43 } })
+    ).rejects.toMatchObject({
+      code: "session-conflict",
+      context: { sessionId: "session-1", tabId: 43 }
+    });
+    await expect(
+      engine.start({ sessionId: "session-2", target: { tabId: 42 } })
+    ).rejects.toMatchObject({
+      code: "session-conflict",
+      context: { sessionId: "session-2", tabId: 42 }
+    });
+    expect(application.attach).toHaveBeenCalledOnce();
+  });
+
+  it("releases the reservation when attaching a session fails", async () => {
+    const page = createPage();
+    const attachFailure = new Error("Debugger is already attached");
+    const application = createApplication(page);
+    vi.mocked(application.attach)
+      .mockRejectedValueOnce(attachFailure)
+      .mockResolvedValueOnce(page);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await expect(
+      engine.start({ sessionId: "session-1", target: { tabId: 42 } })
+    ).rejects.toMatchObject({
+      code: "engine-unavailable",
+      context: { sessionId: "session-1", tabId: 42 },
+      cause: attachFailure
+    });
+    await expect(
+      engine.start({ sessionId: "session-1", target: { tabId: 42 } })
+    ).resolves.toEqual({
+      sessionId: "session-1",
+      target: { tabId: 42 }
+    });
+    expect(application.attach).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps two automation sessions isolated by tab", async () => {
+    const firstPage = createPage();
+    const secondPage = createPage();
+    const application = createApplication(firstPage);
+    vi.mocked(application.attach).mockImplementation(async (tabId) =>
+      tabId === 11 ? firstPage : secondPage
+    );
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await engine.start({ sessionId: "session-1", target: { tabId: 11 } });
+    await engine.start({ sessionId: "session-2", target: { tabId: 22 } });
+    await engine.executeStep(reloadRequest("session-1", "reload-first"));
+    await engine.executeStep(reloadRequest("session-2", "reload-second"));
+    await engine.stop({ sessionId: "session-1", reason: "user" });
+
+    await expect(
+      engine.executeStep(reloadRequest("session-1", "after-stop"))
+    ).rejects.toMatchObject({ code: "session-not-found" });
+    await expect(
+      engine.executeStep(reloadRequest("session-2", "still-running"))
+    ).resolves.toMatchObject({
+      sessionId: "session-2",
+      stepId: "still-running"
+    });
+
+    expect(firstPage.reload).toHaveBeenCalledOnce();
+    expect(secondPage.reload).toHaveBeenCalledTimes(2);
+    expect(application.detach).toHaveBeenCalledOnce();
+    expect(application.detach).toHaveBeenCalledWith(11);
+    expect(engine.attachedTabIds()).toEqual([22]);
+  });
+
+  it("detaches every tab and invalidates every session on Stop All", async () => {
+    const page = createPage();
+    const application = createApplication(page);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 11 } });
+    await engine.start({ sessionId: "session-2", target: { tabId: 22 } });
+
+    await engine.stopAll({ reason: "user" });
+
+    expect(application.detachAll).toHaveBeenCalledOnce();
+    expect(engine.attachedTabIds()).toEqual([]);
+    await expect(
+      engine.executeStep(reloadRequest("session-1", "after-stop-all"))
+    ).rejects.toMatchObject({ code: "session-not-found" });
+    await expect(engine.complete("session-2")).rejects.toMatchObject({
+      code: "session-not-found"
+    });
+  });
+
+  it("forgets the session when Playwright reports an external detach", async () => {
+    const detachedHandlers: Array<(tabId: number) => void> = [];
+    const page = createPage();
+    const application = createApplication(page);
+    vi.mocked(application.on).mockImplementation((event, handler) => {
+      if (event === "detached") {
+        detachedHandlers.push(handler as (tabId: number) => void);
+      }
+      return application;
+    });
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    detachedHandlers[0]?.(42);
+
+    expect(engine.attachedTabIds()).toEqual([]);
+    await expect(
+      engine.executeStep(reloadRequest("session-1", "detached"))
+    ).rejects.toMatchObject({
+      code: "session-not-found",
+      context: { sessionId: "session-1" }
+    });
+  });
+
+  it("keeps a session available for a retry when detach fails", async () => {
+    const page = createPage();
+    const detachFailure = new Error("Debugger detach failed");
+    const application = createApplication(page);
+    vi.mocked(application.detach)
+      .mockRejectedValueOnce(detachFailure)
+      .mockResolvedValueOnce(undefined);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    await expect(
+      engine.stop({ sessionId: "session-1", reason: "user" })
+    ).rejects.toMatchObject({
+      code: "engine-unavailable",
+      context: { sessionId: "session-1", tabId: 42 },
+      cause: detachFailure
+    });
+    await expect(
+      engine.executeStep(reloadRequest("session-1", "after-failed-stop"))
+    ).resolves.toMatchObject({ stepId: "after-failed-stop" });
+    await expect(
+      engine.stop({ sessionId: "session-1", reason: "user" })
+    ).resolves.toBeUndefined();
+    expect(application.detach).toHaveBeenCalledTimes(2);
+  });
+
+  it("closes and recreates the Playwright CRX application", async () => {
+    const firstApplication = createApplication(createPage());
+    const secondApplication = createApplication(createPage());
+    const start = vi
+      .fn()
+      .mockResolvedValueOnce(firstApplication)
+      .mockResolvedValueOnce(secondApplication);
+    const engine = new PlaywrightEngine({ start });
+
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+    await engine.close();
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    expect(firstApplication.close).toHaveBeenCalledOnce();
+    expect(secondApplication.attach).toHaveBeenCalledWith(42);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
+  it("converts non-timeout step failures to contextual domain errors", async () => {
+    const failure = new TypeError("Selector is invalid");
+    const button = {
+      click: vi.fn(async () => {
+        throw failure;
+      }),
+      count: vi.fn(async () => 1),
+      first: vi.fn()
+    };
+    button.first.mockReturnValue(button);
+    const page = createPage({ locator: vi.fn(() => button) });
+    const application = createApplication(page);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    await expect(
+      engine.executeStep({
+        sessionId: "session-1",
+        stepIndex: 5,
+        defaults,
+        step: {
+          id: "invalid-selector",
+          type: "click",
+          enabled: true,
+          target: {
+            primary: { type: "css", value: "[" },
+            fallbacks: []
+          },
+          button: "left",
+          clickCount: 1
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "step-failed",
+      context: {
+        sessionId: "session-1",
+        tabId: 42,
+        stepId: "invalid-selector",
+        stepIndex: 5
+      },
+      cause: failure
+    });
+  });
+
   it("attaches a tab once and returns its page snapshot", async () => {
     const page = createPage();
     const application = createApplication(page);
@@ -281,11 +505,26 @@ function createApplication(page: Page): CrxApplication {
   return {
     attach: vi.fn(async () => page),
     detach: vi.fn(async () => undefined),
+    detachAll: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
     on: vi.fn(function (this: CrxApplication) {
       return this;
     })
   } as unknown as CrxApplication;
+}
+
+function reloadRequest(sessionId: string, stepId: string) {
+  return {
+    sessionId,
+    stepIndex: 0,
+    defaults,
+    step: {
+      id: stepId,
+      type: "reload" as const,
+      enabled: true,
+      waitUntil: "domcontentloaded" as const
+    }
+  };
 }
 
 const defaults: AutomationDefaults = {
