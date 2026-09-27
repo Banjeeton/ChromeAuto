@@ -2,12 +2,118 @@ import type { CrxApplication, Page } from "playwright-crx";
 import { describe, expect, it, vi } from "vitest";
 
 import { PlaywrightEngine } from "../../src/adapters/playwright/playwright-engine";
+import type { AutomationDefaults } from "../../src/core/domain/automation";
 
 vi.mock("playwright-crx", () => ({
   crx: { start: vi.fn() }
 }));
 
 describe("PlaywrightEngine", () => {
+  it("implements the automation session and step lifecycle", async () => {
+    const button = {
+      click: vi.fn(async () => undefined),
+      count: vi.fn(async () => 1),
+      first: vi.fn()
+    };
+    button.first.mockReturnValue(button);
+    const page = createPage({
+      locator: vi.fn(() => button),
+      waitForTimeout: vi.fn(async () => undefined)
+    });
+    const application = createApplication(page);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await expect(
+      engine.start({ sessionId: "session-1", target: { tabId: 42 } })
+    ).resolves.toEqual({
+      sessionId: "session-1",
+      target: { tabId: 42 }
+    });
+    await expect(
+      engine.executeStep({
+        sessionId: "session-1",
+        stepIndex: 2,
+        defaults,
+        step: {
+          id: "click-button",
+          type: "click",
+          enabled: true,
+          target: {
+            primary: { type: "css", value: "button" },
+            fallbacks: []
+          },
+          button: "left",
+          clickCount: 1
+        }
+      })
+    ).resolves.toEqual({
+      sessionId: "session-1",
+      stepId: "click-button",
+      stepIndex: 2,
+      output: undefined
+    });
+
+    await engine.complete("session-1");
+
+    expect(button.click).toHaveBeenCalledOnce();
+    expect(application.detach).toHaveBeenCalledWith(42);
+    await expect(engine.complete("session-1")).rejects.toMatchObject({
+      code: "session-not-found"
+    });
+  });
+
+  it("converts Playwright timeouts to a contextual domain error", async () => {
+    const timeout = new Error("Timeout");
+    timeout.name = "TimeoutError";
+    const button = {
+      click: vi.fn(async () => {
+        throw timeout;
+      }),
+      count: vi.fn(async () => 1),
+      first: vi.fn()
+    };
+    button.first.mockReturnValue(button);
+    const page = createPage({
+      locator: vi.fn(() => button),
+      waitForTimeout: vi.fn(async () => undefined)
+    });
+    const application = createApplication(page);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    await expect(
+      engine.executeStep({
+        sessionId: "session-1",
+        stepIndex: 3,
+        defaults,
+        step: {
+          id: "click-button",
+          type: "click",
+          enabled: true,
+          target: {
+            primary: { type: "css", value: "button" },
+            fallbacks: []
+          },
+          button: "left",
+          clickCount: 1
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "step-timeout",
+      context: {
+        sessionId: "session-1",
+        tabId: 42,
+        stepId: "click-button",
+        stepIndex: 3
+      },
+      cause: timeout
+    });
+  });
+
   it("attaches a tab once and returns its page snapshot", async () => {
     const page = createPage();
     const application = createApplication(page);
@@ -135,3 +241,13 @@ function createApplication(page: Page): CrxApplication {
     })
   } as unknown as CrxApplication;
 }
+
+const defaults: AutomationDefaults = {
+  timeoutMs: 5_000,
+  postActionDelayMs: 0,
+  humanInput: {
+    enabled: false,
+    minDelayMs: 40,
+    maxDelayMs: 120
+  }
+};

@@ -4,6 +4,22 @@ import {
   type Page
 } from "playwright-crx";
 
+import {
+  AutomationEngineError,
+  isAutomationEngineError
+} from "../../core/domain/automation-engine-error";
+import type { AutomationSessionId } from "../../core/domain/run-session";
+import type {
+  AutomationEngine,
+  AutomationSessionHandle,
+  AutomationStepExecutionResult,
+  ExecuteAutomationStepRequest,
+  StartAutomationRequest,
+  StopAllAutomationsRequest,
+  StopAutomationRequest
+} from "../../core/ports/automation-engine";
+import { executePlaywrightStep } from "./playwright-step-executor";
+
 export type PlaywrightPageSnapshot = {
   tabId: number;
   title: string;
@@ -25,13 +41,102 @@ type CrxRuntime = Pick<typeof crx, "start">;
  * package is experimental for this project and can be replaced without
  * changing the automation domain model.
  */
-export class PlaywrightEngine {
+export class PlaywrightEngine implements AutomationEngine {
   readonly #runtime: CrxRuntime;
   readonly #pages = new Map<number, Page>();
+  readonly #tabIdBySessionId = new Map<AutomationSessionId, number>();
+  readonly #sessionIdByTabId = new Map<number, AutomationSessionId>();
   #applicationPromise?: Promise<CrxApplication>;
 
   constructor(runtime: CrxRuntime = crx) {
     this.#runtime = runtime;
+  }
+
+  async start(
+    request: StartAutomationRequest
+  ): Promise<AutomationSessionHandle> {
+    const { sessionId, target } = request;
+    this.#assertEngineTabId(target.tabId);
+
+    if (
+      this.#tabIdBySessionId.has(sessionId) ||
+      this.#sessionIdByTabId.has(target.tabId)
+    ) {
+      throw new AutomationEngineError(
+        "session-conflict",
+        `Automation session conflicts with tab ${target.tabId}`,
+        { context: { sessionId, tabId: target.tabId } }
+      );
+    }
+
+    this.#tabIdBySessionId.set(sessionId, target.tabId);
+    this.#sessionIdByTabId.set(target.tabId, sessionId);
+
+    try {
+      await this.attach(target.tabId);
+      return { sessionId, target: { tabId: target.tabId } };
+    } catch (error) {
+      this.#removeSessionForTab(target.tabId);
+      throw this.#toEngineError(
+        "engine-unavailable",
+        `Could not attach automation session to tab ${target.tabId}`,
+        error,
+        { sessionId, tabId: target.tabId }
+      );
+    }
+  }
+
+  async executeStep(
+    request: ExecuteAutomationStepRequest
+  ): Promise<AutomationStepExecutionResult> {
+    const tabId = this.#requireSession(request.sessionId);
+    const page = this.#pages.get(tabId);
+
+    if (!page) {
+      throw new AutomationEngineError(
+        "engine-unavailable",
+        `Attached page for session ${request.sessionId} is unavailable`,
+        { context: this.#stepContext(request, tabId) }
+      );
+    }
+
+    try {
+      const output = await executePlaywrightStep(page, request);
+      return {
+        sessionId: request.sessionId,
+        stepId: request.step.id,
+        stepIndex: request.stepIndex,
+        output
+      };
+    } catch (error) {
+      const code = isPlaywrightTimeout(error) ? "step-timeout" : "step-failed";
+      throw this.#toEngineError(
+        code,
+        `Automation step ${request.step.id} failed`,
+        error,
+        this.#stepContext(request, tabId)
+      );
+    }
+  }
+
+  async complete(sessionId: AutomationSessionId): Promise<void> {
+    await this.#detachSession(sessionId);
+  }
+
+  async stop(request: StopAutomationRequest): Promise<void> {
+    await this.#detachSession(request.sessionId);
+  }
+
+  async stopAll(_request: StopAllAutomationsRequest): Promise<void> {
+    try {
+      await this.detachAll();
+    } catch (error) {
+      throw this.#toEngineError(
+        "engine-unavailable",
+        "Could not stop all automation sessions",
+        error
+      );
+    }
   }
 
   async attach(tabId: number): Promise<Page> {
@@ -91,32 +196,38 @@ export class PlaywrightEngine {
     this.#assertTabId(tabId);
 
     if (!this.#pages.has(tabId)) {
+      this.#removeSessionForTab(tabId);
       return;
     }
 
     const application = await this.#application();
     await application.detach(tabId);
     this.#pages.delete(tabId);
+    this.#removeSessionForTab(tabId);
   }
 
   async detachAll(): Promise<void> {
     if (!this.#applicationPromise) {
+      this.#clearSessions();
       return;
     }
 
     const application = await this.#applicationPromise;
     await application.detachAll();
     this.#pages.clear();
+    this.#clearSessions();
   }
 
   async close(): Promise<void> {
     if (!this.#applicationPromise) {
+      this.#clearSessions();
       return;
     }
 
     const application = await this.#applicationPromise;
     await application.close();
     this.#pages.clear();
+    this.#clearSessions();
     this.#applicationPromise = undefined;
   }
 
@@ -128,6 +239,7 @@ export class PlaywrightEngine {
         const application = await this.#applicationPromise;
         application.on("detached", (tabId) => {
           this.#pages.delete(tabId);
+          this.#removeSessionForTab(tabId);
         });
       } catch (error) {
         this.#applicationPromise = undefined;
@@ -143,4 +255,83 @@ export class PlaywrightEngine {
       throw new TypeError(`Invalid Chrome tab id: ${tabId}`);
     }
   }
+
+  #assertEngineTabId(tabId: number): void {
+    if (!Number.isInteger(tabId) || tabId < 0) {
+      throw new AutomationEngineError(
+        "invalid-target",
+        `Invalid Chrome tab id: ${tabId}`,
+        { context: { tabId } }
+      );
+    }
+  }
+
+  #requireSession(sessionId: AutomationSessionId): number {
+    const tabId = this.#tabIdBySessionId.get(sessionId);
+    if (tabId === undefined) {
+      throw new AutomationEngineError(
+        "session-not-found",
+        `Automation session ${sessionId} was not found`,
+        { context: { sessionId } }
+      );
+    }
+    return tabId;
+  }
+
+  async #detachSession(sessionId: AutomationSessionId): Promise<void> {
+    const tabId = this.#requireSession(sessionId);
+    try {
+      await this.detach(tabId);
+    } catch (error) {
+      throw this.#toEngineError(
+        "engine-unavailable",
+        `Could not detach automation session ${sessionId}`,
+        error,
+        { sessionId, tabId }
+      );
+    }
+  }
+
+  #removeSessionForTab(tabId: number): void {
+    const sessionId = this.#sessionIdByTabId.get(tabId);
+    if (sessionId !== undefined) {
+      this.#sessionIdByTabId.delete(tabId);
+      this.#tabIdBySessionId.delete(sessionId);
+    }
+  }
+
+  #clearSessions(): void {
+    this.#sessionIdByTabId.clear();
+    this.#tabIdBySessionId.clear();
+  }
+
+  #stepContext(request: ExecuteAutomationStepRequest, tabId: number) {
+    return {
+      sessionId: request.sessionId,
+      tabId,
+      stepId: request.step.id,
+      stepIndex: request.stepIndex
+    };
+  }
+
+  #toEngineError(
+    code: "engine-unavailable" | "step-failed" | "step-timeout",
+    message: string,
+    error: unknown,
+    context: {
+      sessionId?: AutomationSessionId;
+      tabId?: number;
+      stepId?: string;
+      stepIndex?: number;
+    } = {}
+  ): AutomationEngineError {
+    if (isAutomationEngineError(error)) {
+      return error;
+    }
+    return new AutomationEngineError(code, message, { cause: error, context });
+  }
+}
+
+function isPlaywrightTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
 }
