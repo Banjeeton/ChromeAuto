@@ -1,0 +1,775 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chrome-automation-extension.local/schemas/preset-v1.schema.json",
+  "title": "Chrome Automation Extension preset v1",
+  "description": "Portable preset containing one site binding, one automation and its site settings.",
+  "$comment": "Step id uniqueness and comparisons between minDelayMs and maxDelayMs require semantic validation in addition to this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "createdAt",
+    "updatedAt",
+    "site",
+    "automation",
+    "siteSettings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "description": {
+      "type": "string"
+    },
+    "createdAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "updatedAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "site": {
+      "$ref": "#/$defs/site"
+    },
+    "automation": {
+      "$ref": "#/$defs/automation"
+    },
+    "siteSettings": {
+      "$ref": "#/$defs/siteSettings"
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "positiveTimeout": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "nonNegativeDuration": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostname",
+        "protocols"
+      ],
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^(?=.{1,253}$)(?!-)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\\.(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$"
+        },
+        "protocols": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "http",
+              "https"
+            ]
+          }
+        }
+      }
+    },
+    "automation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaults",
+        "steps"
+      ],
+      "properties": {
+        "defaults": {
+          "$ref": "#/$defs/automationDefaults"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/automationStep"
+          }
+        }
+      }
+    },
+    "automationDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeoutMs",
+        "postActionDelayMs",
+        "humanInput"
+      ],
+      "properties": {
+        "timeoutMs": {
+          "$ref": "#/$defs/positiveTimeout"
+        },
+        "postActionDelayMs": {
+          "$ref": "#/$defs/nonNegativeDuration"
+        },
+        "humanInput": {
+          "$ref": "#/$defs/defaultHumanInput"
+        }
+      }
+    },
+    "defaultHumanInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "minDelayMs",
+        "maxDelayMs"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "minDelayMs": {
+          "$ref": "#/$defs/nonNegativeDuration"
+        },
+        "maxDelayMs": {
+          "$ref": "#/$defs/nonNegativeDuration"
+        }
+      }
+    },
+    "humanInputOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minDelayMs",
+        "maxDelayMs"
+      ],
+      "properties": {
+        "minDelayMs": {
+          "$ref": "#/$defs/nonNegativeDuration"
+        },
+        "maxDelayMs": {
+          "$ref": "#/$defs/nonNegativeDuration"
+        }
+      }
+    },
+    "siteSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "repeat"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "repeat": {
+          "$ref": "#/$defs/repeatSettings"
+        }
+      }
+    },
+    "repeatSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "intervalMinutes"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "intervalMinutes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary",
+        "fallbacks"
+      ],
+      "properties": {
+        "primary": {
+          "$ref": "#/$defs/locator"
+        },
+        "fallbacks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/locator"
+          }
+        }
+      }
+    },
+    "locator": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/valueLocator"
+        },
+        {
+          "$ref": "#/$defs/textLocator"
+        },
+        {
+          "$ref": "#/$defs/roleLocator"
+        }
+      ]
+    },
+    "valueLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "css",
+            "xpath",
+            "testId"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "textLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "value",
+        "exact"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "text",
+            "label",
+            "placeholder"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "exact": {
+          "type": "boolean"
+        }
+      }
+    },
+    "roleLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "role",
+        "name",
+        "exact"
+      ],
+      "properties": {
+        "type": {
+          "const": "role"
+        },
+        "role": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "exact": {
+          "type": "boolean"
+        }
+      }
+    },
+    "stepBase": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "enabled"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "type": {
+          "enum": [
+            "click",
+            "input",
+            "select",
+            "check",
+            "uncheck",
+            "pressKey",
+            "wait",
+            "reload",
+            "customCode"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "$ref": "#/$defs/positiveTimeout"
+        },
+        "postActionDelayMs": {
+          "$ref": "#/$defs/nonNegativeDuration"
+        }
+      }
+    },
+    "automationStep": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/clickStep"
+        },
+        {
+          "$ref": "#/$defs/inputStep"
+        },
+        {
+          "$ref": "#/$defs/selectStep"
+        },
+        {
+          "$ref": "#/$defs/checkStep"
+        },
+        {
+          "$ref": "#/$defs/uncheckStep"
+        },
+        {
+          "$ref": "#/$defs/pressKeyStep"
+        },
+        {
+          "$ref": "#/$defs/waitStep"
+        },
+        {
+          "$ref": "#/$defs/reloadStep"
+        },
+        {
+          "$ref": "#/$defs/customCodeStep"
+        }
+      ]
+    },
+    "clickStep": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stepBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "target",
+            "button",
+            "clickCount"
+          ],
+          "properties": {
+            "type": {
+              "const": "click"
+            },
+            "target": {
+              "$ref": "#/$defs/target"
+            },
+            "button": {
+              "enum": [
+                "left",
+                "right",
+                "middle"
+              ]
+            },
+            "clickCount": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "inputStep": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stepBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "target",
+            "value",
+            "clearFirst",
+            "inputMode"
+          ],
+          "properties": {
+            "type": {
+              "const": "input"
+            },
+            "target": {
+              "$ref": "#/$defs/target"
+            },
+            "value": {
+              "type": "string"
+            },
+            "clearFirst": {
+              "type": "boolean"
+            },
+            "inputMode": {
+              "enum": [
+                "instant",
+                "human",
+                "default"
+              ]
+            },
+            "humanInput": {
+              "$ref": "#/$defs/humanInputOverride"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "selectStep": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stepBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "target",
+            "option"
+          ],
+          "properties": {
+            "type": {
+              "const": "select"
+            },
+            "target": {
+              "$ref": "#/$defs/target"
+            },
+            "option": {
+              "$ref": "#/$defs/selectOption"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "selectOption": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "by",
+            "value"
+          ],
+          "properties": {
+            "by": {
+              "enum": [
+                "value",
+                "label"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "by",
+            "value"
+          ],
+          "properties": {
+            "by": {
+              "const": "index"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "checkStep": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stepBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "type": {
+              "const": "check"
+            },
+            "target": {
+              "$ref": "#/$defs/target"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "uncheckStep": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stepBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "type": {
+              "const": "uncheck"
+            },
+            "target": {
+              "$ref": "#/$defs/target"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "pressKeyStep": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stepBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "key"
+          ],
+          "properties": {
+            "type": {
+              "const": "pressKey"
+            },
+            "target": {
+              "$ref": "#/$defs/target"
+            },
+            "key": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "waitStep": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stepBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "condition"
+          ],
+          "properties": {
+            "type": {
+              "const": "wait"
+            },
+            "condition": {
+              "$ref": "#/$defs/waitCondition"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "waitCondition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/timeoutCondition"
+        },
+        {
+          "$ref": "#/$defs/elementCondition"
+        },
+        {
+          "$ref": "#/$defs/urlCondition"
+        },
+        {
+          "$ref": "#/$defs/pageLoadCondition"
+        }
+      ]
+    },
+    "timeoutCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "durationMs"
+      ],
+      "properties": {
+        "type": {
+          "const": "timeout"
+        },
+        "durationMs": {
+          "$ref": "#/$defs/nonNegativeDuration"
+        }
+      }
+    },
+    "elementCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "state",
+        "target"
+      ],
+      "properties": {
+        "type": {
+          "const": "element"
+        },
+        "state": {
+          "enum": [
+            "attached",
+            "detached",
+            "visible",
+            "hidden"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        }
+      }
+    },
+    "urlCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "match",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "url"
+        },
+        "match": {
+          "enum": [
+            "exact",
+            "contains",
+            "regex"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "pageLoadCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "state"
+      ],
+      "properties": {
+        "type": {
+          "const": "pageLoad"
+        },
+        "state": {
+          "enum": [
+            "domcontentloaded",
+            "load",
+            "networkidle"
+          ]
+        }
+      }
+    },
+    "reloadStep": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stepBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "waitUntil"
+          ],
+          "properties": {
+            "type": {
+              "const": "reload"
+            },
+            "waitUntil": {
+              "enum": [
+                "domcontentloaded",
+                "load",
+                "networkidle",
+                "none"
+              ]
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "customCodeStep": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stepBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "language",
+            "apiVersion",
+            "executionContext",
+            "source"
+          ],
+          "properties": {
+            "type": {
+              "const": "customCode"
+            },
+            "language": {
+              "const": "javascript"
+            },
+            "apiVersion": {
+              "const": 1
+            },
+            "executionContext": {
+              "const": "page"
+            },
+            "source": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}
