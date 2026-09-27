@@ -1,8 +1,14 @@
 import type { AutomationDefaults } from "../domain/automation";
 import type { AutomationStep } from "../domain/automation-step";
-import type { AutomationSessionId } from "../domain/run-session";
+import type {
+  AutomationSessionId,
+  AutomationStopReason
+} from "../domain/run-session";
 
-export type { AutomationSessionId } from "../domain/run-session";
+export type {
+  AutomationSessionId,
+  AutomationStopReason
+} from "../domain/run-session";
 
 export interface AutomationTarget {
   tabId: number;
@@ -31,8 +37,6 @@ export interface AutomationStepExecutionResult {
   stepIndex: number;
   output?: unknown;
 }
-
-export type AutomationStopReason = "user" | "error";
 
 export interface StopAutomationRequest {
   sessionId: AutomationSessionId;

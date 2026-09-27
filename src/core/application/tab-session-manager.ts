@@ -1,13 +1,11 @@
 import { AutomationEngineError } from "../domain/automation-engine-error";
 import type {
   AutomationSessionId,
+  AutomationStopReason,
   RunSession,
   RunSessionStatus
 } from "../domain/run-session";
-import type {
-  AutomationEngine,
-  AutomationStopReason
-} from "../ports/automation-engine";
+import type { AutomationEngine } from "../ports/automation-engine";
 
 export interface StartTabSessionRequest {
   readonly presetId: string;
@@ -22,7 +20,9 @@ interface ManagedSession {
   readonly sessionId: AutomationSessionId;
   readonly presetId: string;
   readonly tabId: number;
+  readonly abortController: AbortController;
   status: RunSessionStatus;
+  stopReason?: AutomationStopReason;
   ready: Promise<void>;
   termination?: Promise<void>;
 }
@@ -89,6 +89,7 @@ export class TabSessionManager {
       sessionId,
       presetId: request.presetId,
       tabId: request.tabId,
+      abortController: new AbortController(),
       status: "starting",
       ready: Promise.resolve()
     };
@@ -118,6 +119,10 @@ export class TabSessionManager {
     );
   }
 
+  cancellationSignal(sessionId: AutomationSessionId): AbortSignal {
+    return this.#requireSession(sessionId).abortController.signal;
+  }
+
   async complete(sessionId: AutomationSessionId): Promise<void> {
     if (this.#stopAllPromise) {
       return this.#stopAllPromise;
@@ -138,6 +143,7 @@ export class TabSessionManager {
     }
 
     const session = this.#requireSession(sessionId);
+    this.#requestStop(session, reason);
     return this.#terminateSession(session, "stopping", () =>
       this.#engine.stop({ sessionId, reason })
     );
@@ -207,7 +213,7 @@ export class TabSessionManager {
           terminationStarted &&
           this.#sessionsById.get(session.sessionId) === session
         ) {
-          session.status = "running";
+          session.status = status === "stopping" ? "stopping" : "running";
           session.termination = undefined;
         }
         throw error;
@@ -220,6 +226,10 @@ export class TabSessionManager {
 
   async #performStopAll(reason: AutomationStopReason): Promise<void> {
     const capturedSessions = [...this.#sessionsById.values()];
+    for (const session of capturedSessions) {
+      this.#requestStop(session, reason);
+    }
+
     await Promise.allSettled(
       capturedSessions.map(
         (session) => session.termination ?? session.ready
@@ -246,7 +256,8 @@ export class TabSessionManager {
     } catch (error) {
       for (const session of activeSessions) {
         if (this.#sessionsById.get(session.sessionId) === session) {
-          session.status = "running";
+          session.status = "stopping";
+          session.termination = undefined;
         }
       }
       throw error;
@@ -274,6 +285,31 @@ export class TabSessionManager {
     }
   }
 
+  #requestStop(
+    session: ManagedSession,
+    reason: AutomationStopReason
+  ): void {
+    session.status = "stopping";
+    session.stopReason = reason;
+
+    if (!session.abortController.signal.aborted) {
+      session.abortController.abort(
+        new AutomationEngineError(
+          "session-stopped",
+          reason === "user"
+            ? "Automation was stopped by the user"
+            : "Automation was stopped after an error",
+          {
+            context: {
+              sessionId: session.sessionId,
+              tabId: session.tabId
+            }
+          }
+        )
+      );
+    }
+  }
+
   #assertTabId(tabId: number): void {
     if (!Number.isInteger(tabId) || tabId < 0) {
       throw new AutomationEngineError(
@@ -289,7 +325,10 @@ export class TabSessionManager {
       sessionId: session.sessionId,
       presetId: session.presetId,
       tabId: session.tabId,
-      status: session.status
+      status: session.status,
+      ...(session.stopReason === undefined
+        ? {}
+        : { stopReason: session.stopReason })
     });
   }
 }

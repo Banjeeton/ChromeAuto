@@ -4,6 +4,8 @@
  */
 export type AutomationSessionId = string;
 
+export type AutomationStopReason = "user" | "error";
+
 export type RunSessionStatus =
   | "starting"
   | "running"
@@ -15,4 +17,5 @@ export interface RunSession {
   readonly presetId: string;
   readonly tabId: number;
   readonly status: RunSessionStatus;
+  readonly stopReason?: AutomationStopReason;
 }

@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  AUTOMATION_RUNTIME_MESSAGE,
+  type AutomationRuntimeMessage,
+  type AutomationRuntimeResponse,
+  type AutomationRuntimeResult
+} from "../shared/types/automation-runtime";
+import type { RunSession } from "../core/domain/run-session";
+import {
   PLAYWRIGHT_CRX_SPIKE_MESSAGE,
   type PlaywrightSpikeMessage,
   type PlaywrightSpikeResponse,
   type PlaywrightSpikeResult
 } from "../shared/types/playwright-crx-spike";
 
-type TabAction = "snapshot" | "reload" | "modal" | "detach";
+type TabAction = "snapshot" | "reload" | "modal";
 
 type LogEntry = {
   id: number;
@@ -40,13 +47,13 @@ function App() {
   }, []);
 
   const refreshSessions = useCallback(async () => {
-    const response = await sendSpikeMessage({
-      type: PLAYWRIGHT_CRX_SPIKE_MESSAGE,
+    const response = await sendRuntimeMessage({
+      type: AUTOMATION_RUNTIME_MESSAGE,
       action: "sessions"
     });
 
-    if (response.ok && Array.isArray(response.result)) {
-      setAttachedTabIds(response.result);
+    if (response.ok && isRunSessionArray(response.result)) {
+      setAttachedTabIds(response.result.map((session) => session.tabId));
     }
   }, []);
 
@@ -95,22 +102,59 @@ function App() {
     }
   };
 
-  const detachAll = async () => {
-    setBusyAction("detach-all");
+  const stopActiveTab = async () => {
+    if (activeTabId === undefined) {
+      addLog("error", "No active browser tab was found.");
+      return;
+    }
+
+    setBusyAction("stop");
     try {
-      const response = await sendSpikeMessage({
-        type: PLAYWRIGHT_CRX_SPIKE_MESSAGE,
-        action: "detach-all"
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "stop",
+        tabId: activeTabId
+      });
+      if (!response.ok) {
+        throw new Error(response.error);
+      }
+
+      const result = response.result;
+      const stopped =
+        !Array.isArray(result) && "stopped" in result && result.stopped;
+      addLog(
+        "success",
+        stopped
+          ? `Automation stopped for tab #${activeTabId}.`
+          : `Tab #${activeTabId} has no active automation.`
+      );
+      await refreshSessions();
+    } catch (error) {
+      addLog(
+        "error",
+        `Stop failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      setBusyAction(undefined);
+    }
+  };
+
+  const stopAll = async () => {
+    setBusyAction("stop-all");
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "stop-all"
       });
       if (!response.ok) {
         throw new Error(response.error);
       }
       setAttachedTabIds([]);
-      addLog("success", "All Playwright tab sessions were detached.");
+      addLog("success", "All automation sessions were stopped.");
     } catch (error) {
       addLog(
         "error",
-        `Detach all failed: ${error instanceof Error ? error.message : String(error)}`
+        `Stop All failed: ${error instanceof Error ? error.message : String(error)}`
       );
     } finally {
       setBusyAction(undefined);
@@ -132,7 +176,7 @@ function App() {
 
         <div className="notice">
           Open the local spike fixture in two tabs. Run Snapshot and Modal in
-          both tabs, then Reload and Detach in only one tab.
+          both tabs, then Reload and Stop in only one tab.
         </div>
 
         <section className="card" aria-labelledby="active-tab-title">
@@ -173,14 +217,17 @@ function App() {
               label="Test HTML modal"
               onClick={runTabAction}
             />
-            <ActionButton
-              action="detach"
-              busyAction={busyAction}
-              disabled={!hasActiveTab}
-              label="Detach tab"
-              onClick={runTabAction}
-              secondary
-            />
+            <button
+              className="action-button secondary"
+              disabled={
+                !hasActiveTab ||
+                busyAction === "stop" ||
+                busyAction === "stop-all"
+              }
+              onClick={() => void stopActiveTab()}
+            >
+              {busyAction === "stop" ? "Stopping…" : "Stop current tab"}
+            </button>
           </div>
         </section>
 
@@ -192,10 +239,14 @@ function App() {
             </div>
             <button
               className="icon-button danger-text"
-              disabled={busyAction !== undefined || attachedTabIds.length === 0}
-              onClick={() => void detachAll()}
+              disabled={
+                busyAction === "stop" ||
+                busyAction === "stop-all" ||
+                (busyAction === undefined && attachedTabIds.length === 0)
+              }
+              onClick={() => void stopAll()}
             >
-              Detach all
+              Stop All
             </button>
           </div>
 
@@ -275,12 +326,32 @@ async function sendSpikeMessage(
   return chrome.runtime.sendMessage(message) as Promise<PlaywrightSpikeResponse>;
 }
 
+async function sendRuntimeMessage(
+  message: AutomationRuntimeMessage
+): Promise<AutomationRuntimeResponse> {
+  return chrome.runtime.sendMessage(message) as Promise<AutomationRuntimeResponse>;
+}
+
+function isRunSessionArray(
+  result: AutomationRuntimeResult
+): result is readonly RunSession[] {
+  return (
+    Array.isArray(result) &&
+    result.every(
+      (session) =>
+        typeof session === "object" &&
+        session !== null &&
+        "sessionId" in session &&
+        "tabId" in session
+    )
+  );
+}
+
 function labelForAction(action: TabAction): string {
   const labels = {
     snapshot: "Snapshot",
     reload: "Reload",
-    modal: "HTML modal",
-    detach: "Detach"
+    modal: "HTML modal"
   } as const;
   return labels[action];
 }

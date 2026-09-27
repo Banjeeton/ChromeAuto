@@ -142,8 +142,86 @@ describe("TabSessionManager", () => {
       code: "engine-unavailable"
     });
 
-    expect(manager.getById(session.sessionId)?.status).toBe("running");
+    expect(manager.getById(session.sessionId)).toMatchObject({
+      status: "stopping",
+      stopReason: "user"
+    });
+    expect(manager.cancellationSignal(session.sessionId)).toMatchObject({
+      aborted: true,
+      reason: expect.objectContaining({ code: "session-stopped" })
+    });
     await expect(manager.stop(session.sessionId)).resolves.toBeUndefined();
+  });
+
+  it("aborts one session without cancelling another tab", async () => {
+    let finishStop: (() => void) | undefined;
+    const engine = createEngine();
+    vi.mocked(engine.stop).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStop = resolve;
+        })
+    );
+    const manager = new TabSessionManager(engine, {
+      createSessionId: createSessionIds("session-1", "session-2")
+    });
+    const first = await manager.start({ presetId: "preset-1", tabId: 11 });
+    const second = await manager.start({ presetId: "preset-2", tabId: 22 });
+    const firstSignal = manager.cancellationSignal(first.sessionId);
+    const secondSignal = manager.cancellationSignal(second.sessionId);
+
+    const stopping = manager.stop(first.sessionId);
+
+    expect(firstSignal.aborted).toBe(true);
+    expect(firstSignal.reason).toMatchObject({
+      code: "session-stopped",
+      context: { sessionId: first.sessionId, tabId: 11 }
+    });
+    expect(secondSignal.aborted).toBe(false);
+    expect(manager.getById(first.sessionId)).toMatchObject({
+      status: "stopping",
+      stopReason: "user"
+    });
+
+    await vi.waitFor(() => expect(engine.stop).toHaveBeenCalledOnce());
+    finishStop?.();
+    await stopping;
+
+    expect(manager.getById(first.sessionId)).toBeUndefined();
+    expect(manager.getById(second.sessionId)?.status).toBe("running");
+  });
+
+  it("aborts every cancellation signal before Stop All completes", async () => {
+    let finishStopAll: (() => void) | undefined;
+    const engine = createEngine();
+    vi.mocked(engine.stopAll).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStopAll = resolve;
+        })
+    );
+    const manager = new TabSessionManager(engine, {
+      createSessionId: createSessionIds("session-1", "session-2")
+    });
+    const first = await manager.start({ presetId: "preset-1", tabId: 11 });
+    const second = await manager.start({ presetId: "preset-2", tabId: 22 });
+    const signals = [
+      manager.cancellationSignal(first.sessionId),
+      manager.cancellationSignal(second.sessionId)
+    ];
+
+    const stopping = manager.stopAll();
+
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    expect(manager.list()).toEqual([
+      expect.objectContaining({ status: "stopping", stopReason: "user" }),
+      expect.objectContaining({ status: "stopping", stopReason: "user" })
+    ]);
+
+    await vi.waitFor(() => expect(engine.stopAll).toHaveBeenCalledOnce());
+    finishStopAll?.();
+    await stopping;
+    expect(manager.list()).toEqual([]);
   });
 
   it("reports invalid tabs and missing sessions as domain errors", async () => {

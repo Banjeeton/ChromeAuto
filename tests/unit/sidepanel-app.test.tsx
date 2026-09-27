@@ -11,5 +11,7 @@ describe("side panel React entry", () => {
     expect(html).toContain("Test reload");
     expect(html).toContain("Test HTML modal");
     expect(html).toContain("Attached tabs");
+    expect(html).toContain("Stop current tab");
+    expect(html).toContain("Stop All");
   });
 });
