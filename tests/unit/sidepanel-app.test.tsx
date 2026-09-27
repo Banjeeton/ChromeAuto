@@ -4,12 +4,12 @@ import { describe, expect, it } from "vitest";
 import App from "../../src/sidepanel/App";
 
 describe("side panel React entry", () => {
-  it("renders the automation workspace heading", () => {
+  it("renders the Playwright CRX smoke test controls", () => {
     const html = renderToStaticMarkup(<App />);
 
-    expect(html).toContain("Automation workspace");
-    expect(html).toContain(
-      "The TypeScript, React, Vite and Vitest toolchain is ready."
-    );
+    expect(html).toContain("Playwright CRX smoke test");
+    expect(html).toContain("Test reload");
+    expect(html).toContain("Test HTML modal");
+    expect(html).toContain("Attached tabs");
   });
 });

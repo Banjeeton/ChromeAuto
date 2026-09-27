@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playwright CRX Fixture</title>
+    <style>
+      :root { color: #17212b; background: #edf3f7; font-family: Inter, system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; }
+      main { width: min(92vw, 620px); padding: 42px; border-radius: 22px; background: white; box-shadow: 0 24px 80px rgb(28 55 74 / 16%); }
+      .eyebrow { color: #167b92; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+      h1 { margin: 8px 0 12px; }
+      p { color: #5c6975; line-height: 1.6; }
+      button { padding: 11px 16px; border: 0; border-radius: 10px; color: white; background: #167b92; cursor: pointer; font: inherit; font-weight: 700; }
+      .stats { display: flex; gap: 12px; margin: 24px 0; }
+      .stat { flex: 1; padding: 15px; border-radius: 12px; background: #edf6f8; }
+      .stat span { display: block; color: #167b92; font-size: 12px; font-weight: 750; text-transform: uppercase; }
+      .stat strong { display: block; margin-top: 5px; font-size: 24px; }
+      .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(12 22 29 / 68%); }
+      .overlay[hidden] { display: none; }
+      .modal { width: min(100%, 420px); padding: 26px; border-radius: 18px; background: white; box-shadow: 0 25px 90px rgb(0 0 0 / 28%); }
+      .modal h2 { margin-top: 0; }
+      label { display: grid; gap: 7px; margin: 20px 0; color: #43515e; font-size: 13px; font-weight: 700; }
+      input { width: 100%; padding: 11px 12px; border: 1px solid #b8c6d1; border-radius: 9px; font: inherit; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Local verification page</p>
+      <h1>Playwright CRX fixture</h1>
+      <p>
+        Use the extension side panel to verify reload, an in-page HTML modal,
+        and independent Playwright sessions in two tabs.
+      </p>
+      <div class="stats">
+        <div class="stat">
+          <span>Page loads in this tab</span>
+          <strong data-spike-reload-count>0</strong>
+        </div>
+        <div class="stat">
+          <span>Tab token</span>
+          <strong data-spike-tab-token>—</strong>
+        </div>
+      </div>
+      <button data-spike-open-modal type="button">Open HTML modal</button>
+    </main>
+
+    <div class="overlay" data-spike-modal hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <h2 id="modal-title">HTML modal</h2>
+        <p>This modal is part of the page DOM, not a browser popup.</p>
+        <label>
+          Test value
+          <input data-spike-modal-input autocomplete="off" />
+        </label>
+        <button data-spike-close-modal type="button">Save and close</button>
+      </section>
+    </div>
+
+    <script>
+      const reloadKey = "playwright-crx-spike-load-count";
+      const count = Number(sessionStorage.getItem(reloadKey) ?? "0") + 1;
+      sessionStorage.setItem(reloadKey, String(count));
+      document.querySelector("[data-spike-reload-count]").textContent = String(count);
+      document.querySelector("[data-spike-tab-token]").textContent = Math.random().toString(36).slice(2, 7).toUpperCase();
+
+      const modal = document.querySelector("[data-spike-modal]");
+      document.querySelector("[data-spike-open-modal]").addEventListener("click", () => {
+        modal.hidden = false;
+      });
+      document.querySelector("[data-spike-close-modal]").addEventListener("click", () => {
+        modal.hidden = true;
+      });
+    </script>
+  </body>
+</html>
