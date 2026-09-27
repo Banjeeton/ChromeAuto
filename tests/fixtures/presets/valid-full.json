@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Complete v1 preset",
+  "description": "Covers every automation step type supported by preset v1.",
+  "createdAt": "2026-09-27T12:00:00.000Z",
+  "updatedAt": "2026-09-27T12:00:00.000Z",
+  "site": {
+    "hostname": "example.com",
+    "protocols": ["https"]
+  },
+  "automation": {
+    "defaults": {
+      "timeoutMs": 10000,
+      "postActionDelayMs": 100,
+      "humanInput": {
+        "enabled": true,
+        "minDelayMs": 40,
+        "maxDelayMs": 120
+      }
+    },
+    "steps": [
+      {
+        "id": "step-click",
+        "type": "click",
+        "name": "Open form",
+        "enabled": true,
+        "target": {
+          "primary": {
+            "type": "role",
+            "role": "button",
+            "name": "Open",
+            "exact": true
+          },
+          "fallbacks": [
+            {
+              "type": "css",
+              "value": "button.open"
+            },
+            {
+              "type": "xpath",
+              "value": "//button[@data-action='open']"
+            }
+          ]
+        },
+        "button": "left",
+        "clickCount": 1
+      },
+      {
+        "id": "step-input",
+        "type": "input",
+        "name": "Enter query",
+        "enabled": true,
+        "target": {
+          "primary": {
+            "type": "label",
+            "value": "Search",
+            "exact": true
+          },
+          "fallbacks": [
+            {
+              "type": "placeholder",
+              "value": "Search…",
+              "exact": true
+            }
+          ]
+        },
+        "value": "Playwright CRX",
+        "clearFirst": true,
+        "inputMode": "human",
+        "humanInput": {
+          "minDelayMs": 50,
+          "maxDelayMs": 130
+        }
+      },
+      {
+        "id": "step-select",
+        "type": "select",
+        "enabled": true,
+        "target": {
+          "primary": {
+            "type": "css",
+            "value": "select[name='country']"
+          },
+          "fallbacks": []
+        },
+        "option": {
+          "by": "value",
+          "value": "DE"
+        }
+      },
+      {
+        "id": "step-check",
+        "type": "check",
+        "enabled": true,
+        "target": {
+          "primary": {
+            "type": "text",
+            "value": "I agree",
+            "exact": true
+          },
+          "fallbacks": []
+        }
+      },
+      {
+        "id": "step-uncheck",
+        "type": "uncheck",
+        "enabled": true,
+        "target": {
+          "primary": {
+            "type": "testId",
+            "value": "newsletter-checkbox"
+          },
+          "fallbacks": []
+        }
+      },
+      {
+        "id": "step-press-key",
+        "type": "pressKey",
+        "enabled": true,
+        "key": "Enter"
+      },
+      {
+        "id": "step-wait",
+        "type": "wait",
+        "enabled": true,
+        "condition": {
+          "type": "element",
+          "state": "visible",
+          "target": {
+            "primary": {
+              "type": "css",
+              "value": ".success-message"
+            },
+            "fallbacks": []
+          }
+        }
+      },
+      {
+        "id": "step-reload",
+        "type": "reload",
+        "enabled": true,
+        "waitUntil": "domcontentloaded"
+      },
+      {
+        "id": "step-custom-code",
+        "type": "customCode",
+        "name": "Log page title",
+        "enabled": true,
+        "language": "javascript",
+        "apiVersion": 1,
+        "executionContext": "page",
+        "source": "automation.log(document.title);"
+      }
+    ]
+  },
+  "siteSettings": {
+    "enabled": true,
+    "repeat": {
+      "enabled": false,
+      "intervalMinutes": 1
+    }
+  }
+}
