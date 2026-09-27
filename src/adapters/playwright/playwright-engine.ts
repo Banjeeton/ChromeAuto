@@ -10,6 +10,12 @@ export type PlaywrightPageSnapshot = {
   url: string;
 };
 
+export type HtmlModalSmokeResult = {
+  closed: boolean;
+  inputValue: string;
+  opened: boolean;
+};
+
 type CrxRuntime = Pick<typeof crx, "start">;
 
 /**
@@ -58,6 +64,29 @@ export class PlaywrightEngine {
     return this.snapshot(tabId);
   }
 
+  async testHtmlModal(tabId: number): Promise<HtmlModalSmokeResult> {
+    const page = await this.attach(tabId);
+    const modal = page.locator("[data-spike-modal]");
+    const input = modal.locator("[data-spike-modal-input]");
+
+    await page.locator("[data-spike-open-modal]").click();
+    await modal.waitFor({ state: "visible" });
+    await input.fill("Playwright CRX modal test");
+    const inputValue = await input.inputValue();
+    await modal.locator("[data-spike-close-modal]").click();
+    await modal.waitFor({ state: "hidden" });
+
+    return {
+      closed: await modal.isHidden(),
+      inputValue,
+      opened: true
+    };
+  }
+
+  attachedTabIds(): number[] {
+    return [...this.#pages.keys()].sort((left, right) => left - right);
+  }
+
   async detach(tabId: number): Promise<void> {
     this.#assertTabId(tabId);
 
@@ -68,6 +97,16 @@ export class PlaywrightEngine {
     const application = await this.#application();
     await application.detach(tabId);
     this.#pages.delete(tabId);
+  }
+
+  async detachAll(): Promise<void> {
+    if (!this.#applicationPromise) {
+      return;
+    }
+
+    const application = await this.#applicationPromise;
+    await application.detachAll();
+    this.#pages.clear();
   }
 
   async close(): Promise<void> {

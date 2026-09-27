@@ -1,14 +1,10 @@
 import { PlaywrightEngine } from "../adapters/playwright/playwright-engine";
-
-type PlaywrightSpikeMessage = {
-  type: "playwright-crx/spike";
-  action: "snapshot" | "reload" | "detach";
-  tabId: number;
-};
-
-type PlaywrightSpikeResponse =
-  | { ok: true; result?: unknown }
-  | { ok: false; error: string };
+import {
+  PLAYWRIGHT_CRX_SPIKE_MESSAGE,
+  type PlaywrightSpikeMessage,
+  type PlaywrightSpikeResponse,
+  type PlaywrightSpikeResult
+} from "../shared/types/playwright-crx-spike";
 
 const playwrightEngine = new PlaywrightEngine();
 
@@ -51,25 +47,41 @@ function isPlaywrightSpikeMessage(
   }
 
   const candidate = message as Partial<PlaywrightSpikeMessage>;
+  if (candidate.type !== PLAYWRIGHT_CRX_SPIKE_MESSAGE) {
+    return false;
+  }
+
+  if (candidate.action === "sessions" || candidate.action === "detach-all") {
+    return true;
+  }
+
   return (
-    candidate.type === "playwright-crx/spike" &&
     (candidate.action === "snapshot" ||
       candidate.action === "reload" ||
+      candidate.action === "modal" ||
       candidate.action === "detach") &&
+    "tabId" in candidate &&
     typeof candidate.tabId === "number"
   );
 }
 
 async function handlePlaywrightSpikeMessage(
   message: PlaywrightSpikeMessage
-): Promise<unknown> {
+): Promise<PlaywrightSpikeResult> {
   switch (message.action) {
     case "snapshot":
       return playwrightEngine.snapshot(message.tabId);
     case "reload":
       return playwrightEngine.reload(message.tabId);
+    case "modal":
+      return playwrightEngine.testHtmlModal(message.tabId);
     case "detach":
       await playwrightEngine.detach(message.tabId);
+      return undefined;
+    case "sessions":
+      return playwrightEngine.attachedTabIds();
+    case "detach-all":
+      await playwrightEngine.detachAll();
       return undefined;
   }
 }

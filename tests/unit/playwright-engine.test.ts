@@ -56,6 +56,58 @@ describe("PlaywrightEngine", () => {
     expect(application.detach).toHaveBeenCalledWith(8);
   });
 
+  it("keeps an ordered list of independently attached tabs", async () => {
+    const page = createPage();
+    const application = createApplication(page);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await engine.attach(12);
+    await engine.attach(4);
+
+    expect(engine.attachedTabIds()).toEqual([4, 12]);
+
+    await engine.detach(4);
+
+    expect(engine.attachedTabIds()).toEqual([12]);
+  });
+
+  it("opens, fills and closes the HTML modal fixture", async () => {
+    const modal = {
+      isHidden: vi.fn(async () => true),
+      locator: vi.fn(),
+      waitFor: vi.fn(async () => undefined)
+    };
+    const input = {
+      fill: vi.fn(async () => undefined),
+      inputValue: vi.fn(async () => "Playwright CRX modal test")
+    };
+    const closeButton = { click: vi.fn(async () => undefined) };
+    modal.locator.mockImplementation((selector: string) =>
+      selector === "[data-spike-modal-input]" ? input : closeButton
+    );
+    const openButton = { click: vi.fn(async () => undefined) };
+    const page = createPage({
+      locator: vi.fn((selector: string) =>
+        selector === "[data-spike-modal]" ? modal : openButton
+      )
+    });
+    const application = createApplication(page);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await expect(engine.testHtmlModal(3)).resolves.toEqual({
+      closed: true,
+      inputValue: "Playwright CRX modal test",
+      opened: true
+    });
+    expect(openButton.click).toHaveBeenCalledOnce();
+    expect(input.fill).toHaveBeenCalledWith("Playwright CRX modal test");
+    expect(closeButton.click).toHaveBeenCalledOnce();
+  });
+
   it("rejects invalid Chrome tab ids", async () => {
     const engine = new PlaywrightEngine({ start: vi.fn() });
 
@@ -64,11 +116,12 @@ describe("PlaywrightEngine", () => {
   });
 });
 
-function createPage(): Page {
+function createPage(overrides: Record<string, unknown> = {}): Page {
   return {
     title: vi.fn(async () => "Example"),
     url: vi.fn(() => "https://example.com/"),
-    reload: vi.fn(async () => null)
+    reload: vi.fn(async () => null),
+    ...overrides
   } as unknown as Page;
 }
 
