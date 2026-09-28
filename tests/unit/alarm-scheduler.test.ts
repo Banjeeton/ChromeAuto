@@ -27,6 +27,9 @@ describe("CycleScheduler port", () => {
         identity: CycleTimerIdentity
       ) => Promise<ScheduledCycleTimer | undefined>
     >();
+    expectTypeOf<CycleScheduler["list"]>().toEqualTypeOf<
+      () => Promise<readonly ScheduledCycleTimer[]>
+    >();
     expectTypeOf<CycleScheduler["cancel"]>().toEqualTypeOf<
       (identity: CycleTimerIdentity) => Promise<boolean>
     >();
@@ -85,6 +88,24 @@ describe("ChromeAlarmScheduler", () => {
       scheduledFor: 2_000
     });
     await expect(scheduler.cancel(first)).resolves.toBe(false);
+  });
+
+  it("lists only alarms owned by the repeat-cycle scheduler", async () => {
+    const alarms = new MemoryChromeAlarms();
+    const scheduler = new ChromeAlarmScheduler(alarms);
+    await scheduler.schedule({
+      tabId: 1,
+      presetId: PRESET_ID,
+      scheduledFor: 1_000
+    });
+    alarms.alarms.set("unrelated-alarm", {
+      name: "unrelated-alarm",
+      scheduledTime: 500
+    });
+
+    await expect(scheduler.list()).resolves.toEqual([
+      { tabId: 1, presetId: PRESET_ID, scheduledFor: 1_000 }
+    ]);
   });
 
   it("uses distinct reversible alarm names for every tab and preset pair", () => {
@@ -168,6 +189,10 @@ class MemoryChromeAlarms implements ChromeAlarmsApi {
 
   async get(name: string): Promise<ChromeAlarmRecord | undefined> {
     return this.alarms.get(name);
+  }
+
+  async getAll(): Promise<readonly ChromeAlarmRecord[]> {
+    return [...this.alarms.values()];
   }
 
   async clear(name: string): Promise<boolean> {

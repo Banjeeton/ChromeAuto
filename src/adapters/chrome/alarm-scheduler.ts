@@ -16,6 +16,7 @@ export interface ChromeAlarmRecord {
 export interface ChromeAlarmsApi {
   create(name: string, alarmInfo: { readonly when: number }): Promise<void>;
   get(name: string): Promise<ChromeAlarmRecord | undefined>;
+  getAll(): Promise<readonly ChromeAlarmRecord[]>;
   clear(name: string): Promise<boolean>;
 }
 
@@ -57,6 +58,27 @@ export class ChromeAlarmScheduler implements CycleScheduler {
       });
     } catch (error) {
       throw new CycleSchedulerError("get", identity, error);
+    }
+  }
+
+  async list(): Promise<readonly ScheduledCycleTimer[]> {
+    try {
+      const alarms = await this.#alarms.getAll();
+      return Object.freeze(
+        alarms.flatMap((alarm) => {
+          const identity = parseCycleAlarmName(alarm.name);
+          return identity === undefined
+            ? []
+            : [
+                Object.freeze({
+                  ...identity,
+                  scheduledFor: alarm.scheduledTime
+                })
+              ];
+        })
+      );
+    } catch (error) {
+      throw new CycleSchedulerError("list", undefined, error);
     }
   }
 
@@ -110,6 +132,7 @@ function createChromeAlarmsApi(): ChromeAlarmsApi {
   return {
     create: (name, alarmInfo) => chrome.alarms.create(name, alarmInfo),
     get: (name) => chrome.alarms.get(name),
+    getAll: () => chrome.alarms.getAll(),
     clear: (name) => chrome.alarms.clear(name)
   };
 }

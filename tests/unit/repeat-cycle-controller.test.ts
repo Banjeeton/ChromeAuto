@@ -207,6 +207,10 @@ class MemoryCycleScheduler implements CycleScheduler {
     );
   }
 
+  async list(): Promise<readonly ScheduledCycleTimer[]> {
+    return structuredClone(this.scheduled);
+  }
+
   async cancel(identity: RepeatCycleIdentity): Promise<boolean> {
     this.cancelled.push(structuredClone(identity));
     const index = this.scheduled.findIndex(

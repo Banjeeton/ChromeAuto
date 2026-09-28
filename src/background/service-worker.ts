@@ -3,6 +3,7 @@ import {
   ChromeAlarmScheduler,
   parseCycleAlarmName
 } from "../adapters/chrome/alarm-scheduler";
+import { ChromeTabUrlProvider } from "../adapters/chrome/tab-url-provider";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
@@ -13,6 +14,9 @@ import {
 import { AutomationRunner } from "../core/application/automation-runner";
 import { ManualRunController } from "../core/application/manual-run-controller";
 import { RepeatCycleController } from "../core/application/repeat-cycle-controller";
+import {
+  RepeatCycleRecoveryController
+} from "../core/application/repeat-cycle-recovery-controller";
 import {
   PresetEditorController
 } from "../core/application/preset-editor";
@@ -50,6 +54,13 @@ const repeatCycleController = new RepeatCycleController(
   cycleScheduler,
   repeatCycleRegistry
 );
+const repeatCycleRecoveryController = new RepeatCycleRecoveryController(
+  repeatCycleController,
+  cycleScheduler,
+  repeatCycleRegistry,
+  presetRepository,
+  new ChromeTabUrlProvider()
+);
 const manualRunController = new ManualRunController(
   presetRepository,
   automationRunner,
@@ -71,13 +82,22 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     return;
   }
 
-  void runScheduledCycle(identity.tabId, identity.presetId, alarm.scheduledTime)
+  void repeatCycleRecoveryController
+    .handleAlarm({ ...identity, scheduledFor: alarm.scheduledTime })
     .catch((error: unknown) => {
       console.error(
         `Scheduled repeat cycle for tab ${identity.tabId} failed.`,
         error
       );
     });
+});
+
+// Top-level recovery runs whenever Manifest V3 recreates this service worker.
+void repeatCycleRecoveryController.recover().catch((error: unknown) => {
+  console.error(
+    "Unable to restore repeat cycles after service worker startup.",
+    error
+  );
 });
 
 chrome.runtime.onMessage.addListener(
@@ -274,19 +294,6 @@ async function getTabUrl(tabId: number): Promise<string> {
     throw new Error(`Chrome did not expose the URL for tab ${tabId}.`);
   }
   return tab.url;
-}
-
-async function runScheduledCycle(
-  tabId: number,
-  presetId: string,
-  scheduledFor: number
-): Promise<void> {
-  const preset = await presetRepository.getById(presetId);
-  if (preset === undefined) {
-    await repeatCycleRegistry.removeByTabId(tabId);
-    return;
-  }
-  await repeatCycleController.runScheduled(preset, tabId, scheduledFor);
 }
 
 function isPlaywrightSpikeMessage(

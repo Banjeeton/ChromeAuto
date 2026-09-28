@@ -20,26 +20,34 @@ export interface ScheduledCycleTimer extends CycleTimerIdentity {
 export interface CycleScheduler {
   schedule(request: ScheduleCycleTimerRequest): Promise<void>;
   get(identity: CycleTimerIdentity): Promise<ScheduledCycleTimer | undefined>;
+  list(): Promise<readonly ScheduledCycleTimer[]>;
   cancel(identity: CycleTimerIdentity): Promise<boolean>;
 }
 
-export type CycleSchedulerOperation = "schedule" | "get" | "cancel";
+export type CycleSchedulerOperation =
+  | "schedule"
+  | "get"
+  | "list"
+  | "cancel";
 
 export class CycleSchedulerError extends Error {
   readonly operation: CycleSchedulerOperation;
-  readonly identity: Readonly<CycleTimerIdentity>;
+  readonly identity?: Readonly<CycleTimerIdentity>;
 
   constructor(
     operation: CycleSchedulerOperation,
-    identity: CycleTimerIdentity,
+    identity: CycleTimerIdentity | undefined,
     cause: unknown
   ) {
     super(
-      `Unable to ${operation} the repeat-cycle timer for tab ${identity.tabId} and preset ${identity.presetId}.`,
+      identity === undefined
+        ? `Unable to ${operation} repeat-cycle timers.`
+        : `Unable to ${operation} the repeat-cycle timer for tab ${identity.tabId} and preset ${identity.presetId}.`,
       { cause }
     );
     this.name = "CycleSchedulerError";
     this.operation = operation;
-    this.identity = Object.freeze({ ...identity });
+    this.identity =
+      identity === undefined ? undefined : Object.freeze({ ...identity });
   }
 }
