@@ -146,6 +146,67 @@ h2 {
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
 }
 
+.recorder-controls {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #29343e;
+}
+
+.recorder-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #8795a2;
+  font-size: 11px;
+}
+
+.recorder-summary > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #dce4eb;
+}
+
+.recorder-summary > span:last-child {
+  text-align: right;
+}
+
+.recorder-state {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #66727e;
+}
+
+.recorder-state.recording {
+  background: #ff6767;
+  box-shadow: 0 0 0 4px rgb(255 103 103 / 12%);
+  animation: recorder-pulse 1.5s ease-in-out infinite;
+}
+
+.recorder-state.stopping {
+  background: #e7c676;
+}
+
+.recorder-state.failed {
+  background: #ff8d8d;
+}
+
+.recorder-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.action-button.record-button {
+  color: #fff3f3;
+  background: #b94349;
+}
+
+.action-button.record-button:not(:disabled):hover {
+  background: #ce5359;
+}
+
 .target-heading {
   min-width: 0;
 }
@@ -710,6 +771,12 @@ button:disabled {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes recorder-pulse {
+  50% {
+    opacity: 0.55;
   }
 }
 

@@ -12,12 +12,14 @@ import type { PresetV1 } from "../domain/preset";
 import type { PresetRepository } from "../ports/preset-repository";
 import type { RepeatCycleController } from "./repeat-cycle-controller";
 import type { RepeatCycleRegistry } from "../ports/repeat-cycle-registry";
+import type { RecorderSessionRegistry } from "../ports/recorder-session-registry";
 
 export type ManualRunUnavailableReason =
   | "unsupported-url"
   | "no-preset"
   | "preset-disabled"
-  | "invalid-preset";
+  | "invalid-preset"
+  | "recording-active";
 
 export type ManualRunStatus =
   | {
@@ -65,19 +67,22 @@ export class ManualRunController {
   readonly #sessions: TabSessionManager;
   readonly #repeatCycles?: Pick<RepeatCycleController, "runManual">;
   readonly #repeatCycleStates?: Pick<RepeatCycleRegistry, "getByTabId">;
+  readonly #recorderSessions?: Pick<RecorderSessionRegistry, "getByTabId">;
 
   constructor(
     presets: PresetRepository,
     runner: AutomationRunner,
     sessions: TabSessionManager,
     repeatCycles?: Pick<RepeatCycleController, "runManual">,
-    repeatCycleStates?: Pick<RepeatCycleRegistry, "getByTabId">
+    repeatCycleStates?: Pick<RepeatCycleRegistry, "getByTabId">,
+    recorderSessions?: Pick<RecorderSessionRegistry, "getByTabId">
   ) {
     this.#presets = presets;
     this.#runner = runner;
     this.#sessions = sessions;
     this.#repeatCycles = repeatCycles;
     this.#repeatCycleStates = repeatCycleStates;
+    this.#recorderSessions = recorderSessions;
   }
 
   async status(tabId: number, tabUrl: string): Promise<ManualRunStatus> {
@@ -117,6 +122,22 @@ export class ManualRunController {
           tabId,
           reason: "unsupported-url",
           message: "Automations can only run on HTTP or HTTPS pages."
+        }
+      };
+    }
+
+    const recorder = await this.#recorderSessions?.getByTabId(tabId);
+    if (
+      recorder?.session.state === "recording" ||
+      recorder?.session.state === "stopping"
+    ) {
+      return {
+        status: {
+          state: "unavailable",
+          tabId,
+          hostname: location.hostname,
+          reason: "recording-active",
+          message: "Stop recording in this tab before running automation."
         }
       };
     }

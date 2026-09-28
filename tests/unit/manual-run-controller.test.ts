@@ -9,6 +9,7 @@ import type { AutomationEngine } from "../../src/core/ports/automation-engine";
 import type { PresetRepository } from "../../src/core/ports/preset-repository";
 import type { RepeatCycleController } from "../../src/core/application/repeat-cycle-controller";
 import type { RepeatCycleRegistry } from "../../src/core/ports/repeat-cycle-registry";
+import type { RecorderSessionRecord } from "../../src/core/ports/recorder-session-registry";
 
 const PRESET_ID = "550e8400-e29b-41d4-a716-446655440000";
 
@@ -182,6 +183,34 @@ describe("ManualRunController", () => {
     });
   });
 
+  it("blocks automation only in the tab with an active recording", async () => {
+    const recorderSessions = {
+      getByTabId: vi.fn(async (tabId: number) =>
+        tabId === 42 ? recordingRecord(tabId) : undefined
+      )
+    };
+    const { controller } = createController(
+      [createPreset()],
+      createEngine(),
+      undefined,
+      undefined,
+      recorderSessions
+    );
+
+    await expect(
+      controller.status(42, "https://example.com")
+    ).resolves.toMatchObject({
+      state: "unavailable",
+      reason: "recording-active"
+    });
+    await expect(
+      controller.run(42, "https://example.com")
+    ).rejects.toThrow("Stop recording");
+    await expect(
+      controller.status(43, "https://example.com")
+    ).resolves.toMatchObject({ state: "ready" });
+  });
+
   it("blocks a structurally invalid preset and reports the field path", async () => {
     const invalid = createPreset({ name: "" });
     const { controller } = createController([invalid]);
@@ -200,7 +229,8 @@ function createController(
   presets: PresetV1[],
   engine = createEngine(),
   repeatCycles?: Pick<RepeatCycleController, "runManual">,
-  repeatCycleStates?: Pick<RepeatCycleRegistry, "getByTabId">
+  repeatCycleStates?: Pick<RepeatCycleRegistry, "getByTabId">,
+  recorderSessions?: { getByTabId(tabId: number): Promise<RecorderSessionRecord | undefined> }
 ): { controller: ManualRunController; sessions: TabSessionManager } {
   const repository = new MemoryPresetRepository(presets);
   const sessions = new TabSessionManager(engine, {
@@ -218,9 +248,31 @@ function createController(
       runner,
       sessions,
       repeatCycles,
-      repeatCycleStates
+      repeatCycleStates,
+      recorderSessions
     ),
     sessions
+  };
+}
+
+function recordingRecord(tabId: number): RecorderSessionRecord {
+  return {
+    session: {
+      sessionId: `recorder-${tabId}`,
+      tabId,
+      context: {
+        url: "https://example.com",
+        hostname: "example.com",
+        protocol: "https"
+      },
+      startedAt: "2026-09-29T12:00:00.000Z",
+      recordedEventCount: 0,
+      state: "recording"
+    },
+    documentId: `document-${tabId}`,
+    currentUrl: "https://example.com",
+    recordedEvents: [],
+    draftSteps: []
   };
 }
 

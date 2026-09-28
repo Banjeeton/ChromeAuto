@@ -6,6 +6,7 @@ import type { RunSession } from "../../core/domain/run-session";
 import type { StepLogEntry } from "../../core/domain/step-log-entry";
 import type { RepeatCycleLogEntry } from "../../core/domain/repeat-cycle-log-entry";
 import type { RepeatCycleStatusView } from "../../core/application/repeat-cycle-status-controller";
+import type { RecorderPanelStatus } from "../../core/application/recorder-panel-controller";
 import type {
   StopAllAutomationsResult,
   StopAutomationResult
@@ -16,7 +17,15 @@ export const AUTOMATION_RUNTIME_MESSAGE = "automation/runtime" as const;
 export type AutomationRuntimeMessage =
   | {
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
-      readonly action: "manual-status" | "run" | "stop" | "logs" | "clear-logs";
+      readonly action:
+        | "manual-status"
+        | "run"
+        | "stop"
+        | "logs"
+        | "clear-logs"
+        | "recorder-status"
+        | "record"
+        | "stop-recording";
       readonly tabId: number;
     }
   | {
@@ -57,6 +66,7 @@ export type AutomationRuntimeMessage =
 
 export type AutomationRuntimeResult =
   | { readonly kind: "manual-status"; readonly status: ManualRunStatus }
+  | { readonly kind: "recorder-status"; readonly status: RecorderPanelStatus }
   | { readonly kind: "run"; readonly run: AutomationRunResult }
   | { readonly kind: "stop"; readonly stop: StopAutomationResult }
   | { readonly kind: "stop-all"; readonly stopAll: StopAllAutomationsResult }

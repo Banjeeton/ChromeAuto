@@ -12,8 +12,10 @@ import type { RunSession } from "../core/domain/run-session";
 import type { StepLogEntry } from "../core/domain/step-log-entry";
 import type { RepeatCycleLogEntry } from "../core/domain/repeat-cycle-log-entry";
 import type { RepeatCycleStatusView } from "../core/application/repeat-cycle-status-controller";
+import type { RecorderPanelStatus } from "../core/application/recorder-panel-controller";
 import {
   PRESET_STORAGE_KEY,
+  RECORDER_SESSION_STORAGE_KEY,
   REPEAT_CYCLE_STORAGE_KEY
 } from "../shared/constants";
 import {
@@ -58,6 +60,7 @@ type PresetEditorState = {
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>();
   const [manualStatus, setManualStatus] = useState<ManualRunStatus>();
+  const [recorderStatus, setRecorderStatus] = useState<RecorderPanelStatus>();
   const [sessions, setSessions] = useState<readonly RunSession[]>([]);
   const [repeatCycles, setRepeatCycles] =
     useState<readonly RepeatCycleStatusView[]>([]);
@@ -97,11 +100,22 @@ function App() {
   );
 
   const refreshWorkspace = useCallback(async (tabId: number) => {
-    const [statusResponse, sessionsResponse, repeatResponse, logsResponse] =
+    const [
+      statusResponse,
+      recorderResponse,
+      sessionsResponse,
+      repeatResponse,
+      logsResponse
+    ] =
       await Promise.all([
         sendRuntimeMessage({
           type: AUTOMATION_RUNTIME_MESSAGE,
           action: "manual-status",
+          tabId
+        }),
+        sendRuntimeMessage({
+          type: AUTOMATION_RUNTIME_MESSAGE,
+          action: "recorder-status",
           tabId
         }),
         sendRuntimeMessage({
@@ -122,6 +136,9 @@ function App() {
     if (!statusResponse.ok) {
       throw runtimeResponseError(statusResponse);
     }
+    if (!recorderResponse.ok) {
+      throw runtimeResponseError(recorderResponse);
+    }
     if (!sessionsResponse.ok) {
       throw runtimeResponseError(sessionsResponse);
     }
@@ -133,6 +150,9 @@ function App() {
     }
     if (statusResponse.result.kind === "manual-status") {
       setManualStatus(statusResponse.result.status);
+    }
+    if (recorderResponse.result.kind === "recorder-status") {
+      setRecorderStatus(recorderResponse.result.status);
     }
     if (sessionsResponse.result.kind === "sessions") {
       setSessions(sessionsResponse.result.sessions);
@@ -192,6 +212,7 @@ function App() {
     if (tab?.id === undefined) {
       setActiveTab(undefined);
       setManualStatus(undefined);
+      setRecorderStatus(undefined);
       return;
     }
 
@@ -263,12 +284,13 @@ function App() {
         });
       } else if (
         areaName === "session" &&
-        REPEAT_CYCLE_STORAGE_KEY in changes
+        (REPEAT_CYCLE_STORAGE_KEY in changes ||
+          RECORDER_SESSION_STORAGE_KEY in changes)
       ) {
         void refreshActiveTab().catch((error: unknown) => {
           addNotice(
             "error",
-            `Unable to refresh repeat-cycle status: ${errorMessage(error)}`,
+            `Unable to refresh runtime status: ${errorMessage(error)}`,
             errorTechnicalDetails(error)
           );
         });
@@ -354,6 +376,72 @@ function App() {
       addNotice(
         "error",
         `Stop failed: ${errorMessage(error)}`,
+        errorTechnicalDetails(error)
+      );
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
+  const startRecording = async () => {
+    if (activeTab === undefined) {
+      addNotice("error", "No active browser tab was found.");
+      return;
+    }
+    setBusyAction("record");
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "record",
+        tabId: activeTab.id
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorder-status") {
+        throw new Error("The extension returned an unexpected recorder response.");
+      }
+      setRecorderStatus(response.result.status);
+      addNotice("success", "Recording started for the current tab.");
+    } catch (error) {
+      addNotice(
+        "error",
+        `Unable to start recording: ${errorMessage(error)}`,
+        errorTechnicalDetails(error)
+      );
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (activeTab === undefined) {
+      return;
+    }
+    setBusyAction("stop-recording");
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "stop-recording",
+        tabId: activeTab.id
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorder-status") {
+        throw new Error("The extension returned an unexpected recorder response.");
+      }
+      setRecorderStatus(response.result.status);
+      addNotice(
+        "success",
+        `Recording stopped with ${response.result.status.stepCount} recorded steps.`
+      );
+    } catch (error) {
+      addNotice(
+        "error",
+        `Unable to stop recording: ${errorMessage(error)}`,
         errorTechnicalDetails(error)
       );
     } finally {
@@ -625,9 +713,19 @@ function App() {
     }
   };
 
-  const canRun = manualStatus?.state === "ready" && busyAction === undefined;
+  const recorderIsActive =
+    recorderStatus?.state === "recording" ||
+    recorderStatus?.state === "stopping";
+  const canRun =
+    manualStatus?.state === "ready" &&
+    !recorderIsActive &&
+    busyAction === undefined;
   const currentTabHasActiveCycle =
     manualStatus?.state === "running" || manualStatus?.state === "waiting";
+  const canRecord =
+    recorderStatus?.canRecord === true &&
+    !currentTabHasActiveCycle &&
+    busyAction === undefined;
 
   return (
     <main className="app-shell">
@@ -698,6 +796,39 @@ function App() {
             >
               {busyAction === "stop" ? "Stopping…" : "Stop"}
             </button>
+          </div>
+
+          <div className="recorder-controls">
+            <div className="recorder-summary" aria-live="polite">
+              <div>
+                <span className={`recorder-state ${recorderStatus?.state ?? "idle"}`} />
+                <strong>Recorder</strong>
+              </div>
+              <span>{recorderStatus?.message ?? "Checking recorder state…"}</span>
+            </div>
+            <div className="button-grid recorder-actions">
+              <button
+                className="action-button record-button"
+                disabled={!canRecord}
+                onClick={() => void startRecording()}
+                type="button"
+              >
+                {busyAction === "record" ? "Starting…" : "Record"}
+              </button>
+              <button
+                className="action-button secondary"
+                disabled={
+                  recorderStatus?.canStop !== true ||
+                  busyAction !== undefined
+                }
+                onClick={() => void stopRecording()}
+                type="button"
+              >
+                {busyAction === "stop-recording"
+                  ? "Stopping…"
+                  : "Stop recording"}
+              </button>
+            </div>
           </div>
         </section>
 

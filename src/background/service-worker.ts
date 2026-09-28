@@ -5,6 +5,7 @@ import {
 } from "../adapters/chrome/alarm-scheduler";
 import { ChromeTabUrlProvider } from "../adapters/chrome/tab-url-provider";
 import { ChromeRecorderContentBridge } from "../adapters/chrome/recorder-content-bridge";
+import { ChromeRecorderDocumentProvider } from "../adapters/chrome/recorder-document-provider";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { InMemoryRepeatCycleLog } from "../adapters/logging/in-memory-repeat-cycle-log";
 import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
@@ -15,6 +16,7 @@ import {
   importPresetJsonSafely
 } from "../adapters/storage/preset-import-export";
 import { AutomationRunner } from "../core/application/automation-runner";
+import { AutomationRecorder } from "../core/application/automation-recorder";
 import { ManualRunController } from "../core/application/manual-run-controller";
 import { RepeatCycleController } from "../core/application/repeat-cycle-controller";
 import { RepeatCycleStatusController } from "../core/application/repeat-cycle-status-controller";
@@ -27,6 +29,7 @@ import {
 import { AutomationRuntimeController } from "../core/application/automation-runtime-controller";
 import { RecordedStepMapper } from "../core/application/recorded-step-mapper";
 import { RecorderNavigationController } from "../core/application/recorder-navigation-controller";
+import { RecorderPanelController } from "../core/application/recorder-panel-controller";
 import { TabSessionManager } from "../core/application/tab-session-manager";
 import {
   AUTOMATION_RUNTIME_MESSAGE,
@@ -53,10 +56,12 @@ const executionLog = new InMemoryExecutionLog();
 const repeatCycleLog = new InMemoryRepeatCycleLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
 const presetEditorController = new PresetEditorController(presetRepository);
+const recorderSessionRegistry = new ChromeRecorderSessionRegistry();
+const recorderContentBridge = new ChromeRecorderContentBridge();
 const recorderNavigationController = new RecorderNavigationController(
-  new ChromeRecorderSessionRegistry(),
+  recorderSessionRegistry,
   new RecordedStepMapper(),
-  new ChromeRecorderContentBridge()
+  recorderContentBridge
 );
 const automationRunner = new AutomationRunner(
   playwrightEngine,
@@ -65,6 +70,24 @@ const automationRunner = new AutomationRunner(
 );
 const cycleScheduler = new ChromeAlarmScheduler();
 const repeatCycleRegistry = new ChromeRepeatCycleRegistry();
+const automationRecorder = new AutomationRecorder(
+  recorderSessionRegistry,
+  recorderContentBridge,
+  new ChromeRecorderDocumentProvider(),
+  {
+    isAutomationActive: async (tabId) => {
+      if (tabSessionManager.getByTabId(tabId) !== undefined) {
+        return true;
+      }
+      const cycle = await repeatCycleRegistry.getByTabId(tabId);
+      return cycle?.state === "running" || cycle?.state === "waiting";
+    }
+  }
+);
+const recorderPanelController = new RecorderPanelController(
+  automationRecorder,
+  recorderSessionRegistry
+);
 const repeatCycleController = new RepeatCycleController(
   automationRunner,
   cycleScheduler,
@@ -91,7 +114,8 @@ const manualRunController = new ManualRunController(
   automationRunner,
   tabSessionManager,
   repeatCycleController,
-  repeatCycleRegistry
+  repeatCycleRegistry,
+  recorderSessionRegistry
 );
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -301,7 +325,10 @@ function isAutomationRuntimeMessage(
       candidate.action === "run" ||
       candidate.action === "stop" ||
       candidate.action === "logs" ||
-      candidate.action === "clear-logs") &&
+      candidate.action === "clear-logs" ||
+      candidate.action === "recorder-status" ||
+      candidate.action === "record" ||
+      candidate.action === "stop-recording") &&
     "tabId" in candidate &&
     typeof candidate.tabId === "number"
   );
@@ -316,6 +343,27 @@ async function handleAutomationRuntimeMessage(
       return {
         kind: "manual-status",
         status: await manualRunController.status(message.tabId, tabUrl)
+      };
+    }
+    case "recorder-status": {
+      const tabUrl = await getTabUrl(message.tabId);
+      return {
+        kind: "recorder-status",
+        status: await recorderPanelController.status(message.tabId, tabUrl)
+      };
+    }
+    case "record": {
+      const tabUrl = await getTabUrl(message.tabId);
+      return {
+        kind: "recorder-status",
+        status: await recorderPanelController.start(message.tabId, tabUrl)
+      };
+    }
+    case "stop-recording": {
+      const tabUrl = await getTabUrl(message.tabId);
+      return {
+        kind: "recorder-status",
+        status: await recorderPanelController.stop(message.tabId, tabUrl)
       };
     }
     case "run": {
