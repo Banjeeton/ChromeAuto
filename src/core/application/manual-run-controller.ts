@@ -143,6 +143,7 @@ export class ManualRunController {
 
     const issues = validatePresetForRun(preset);
     if (issues.length > 0) {
+      const issue = issues[0];
       return {
         status: {
           state: "unavailable",
@@ -151,7 +152,7 @@ export class ManualRunController {
           presetId: preset.id,
           presetName: preset.name,
           reason: "invalid-preset",
-          message: issues[0].message
+          message: `${issue.path}: ${issue.message}`
         },
         preset
       };

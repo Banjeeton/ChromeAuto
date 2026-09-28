@@ -12,6 +12,9 @@ import {
   PresetRepositoryWriteError
 } from "../../src/core/ports/preset-repository";
 
+const PRESET_ID = "550e8400-e29b-41d4-a716-446655440000";
+const SECOND_PRESET_ID = "550e8400-e29b-41d4-a716-446655440001";
+
 describe("Chrome storage adapter", () => {
   it("stores, updates and removes preset v1 objects", async () => {
     const storage = new MemoryChromeStorage();
@@ -23,23 +26,23 @@ describe("Chrome storage adapter", () => {
 
     await expect(repository.list()).resolves.toEqual([
       expect.objectContaining({
-        id: "preset-1",
+        id: PRESET_ID,
         name: "Example automation",
         site: expect.objectContaining({ hostname: "example.com" })
       })
     ]);
-    await expect(repository.getById("preset-1")).resolves.toMatchObject({
-      id: "preset-1"
+    await expect(repository.getById(PRESET_ID)).resolves.toMatchObject({
+      id: PRESET_ID
     });
 
     await repository.save(createPreset({ name: "Updated automation" }));
     await expect(repository.list()).resolves.toEqual([
       expect.objectContaining({
-        id: "preset-1",
+        id: PRESET_ID,
         name: "Updated automation"
       })
     ]);
-    await expect(repository.remove("preset-1")).resolves.toBe(true);
+    await expect(repository.remove(PRESET_ID)).resolves.toBe(true);
     await expect(repository.list()).resolves.toEqual([]);
     await expect(repository.remove("missing")).resolves.toBe(false);
   });
@@ -49,9 +52,9 @@ describe("Chrome storage adapter", () => {
     await new ChromePresetRepository(storage).save(createPreset());
 
     await expect(
-      new ChromePresetRepository(storage).getById("preset-1")
+      new ChromePresetRepository(storage).getById(PRESET_ID)
     ).resolves.toMatchObject({
-      id: "preset-1",
+      id: PRESET_ID,
       name: "Example automation"
     });
   });
@@ -63,7 +66,7 @@ describe("Chrome storage adapter", () => {
       repository.save(createPreset()),
       repository.save(
         createPreset({
-          id: "preset-2",
+          id: SECOND_PRESET_ID,
           site: { hostname: "shop.example.com", protocols: ["https"] }
         })
       )
@@ -82,7 +85,7 @@ describe("Chrome storage adapter", () => {
     await expect(
       repository.save(
         createPreset({
-          id: "preset-2",
+          id: SECOND_PRESET_ID,
           site: { hostname: "example.com", protocols: ["http"] }
         })
       )
@@ -102,7 +105,7 @@ describe("Chrome storage adapter", () => {
     await expect(repository.list()).rejects.toMatchObject({
       name: "PresetRepositoryDataError",
       code: "duplicate_preset_id",
-      values: ["preset-1"]
+      values: [PRESET_ID]
     } satisfies Partial<PresetRepositoryDataError>);
   });
 
@@ -112,12 +115,12 @@ describe("Chrome storage adapter", () => {
 
     const listed = await repository.list();
     listed[0].name = "Changed outside repository";
-    const loaded = await repository.getById("preset-1");
+    const loaded = await repository.getById(PRESET_ID);
     if (loaded !== undefined) {
       loaded.site.hostname = "changed.example.com";
     }
 
-    await expect(repository.getById("preset-1")).resolves.toMatchObject({
+    await expect(repository.getById(PRESET_ID)).resolves.toMatchObject({
       name: "Example automation",
       site: { hostname: "example.com" }
     });
@@ -150,6 +153,23 @@ describe("Chrome storage adapter", () => {
       cause
     } satisfies Partial<PresetRepositoryWriteError>);
   });
+
+  it("rejects an invalid preset before writing to storage", async () => {
+    const storage = new MemoryChromeStorage();
+    const invalid = createPreset({ name: "" });
+
+    await expect(
+      new ChromePresetRepository(storage).save(invalid)
+    ).rejects.toMatchObject({
+      name: "PresetValidationError",
+      issues: [
+        expect.objectContaining({
+          path: "/name"
+        })
+      ]
+    });
+    expect(storage.values).toEqual({});
+  });
 });
 
 class MemoryChromeStorage implements ChromeStorageArea {
@@ -175,7 +195,7 @@ class MemoryChromeStorage implements ChromeStorageArea {
 function createPreset(overrides: Partial<PresetV1> = {}): PresetV1 {
   return {
     schemaVersion: 1,
-    id: "preset-1",
+    id: PRESET_ID,
     name: "Example automation",
     createdAt: "2026-09-27T12:00:00.000Z",
     updatedAt: "2026-09-27T12:00:00.000Z",

@@ -1,4 +1,5 @@
 import type { PresetV1 } from "../../core/domain/preset";
+import { assertValidPreset } from "../../core/domain/preset-validator";
 import {
   type PresetRepository,
   PresetRepositoryDataError,
@@ -39,9 +40,11 @@ export class ChromePresetRepository implements PresetRepository {
   }
 
   async save(preset: PresetV1): Promise<void> {
+    const normalized = structuredClone(preset);
+    normalized.site.hostname = normalized.site.hostname.toLowerCase();
+    assertValidPreset(normalized);
+
     return this.#enqueueMutation(async () => {
-      const normalized = structuredClone(preset);
-      normalized.site.hostname = normalized.site.hostname.toLowerCase();
       const presets = await this.#readPresets();
       const conflicting = presets.filter(
         (item) =>
