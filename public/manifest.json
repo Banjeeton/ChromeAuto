@@ -4,7 +4,7 @@
   "description": "Record, edit and run website automations in current Chrome tabs.",
   "version": "0.1.0",
   "minimum_chrome_version": "118",
-  "permissions": ["debugger", "sidePanel", "storage", "tabs"],
+  "permissions": ["alarms", "debugger", "sidePanel", "storage", "tabs"],
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"

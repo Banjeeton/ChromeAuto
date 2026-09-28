@@ -231,10 +231,12 @@ waiting -- Stop / invalid tab or preset ------> stopped
 только один проход и один ожидающий таймер.
 
 Планирование должно учитывать приостановку Manifest V3 service worker. Core
-будет зависеть от порта планировщика, а Chrome-адаптер реализует его через
-`chrome.alarms`, не через долгоживущий `setTimeout`. Каждый активный цикл имеет
-runtime-идентификатор поколения; событие от отменённого или заменённого таймера
-игнорируется как устаревшее. Реестр циклов хранится отдельно от
+зависит от порта `CycleScheduler`, а адаптер `ChromeAlarmScheduler` реализует
+его через одноразовые `chrome.alarms`, не через долгоживущий `setTimeout`.
+Каждый alarm однозначно кодирует пару `tabId` и `presetId`. Следующий alarm
+создаётся прикладным слоем только после успешного прохода. Каждый активный цикл
+имеет runtime-идентификатор поколения; событие от отменённого или заменённого
+таймера игнорируется как устаревшее. Реестр циклов хранится отдельно от
 `PresetRepository` и позволяет восстановить состояние после перезапуска service
 worker.
 
@@ -252,7 +254,7 @@ side panel -- manual Run --> RepeatCycleController --> AutomationRunner
                                   |                         +-> AutomationEngine
                                   |                         +-> ExecutionLog
                                   |
-                                  +-> Scheduler port <- Chrome alarms adapter
+                                  +-> CycleScheduler <- ChromeAlarmScheduler
                                   +-> RepeatCycleStateStore
 ```
 
