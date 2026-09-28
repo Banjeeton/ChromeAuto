@@ -37,6 +37,11 @@ import {
   type PlaywrightSpikeResult
 } from "../shared/types/playwright-crx-spike";
 import { createBackgroundMessageListener } from "./message-router";
+import {
+  type RecorderEventMessage,
+  type RecorderEventReceivedResult,
+  isRecorderEventMessage
+} from "../shared/types/recorder-runtime";
 
 const playwrightEngine = new PlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
@@ -136,6 +141,15 @@ void repeatCycleRecoveryController.recover().catch((error: unknown) => {
 chrome.runtime.onMessage.addListener(
   createBackgroundMessageListener([
     {
+      matches: isRecorderEventMessage,
+      handle: async (message) =>
+        handleRecorderEventMessage(message as RecorderEventMessage),
+      createErrorResponse: (error) => ({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    },
+    {
       matches: isPlaywrightSpikeMessage,
       handle: (message) =>
         handlePlaywrightSpikeMessage(message as PlaywrightSpikeMessage),
@@ -164,6 +178,16 @@ chrome.runtime.onMessage.addListener(
     }
   ])
 );
+
+function handleRecorderEventMessage(
+  message: RecorderEventMessage
+): RecorderEventReceivedResult {
+  // A later RecorderController task will validate and persist the event.
+  return {
+    kind: "recorder-event-received",
+    eventId: message.event.eventId
+  };
+}
 
 function isAutomationRuntimeMessage(
   message: unknown

@@ -9,6 +9,13 @@
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content/content-script.js"],
+      "run_at": "document_start"
+    }
+  ],
   "action": {
     "default_title": "Open Chrome Automation"
   },
