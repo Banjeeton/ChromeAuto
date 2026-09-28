@@ -37,3 +37,7 @@ Individual checks are available through `npm run typecheck` and `npm test`.
 ## Technical spikes
 
 - [Playwright CRX](docs/playwright-crx-spike.md)
+
+## Quality assurance
+
+- [Preset Management MVP manual regression checklist](docs/preset-management-regression.md)
