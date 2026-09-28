@@ -4,10 +4,16 @@ import { describe, expect, it } from "vitest";
 
 import type { PresetV1 } from "../../src/core/domain/preset";
 import {
+  assertValidPreset,
+  PresetValidationError,
+  validatePreset,
   validatePresetForRun,
-  validatePresetSemantics
+  validatePresetSemantics,
+  validatePresetStructure
 } from "../../src/core/domain/preset-validator";
 import presetSchema from "../../schemas/preset-v1.schema.json";
+import independentTabsTestPresetJson from "../../examples/presets/local-independent-tabs-test.preset.json";
+import manualTestPresetJson from "../../examples/presets/local-manual-test.preset.json";
 import validPresetJson from "../fixtures/presets/valid-full.json";
 
 const ajv = new Ajv2020({
@@ -24,6 +30,26 @@ function cloneValidPreset(): PresetV1 {
 }
 
 describe("preset v1 JSON Schema", () => {
+  it("accepts the portable local independent-tabs test preset", () => {
+    const preset = structuredClone(independentTabsTestPresetJson) as PresetV1;
+
+    expect(validateSchema(preset), JSON.stringify(validateSchema.errors)).toBe(
+      true
+    );
+    expect(validatePresetSemantics(preset)).toEqual([]);
+    expect(validatePresetForRun(preset)).toEqual([]);
+  });
+
+  it("accepts the portable local manual-test preset", () => {
+    const preset = structuredClone(manualTestPresetJson) as PresetV1;
+
+    expect(validateSchema(preset), JSON.stringify(validateSchema.errors)).toBe(
+      true
+    );
+    expect(validatePresetSemantics(preset)).toEqual([]);
+    expect(validatePresetForRun(preset)).toEqual([]);
+  });
+
   it("accepts a complete preset containing every step type", () => {
     const preset = cloneValidPreset();
 
@@ -50,11 +76,27 @@ describe("preset v1 JSON Schema", () => {
     expect(validateSchema(preset)).toBe(false);
   });
 
+  it("returns a clear JSON path for a missing required property", () => {
+    const preset = structuredClone(validPresetJson) as Record<string, unknown>;
+    delete preset.name;
+
+    expect(validatePresetStructure(preset)).toContainEqual({
+      code: "schema_required",
+      path: "/name",
+      message: 'Required property "name" is missing.'
+    });
+  });
+
   it("rejects unknown properties", () => {
     const preset = structuredClone(validPresetJson) as Record<string, unknown>;
     preset.runtimeState = { nextRunAt: "2026-09-27T12:01:00.000Z" };
 
     expect(validateSchema(preset)).toBe(false);
+    expect(validatePresetStructure(preset)).toContainEqual({
+      code: "schema_additionalProperties",
+      path: "/runtimeState",
+      message: 'Property "runtimeState" is not allowed.'
+    });
   });
 
   it.each([
@@ -161,5 +203,42 @@ describe("preset v1 semantic validation", () => {
       path: "/automation/steps",
       message: "An automation must contain at least one step before it can run."
     });
+  });
+
+  it("runs semantic validation after the schema succeeds", () => {
+    const preset = cloneValidPreset();
+    preset.automation.steps[1].id = preset.automation.steps[0].id;
+
+    expect(validatePreset(preset)).toContainEqual({
+      code: "duplicate_step_id",
+      path: "/automation/steps/1/id",
+      message: `Step id "${preset.automation.steps[0].id}" must be unique within the preset.`
+    });
+  });
+
+  it("throws one typed error containing all validation issues", () => {
+    const preset = cloneValidPreset();
+    preset.automation.defaults.humanInput.minDelayMs = 200;
+    preset.automation.defaults.humanInput.maxDelayMs = 100;
+
+    expect(() => assertValidPreset(preset)).toThrowError(
+      PresetValidationError
+    );
+
+    try {
+      assertValidPreset(preset);
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: "PresetValidationError",
+        message: expect.stringContaining(
+          "/automation/defaults/humanInput/maxDelayMs"
+        ),
+        issues: [
+          expect.objectContaining({
+            path: "/automation/defaults/humanInput/maxDelayMs"
+          })
+        ]
+      });
+    }
   });
 });

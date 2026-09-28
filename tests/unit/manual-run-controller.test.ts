@@ -8,6 +8,8 @@ import type { PresetV1 } from "../../src/core/domain/preset";
 import type { AutomationEngine } from "../../src/core/ports/automation-engine";
 import type { PresetRepository } from "../../src/core/ports/preset-repository";
 
+const PRESET_ID = "550e8400-e29b-41d4-a716-446655440000";
+
 describe("ManualRunController", () => {
   it("resolves and runs the enabled preset for the exact hostname", async () => {
     const engine = createEngine();
@@ -19,7 +21,7 @@ describe("ManualRunController", () => {
       state: "ready",
       tabId: 42,
       hostname: "example.com",
-      presetId: "preset-1",
+      presetId: PRESET_ID,
       presetName: "Example automation",
       stepCount: 1
     });
@@ -27,7 +29,7 @@ describe("ManualRunController", () => {
     await expect(
       controller.run(42, "https://example.com/account")
     ).resolves.toMatchObject({
-      presetId: "preset-1",
+      presetId: PRESET_ID,
       tabId: 42,
       executedSteps: 1,
       skippedSteps: 0
@@ -49,6 +51,27 @@ describe("ManualRunController", () => {
       state: "unavailable",
       hostname: "shop.example.com",
       reason: "no-preset"
+    });
+  });
+
+  it("selects the enabled preset when an inactive alternative shares hostname", async () => {
+    const disabled = createPreset({
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      name: "Inactive alternative",
+      siteSettings: {
+        enabled: false,
+        repeat: { enabled: false, intervalMinutes: 1 }
+      }
+    });
+    const enabled = createPreset();
+    const { controller } = createController([disabled, enabled]);
+
+    await expect(
+      controller.status(42, "https://example.com")
+    ).resolves.toMatchObject({
+      state: "ready",
+      presetId: PRESET_ID,
+      presetName: "Example automation"
     });
   });
 
@@ -90,6 +113,19 @@ describe("ManualRunController", () => {
     ).resolves.toMatchObject({
       state: "unavailable",
       reason: "unsupported-url"
+    });
+  });
+
+  it("blocks a structurally invalid preset and reports the field path", async () => {
+    const invalid = createPreset({ name: "" });
+    const { controller } = createController([invalid]);
+
+    await expect(
+      controller.status(42, "https://example.com")
+    ).resolves.toMatchObject({
+      state: "unavailable",
+      reason: "invalid-preset",
+      message: expect.stringContaining("/name")
     });
   });
 });
@@ -134,7 +170,7 @@ function createEngine(): AutomationEngine {
 function createPreset(overrides: Partial<PresetV1> = {}): PresetV1 {
   return {
     schemaVersion: 1,
-    id: "preset-1",
+    id: PRESET_ID,
     name: "Example automation",
     createdAt: "2026-09-27T12:00:00.000Z",
     updatedAt: "2026-09-27T12:00:00.000Z",
@@ -175,6 +211,11 @@ class MemoryPresetRepository implements PresetRepository {
 
   async save(preset: PresetV1): Promise<void> {
     this.presets.push(preset);
+  }
+
+  async saveIfUnchanged(preset: PresetV1): Promise<boolean> {
+    this.presets.push(preset);
+    return true;
   }
 
   async remove(presetId: string): Promise<boolean> {

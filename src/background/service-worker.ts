@@ -1,8 +1,15 @@
 import { PlaywrightEngine } from "../adapters/playwright/playwright-engine";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
+import {
+  exportPresetJson,
+  importPresetJsonSafely
+} from "../adapters/storage/preset-import-export";
 import { AutomationRunner } from "../core/application/automation-runner";
 import { ManualRunController } from "../core/application/manual-run-controller";
+import {
+  PresetEditorController
+} from "../core/application/preset-editor";
 import { AutomationRuntimeController } from "../core/application/automation-runtime-controller";
 import { TabSessionManager } from "../core/application/tab-session-manager";
 import {
@@ -11,18 +18,20 @@ import {
   type AutomationRuntimeResponse,
   type AutomationRuntimeResult
 } from "../shared/types/automation-runtime";
+import { createRuntimeErrorDetails } from "../shared/utils";
 import {
   PLAYWRIGHT_CRX_SPIKE_MESSAGE,
   type PlaywrightSpikeMessage,
-  type PlaywrightSpikeResponse,
   type PlaywrightSpikeResult
 } from "../shared/types/playwright-crx-spike";
+import { createBackgroundMessageListener } from "./message-router";
 
 const playwrightEngine = new PlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
 const runtimeController = new AutomationRuntimeController(tabSessionManager);
 const executionLog = new InMemoryExecutionLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
+const presetEditorController = new PresetEditorController(presetRepository);
 const automationRunner = new AutomationRunner(
   playwrightEngine,
   tabSessionManager,
@@ -43,49 +52,35 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (
-    message: unknown,
-    _sender,
-    sendResponse: (response: PlaywrightSpikeResponse) => void
-  ) => {
-    if (!isPlaywrightSpikeMessage(message)) {
-      return false;
-    }
-
-    void handlePlaywrightSpikeMessage(message)
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((error: unknown) => {
-        sendResponse({
+  createBackgroundMessageListener([
+    {
+      matches: isPlaywrightSpikeMessage,
+      handle: (message) =>
+        handlePlaywrightSpikeMessage(message as PlaywrightSpikeMessage),
+      createErrorResponse: (error) => ({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    },
+    {
+      matches: isAutomationRuntimeMessage,
+      handle: (message) =>
+        handleAutomationRuntimeMessage(message as AutomationRuntimeMessage),
+      createErrorResponse: (error, message) => {
+        const action = (message as AutomationRuntimeMessage).action;
+        console.error(
+          `Automation runtime action “${action}” failed.`,
+          error
+        );
+        const response: AutomationRuntimeResponse = {
           ok: false,
-          error: error instanceof Error ? error.message : String(error)
-        });
-      });
-
-    return true;
-  }
-);
-
-chrome.runtime.onMessage.addListener(
-  (
-    message: unknown,
-    _sender,
-    sendResponse: (response: AutomationRuntimeResponse) => void
-  ) => {
-    if (!isAutomationRuntimeMessage(message)) {
-      return false;
+          error: error instanceof Error ? error.message : String(error),
+          details: createRuntimeErrorDetails(action, error)
+        };
+        return response;
+      }
     }
-
-    void handleAutomationRuntimeMessage(message)
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((error: unknown) => {
-        sendResponse({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error)
-        });
-      });
-
-    return true;
-  }
+  ])
 );
 
 function isAutomationRuntimeMessage(
@@ -100,8 +95,47 @@ function isAutomationRuntimeMessage(
     return false;
   }
 
-  if (candidate.action === "stop-all" || candidate.action === "sessions") {
+  if (
+    candidate.action === "stop-all" ||
+    candidate.action === "sessions" ||
+    candidate.action === "presets"
+  ) {
     return true;
+  }
+
+  if (candidate.action === "create-preset") {
+    return "fields" in candidate && isObject(candidate.fields);
+  }
+
+  if (candidate.action === "update-preset") {
+    return (
+      "presetId" in candidate &&
+      typeof candidate.presetId === "string" &&
+      "fields" in candidate &&
+      isObject(candidate.fields)
+    );
+  }
+
+  if (candidate.action === "delete-preset") {
+    return (
+      "presetId" in candidate && typeof candidate.presetId === "string"
+    );
+  }
+
+  if (candidate.action === "import-preset") {
+    return (
+      "source" in candidate &&
+      typeof candidate.source === "string" &&
+      (!("overwriteExistingUpdatedAt" in candidate) ||
+        candidate.overwriteExistingUpdatedAt === undefined ||
+        typeof candidate.overwriteExistingUpdatedAt === "string")
+    );
+  }
+
+  if (candidate.action === "export-preset") {
+    return (
+      "presetId" in candidate && typeof candidate.presetId === "string"
+    );
   }
 
   return (
@@ -142,6 +176,54 @@ async function handleAutomationRuntimeMessage(
       return { kind: "stop-all", stopAll: await runtimeController.stopAll() };
     case "sessions":
       return { kind: "sessions", sessions: runtimeController.sessions() };
+    case "presets":
+      return { kind: "presets", presets: await presetRepository.list() };
+    case "create-preset": {
+      const preset = await presetEditorController.create(message.fields);
+      return { kind: "preset-saved", preset };
+    }
+    case "update-preset": {
+      const preset = await presetEditorController.update(
+        message.presetId,
+        message.fields
+      );
+      return { kind: "preset-saved", preset };
+    }
+    case "delete-preset": {
+      await presetEditorController.remove(message.presetId);
+      return { kind: "preset-deleted", presetId: message.presetId };
+    }
+    case "import-preset": {
+      const result = await importPresetJsonSafely(
+        message.source,
+        presetRepository,
+        message.overwriteExistingUpdatedAt
+      );
+      if (result.status === "confirmation-required") {
+        return {
+          kind: "preset-import-confirmation-required",
+          incomingPresetId: result.incomingPreset.id,
+          incomingPresetName: result.incomingPreset.name,
+          existingPresetName: result.existingPreset.name,
+          existingUpdatedAt: result.existingPreset.updatedAt
+        };
+      }
+      return { kind: "preset-imported", preset: result.preset };
+    }
+    case "export-preset": {
+      const preset = await presetRepository.getById(message.presetId);
+      if (preset === undefined) {
+        throw new Error(
+          `Preset ${message.presetId} no longer exists and cannot be exported.`
+        );
+      }
+      return {
+        kind: "preset-exported",
+        presetId: preset.id,
+        presetName: preset.name,
+        json: exportPresetJson(preset)
+      };
+    }
     case "logs":
       return {
         kind: "logs",
@@ -151,6 +233,10 @@ async function handleAutomationRuntimeMessage(
       await executionLog.clear({ tabId: message.tabId });
       return { kind: "clear-logs" };
   }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 async function getTabUrl(tabId: number): Promise<string> {

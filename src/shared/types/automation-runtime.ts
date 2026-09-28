@@ -1,5 +1,7 @@
 import type { AutomationRunResult } from "../../core/application/automation-runner";
 import type { ManualRunStatus } from "../../core/application/manual-run-controller";
+import type { PresetEditableFields } from "../../core/application/preset-editor";
+import type { PresetV1 } from "../../core/domain/preset";
 import type { RunSession } from "../../core/domain/run-session";
 import type { StepLogEntry } from "../../core/domain/step-log-entry";
 import type {
@@ -17,7 +19,34 @@ export type AutomationRuntimeMessage =
     }
   | {
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
-      readonly action: "stop-all" | "sessions";
+      readonly action: "stop-all" | "sessions" | "presets";
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "create-preset";
+      readonly fields: PresetEditableFields;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "update-preset";
+      readonly presetId: string;
+      readonly fields: PresetEditableFields;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "delete-preset";
+      readonly presetId: string;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "import-preset";
+      readonly source: string;
+      readonly overwriteExistingUpdatedAt?: string;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "export-preset";
+      readonly presetId: string;
     };
 
 export type AutomationRuntimeResult =
@@ -26,9 +55,40 @@ export type AutomationRuntimeResult =
   | { readonly kind: "stop"; readonly stop: StopAutomationResult }
   | { readonly kind: "stop-all"; readonly stopAll: StopAllAutomationsResult }
   | { readonly kind: "sessions"; readonly sessions: readonly RunSession[] }
+  | { readonly kind: "presets"; readonly presets: readonly PresetV1[] }
+  | { readonly kind: "preset-saved"; readonly preset: PresetV1 }
+  | { readonly kind: "preset-deleted"; readonly presetId: string }
+  | { readonly kind: "preset-imported"; readonly preset: PresetV1 }
+  | {
+      readonly kind: "preset-import-confirmation-required";
+      readonly incomingPresetId: string;
+      readonly incomingPresetName: string;
+      readonly existingPresetName: string;
+      readonly existingUpdatedAt: string;
+    }
+  | {
+      readonly kind: "preset-exported";
+      readonly presetId: string;
+      readonly presetName: string;
+      readonly json: string;
+    }
   | { readonly kind: "logs"; readonly entries: readonly StepLogEntry[] }
   | { readonly kind: "clear-logs" };
 
 export type AutomationRuntimeResponse =
   | { readonly ok: true; readonly result: AutomationRuntimeResult }
-  | { readonly ok: false; readonly error: string };
+  | {
+      readonly ok: false;
+      readonly error: string;
+      readonly details: AutomationRuntimeErrorDetails;
+    };
+
+export interface AutomationRuntimeErrorDetails {
+  readonly action: AutomationRuntimeMessage["action"];
+  readonly name: string;
+  readonly message: string;
+  readonly code?: string;
+  readonly cause?: string;
+  readonly data?: string;
+  readonly stack?: string;
+}

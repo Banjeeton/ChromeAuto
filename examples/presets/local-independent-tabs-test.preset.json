@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "1c82d49a-7d8f-4f91-ae3b-54c0fca6b2d7",
+  "name": "Local fixture - independent tabs",
+  "description": "Keeps an automation session active for five seconds so manual testing can verify that two localhost tabs run independently.",
+  "createdAt": "2026-09-28T15:00:00.000Z",
+  "updatedAt": "2026-09-28T15:00:00.000Z",
+  "site": {
+    "hostname": "localhost",
+    "protocols": [
+      "http"
+    ]
+  },
+  "automation": {
+    "defaults": {
+      "timeoutMs": 10000,
+      "postActionDelayMs": 0,
+      "humanInput": {
+        "enabled": false,
+        "minDelayMs": 40,
+        "maxDelayMs": 120
+      }
+    },
+    "steps": [
+      {
+        "id": "wait-five-seconds",
+        "type": "wait",
+        "name": "Wait 5 seconds",
+        "enabled": true,
+        "condition": {
+          "type": "timeout",
+          "durationMs": 5000
+        }
+      }
+    ]
+  },
+  "siteSettings": {
+    "enabled": true,
+    "repeat": {
+      "enabled": false,
+      "intervalMinutes": 1
+    }
+  }
+}

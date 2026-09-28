@@ -29,6 +29,12 @@ export interface SiteBoundAutomation {
   readonly site: SiteBinding;
 }
 
+export interface ActivatableSiteBoundAutomation extends SiteBoundAutomation {
+  readonly siteSettings: {
+    readonly enabled: boolean;
+  };
+}
+
 export class SiteBindingConflictError extends Error {
   readonly hostname: string;
   readonly automationIds: readonly string[];
@@ -87,8 +93,9 @@ export function siteBindingMatchesUrl(
 /**
  * Resolves the single automation assigned to a tab URL.
  *
- * A hostname collision is reported even when the colliding bindings allow
- * different protocols: the product invariant is one automation per hostname.
+ * A hostname collision is reported among the supplied automations even when
+ * their bindings allow different protocols. Callers resolving runnable presets
+ * should pass only enabled automations.
  */
 export function findAutomationForUrl<T extends SiteBoundAutomation>(
   automations: readonly T[],
@@ -119,6 +126,16 @@ export function findAutomationForUrl<T extends SiteBoundAutomation>(
   }
 
   return automation;
+}
+
+/** Resolves only enabled automations and rejects multiple active assignments. */
+export function findActiveAutomationForUrl<
+  T extends ActivatableSiteBoundAutomation
+>(automations: readonly T[], url: string | URL): T | undefined {
+  return findAutomationForUrl(
+    automations.filter((automation) => automation.siteSettings.enabled),
+    url
+  );
 }
 
 function parseSiteLocation(url: string | URL): SiteMatchResult {

@@ -1,14 +1,54 @@
+import type { ErrorObject } from "ajv";
+import generatedValidateSchema from "../../generated/preset-v1-validator";
 import type { PresetV1 } from "./preset";
+
+type GeneratedSchemaValidator = ((value: unknown) => boolean) & {
+  errors?: readonly ErrorObject[] | null;
+};
+
+const validateSchema = generatedValidateSchema as GeneratedSchemaValidator;
 
 export type PresetSemanticIssueCode =
   | "duplicate_step_id"
   | "invalid_human_input_range"
   | "empty_automation";
 
-export interface PresetSemanticIssue {
-  code: PresetSemanticIssueCode;
+export type PresetValidationIssueCode =
+  | PresetSemanticIssueCode
+  | `schema_${string}`;
+
+export interface PresetValidationIssue {
+  code: PresetValidationIssueCode;
   path: string;
   message: string;
+}
+
+export type PresetSemanticIssue = PresetValidationIssue;
+
+export class PresetValidationError extends Error {
+  readonly issues: readonly PresetValidationIssue[];
+
+  constructor(issues: readonly PresetValidationIssue[]) {
+    const firstIssue = issues[0];
+    super(
+      firstIssue === undefined
+        ? "Preset validation failed."
+        : `Preset validation failed at ${firstIssue.path}: ${firstIssue.message}`
+    );
+    this.name = "PresetValidationError";
+    this.issues = Object.freeze(issues.map((issue) => ({ ...issue })));
+  }
+}
+
+/** Validates the portable JSON representation without applying business rules. */
+export function validatePresetStructure(
+  value: unknown
+): PresetValidationIssue[] {
+  if (validateSchema(value)) {
+    return [];
+  }
+
+  return (validateSchema.errors ?? []).map(toSchemaIssue);
 }
 
 /**
@@ -57,12 +97,26 @@ export function validatePresetSemantics(
   return issues;
 }
 
+/** Applies JSON Schema first and semantic validation only to a valid shape. */
+export function validatePreset(value: unknown): PresetValidationIssue[] {
+  const structuralIssues = validatePresetStructure(value);
+  if (structuralIssues.length > 0) {
+    return structuralIssues;
+  }
+
+  return validatePresetSemantics(value as PresetV1);
+}
+
 /** Adds the run-only rule: an empty automation can be edited but not started. */
 export function validatePresetForRun(
-  preset: PresetV1
-): PresetSemanticIssue[] {
-  const issues = validatePresetSemantics(preset);
+  value: unknown
+): PresetValidationIssue[] {
+  const issues = validatePreset(value);
+  if (issues.length > 0) {
+    return issues;
+  }
 
+  const preset = value as PresetV1;
   if (preset.automation.steps.length === 0) {
     issues.push({
       code: "empty_automation",
@@ -72,4 +126,60 @@ export function validatePresetForRun(
   }
 
   return issues;
+}
+
+export function assertValidPreset(value: unknown): asserts value is PresetV1 {
+  const issues = validatePreset(value);
+  if (issues.length > 0) {
+    throw new PresetValidationError(issues);
+  }
+}
+
+export function assertRunnablePreset(value: unknown): asserts value is PresetV1 {
+  const issues = validatePresetForRun(value);
+  if (issues.length > 0) {
+    throw new PresetValidationError(issues);
+  }
+}
+
+function toSchemaIssue(error: ErrorObject): PresetValidationIssue {
+  const property = schemaErrorProperty(error);
+  const path = property === undefined
+    ? error.instancePath || "/"
+    : `${error.instancePath}/${escapeJsonPointer(property)}` || "/";
+
+  return {
+    code: `schema_${error.keyword}`,
+    path,
+    message: schemaErrorMessage(error, property)
+  };
+}
+
+function schemaErrorProperty(error: ErrorObject): string | undefined {
+  if (error.keyword === "required") {
+    return (error.params as { missingProperty: string }).missingProperty;
+  }
+  if (error.keyword === "additionalProperties") {
+    return (error.params as { additionalProperty: string }).additionalProperty;
+  }
+  return undefined;
+}
+
+function schemaErrorMessage(
+  error: ErrorObject,
+  property: string | undefined
+): string {
+  if (error.keyword === "required" && property !== undefined) {
+    return `Required property "${property}" is missing.`;
+  }
+  if (error.keyword === "additionalProperties" && property !== undefined) {
+    return `Property "${property}" is not allowed.`;
+  }
+
+  const detail = error.message ?? "does not match preset v1";
+  return `Value ${detail}.`;
+}
+
+function escapeJsonPointer(value: string): string {
+  return value.replaceAll("~", "~0").replaceAll("/", "~1");
 }

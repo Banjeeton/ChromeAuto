@@ -2,7 +2,10 @@ import type {
   AutomationRunResult,
   AutomationRunner
 } from "./automation-runner";
-import { findAutomationForUrl } from "./site-matcher";
+import {
+  findActiveAutomationForUrl,
+  siteBindingMatchesUrl
+} from "./site-matcher";
 import type { TabSessionManager } from "./tab-session-manager";
 import { validatePresetForRun } from "../domain/preset-validator";
 import type { PresetV1 } from "../domain/preset";
@@ -96,10 +99,17 @@ export class ManualRunController {
     }
 
     const presets = await this.#presets.list();
-    const preset = findAutomationForUrl(presets, tabUrl);
+    const activePreset = findActiveAutomationForUrl(presets, tabUrl);
+    const preset =
+      activePreset ??
+      presets.find(
+        (item) =>
+          !item.siteSettings.enabled &&
+          siteBindingMatchesUrl(item.site, tabUrl)
+      );
     const activeSession = this.#sessions.getByTabId(tabId);
     if (activeSession !== undefined) {
-      const activePreset =
+      const sessionPreset =
         presets.find((item) => item.id === activeSession.presetId) ?? preset;
       return {
         status: {
@@ -107,10 +117,10 @@ export class ManualRunController {
           tabId,
           hostname: location.hostname,
           presetId: activeSession.presetId,
-          presetName: activePreset?.name ?? activeSession.presetId,
+          presetName: sessionPreset?.name ?? activeSession.presetId,
           sessionId: activeSession.sessionId
         },
-        preset: activePreset
+        preset: sessionPreset
       };
     }
 
@@ -143,6 +153,7 @@ export class ManualRunController {
 
     const issues = validatePresetForRun(preset);
     if (issues.length > 0) {
+      const issue = issues[0];
       return {
         status: {
           state: "unavailable",
@@ -151,7 +162,7 @@ export class ManualRunController {
           presetId: preset.id,
           presetName: preset.name,
           reason: "invalid-preset",
-          message: issues[0].message
+          message: `${issue.path}: ${issue.message}`
         },
         preset
       };
