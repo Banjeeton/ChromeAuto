@@ -38,7 +38,6 @@ import { createBackgroundMessageListener } from "./message-router";
 
 const playwrightEngine = new PlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
-const runtimeController = new AutomationRuntimeController(tabSessionManager);
 const executionLog = new InMemoryExecutionLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
 const presetEditorController = new PresetEditorController(presetRepository);
@@ -54,6 +53,10 @@ const repeatCycleController = new RepeatCycleController(
   cycleScheduler,
   repeatCycleRegistry
 );
+const runtimeController = new AutomationRuntimeController(
+  tabSessionManager,
+  repeatCycleController
+);
 const repeatCycleRecoveryController = new RepeatCycleRecoveryController(
   repeatCycleController,
   cycleScheduler,
@@ -65,7 +68,8 @@ const manualRunController = new ManualRunController(
   presetRepository,
   automationRunner,
   tabSessionManager,
-  repeatCycleController
+  repeatCycleController,
+  repeatCycleRegistry
 );
 
 chrome.runtime.onInstalled.addListener(() => {

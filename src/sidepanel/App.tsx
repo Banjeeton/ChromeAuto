@@ -595,7 +595,8 @@ function App() {
   };
 
   const canRun = manualStatus?.state === "ready" && busyAction === undefined;
-  const currentTabIsRunning = manualStatus?.state === "running";
+  const currentTabHasActiveCycle =
+    manualStatus?.state === "running" || manualStatus?.state === "waiting";
 
   return (
     <main className="app-shell">
@@ -661,7 +662,7 @@ function App() {
             </button>
             <button
               className="action-button secondary"
-              disabled={!currentTabIsRunning || busyAction === "stop"}
+              disabled={!currentTabHasActiveCycle || busyAction === "stop"}
               onClick={() => void stopActiveTab()}
             >
               {busyAction === "stop" ? "Stopping…" : "Stop"}
@@ -785,7 +786,7 @@ function App() {
             </div>
             <button
               className="icon-button danger-text"
-              disabled={sessions.length === 0 || busyAction === "stop-all"}
+              disabled={busyAction === "stop-all"}
               onClick={() => void stopAll()}
             >
               Stop All
@@ -908,6 +909,9 @@ function statusMessage(status?: ManualRunStatus): string {
   if (status.state === "running") {
     return `“${status.presetName}” is running in this tab.`;
   }
+  if (status.state === "waiting") {
+    return `“${status.presetName}” is waiting for its next run.`;
+  }
   return status.message;
 }
 
@@ -915,7 +919,7 @@ function statusTone(status?: ManualRunStatus): string {
   if (status?.state === "ready") {
     return "ready";
   }
-  if (status?.state === "running") {
+  if (status?.state === "running" || status?.state === "waiting") {
     return "running";
   }
   return "muted";

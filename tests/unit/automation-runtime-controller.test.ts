@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AutomationRuntimeController } from "../../src/core/application/automation-runtime-controller";
+import type { RepeatCycleController } from "../../src/core/application/repeat-cycle-controller";
 import { TabSessionManager } from "../../src/core/application/tab-session-manager";
 import type { AutomationEngine } from "../../src/core/ports/automation-engine";
 
@@ -64,6 +65,26 @@ describe("AutomationRuntimeController", () => {
     expect(engine.stop).not.toHaveBeenCalled();
   });
 
+  it("stops a waiting repeat cycle even when there is no running session", async () => {
+    const repeatCycles = createRepeatStopper();
+    repeatCycles.stopByTabId.mockResolvedValueOnce(true).mockResolvedValue(false);
+    const engine = createEngine();
+    const sessions = new TabSessionManager(engine);
+    const controller = new AutomationRuntimeController(sessions, repeatCycles);
+
+    await expect(controller.stopByTabId(33)).resolves.toEqual({
+      stopped: true,
+      tabId: 33
+    });
+    await expect(controller.stopByTabId(33)).resolves.toEqual({
+      stopped: false,
+      tabId: 33
+    });
+
+    expect(repeatCycles.stopByTabId).toHaveBeenCalledTimes(2);
+    expect(engine.stop).not.toHaveBeenCalled();
+  });
+
   it("stops all active tab sessions and reports their ids", async () => {
     const { controller, engine, sessions } = createRuntime(
       "session-1",
@@ -81,6 +102,25 @@ describe("AutomationRuntimeController", () => {
     expect(controller.sessions()).toEqual([]);
   });
 
+  it("Stop All combines running sessions and waiting cycles by tab", async () => {
+    const repeatCycles = createRepeatStopper();
+    repeatCycles.stopAll.mockResolvedValue([11, 22]);
+    const engine = createEngine();
+    const sessions = new TabSessionManager(engine, {
+      createSessionId: () => "session-1"
+    });
+    const controller = new AutomationRuntimeController(sessions, repeatCycles);
+    await sessions.start({ presetId: "preset-1", tabId: 11 });
+
+    await expect(controller.stopAll()).resolves.toEqual({
+      stoppedCount: 2,
+      sessionIds: ["session-1"]
+    });
+
+    expect(repeatCycles.stopAll).toHaveBeenCalledOnce();
+    expect(engine.stopAll).toHaveBeenCalledWith({ reason: "user" });
+  });
+
   it("returns immutable session and result collections", async () => {
     const { controller, sessions } = createRuntime("session-1");
     await sessions.start({ presetId: "preset-1", tabId: 11 });
@@ -93,3 +133,10 @@ describe("AutomationRuntimeController", () => {
     expect(Object.isFrozen(result.sessionIds)).toBe(true);
   });
 });
+
+function createRepeatStopper() {
+  return {
+    stopByTabId: vi.fn(async () => false),
+    stopAll: vi.fn(async () => [] as readonly number[])
+  } satisfies Pick<RepeatCycleController, "stopByTabId" | "stopAll">;
+}

@@ -170,6 +170,118 @@ describe("RepeatCycleController", () => {
       presetId: PRESET_ID
     });
   });
+
+  it("stops a waiting cycle, cancels its timer and treats repeated Stop as a no-op", async () => {
+    const harness = createHarness();
+    const state = {
+      tabId: 13,
+      presetId: PRESET_ID,
+      state: "waiting" as const,
+      nextRunAt: 50_000
+    };
+    await harness.registry.save(state);
+    await harness.scheduler.schedule({ ...state, scheduledFor: 50_000 });
+
+    await expect(harness.controller.stopByTabId(13)).resolves.toBe(true);
+    await expect(harness.controller.stopByTabId(13)).resolves.toBe(false);
+
+    expect(harness.scheduler.scheduled).toEqual([]);
+    await expect(harness.registry.getByTabId(13)).resolves.toEqual({
+      tabId: 13,
+      presetId: PRESET_ID,
+      state: "stopped"
+    });
+  });
+
+  it("does not schedule another timer when Stop races with pass completion", async () => {
+    let resolveRun: ((result: AutomationRunResult) => void) | undefined;
+    const harness = createHarness({
+      run: () =>
+        new Promise((resolve) => {
+          resolveRun = resolve;
+        })
+    });
+    const run = harness.controller.runManual(createPreset(), 14);
+    await vi.waitFor(() => expect(harness.runner.run).toHaveBeenCalledOnce());
+
+    await expect(harness.controller.stopByTabId(14)).resolves.toBe(true);
+    resolveRun?.(runResult(14));
+    await expect(run).resolves.toEqual(runResult(14));
+
+    expect(harness.scheduler.scheduled).toEqual([]);
+    await expect(harness.registry.getByTabId(14)).resolves.toMatchObject({
+      state: "stopped"
+    });
+  });
+
+  it("stops all waiting cycles without changing already stopped entries", async () => {
+    const harness = createHarness();
+    const secondPresetId = "550e8400-e29b-41d4-a716-446655440001";
+    await harness.registry.save({
+      tabId: 15,
+      presetId: PRESET_ID,
+      state: "waiting",
+      nextRunAt: 15_000
+    });
+    await harness.registry.save({
+      tabId: 16,
+      presetId: secondPresetId,
+      state: "waiting",
+      nextRunAt: 16_000
+    });
+    await harness.registry.save({
+      tabId: 17,
+      presetId: PRESET_ID,
+      state: "stopped"
+    });
+    await harness.scheduler.schedule({
+      tabId: 15,
+      presetId: PRESET_ID,
+      scheduledFor: 15_000
+    });
+    await harness.scheduler.schedule({
+      tabId: 16,
+      presetId: secondPresetId,
+      scheduledFor: 16_000
+    });
+    await harness.scheduler.schedule({
+      tabId: 18,
+      presetId: "orphaned-preset",
+      scheduledFor: 18_000
+    });
+
+    await expect(harness.controller.stopAll()).resolves.toEqual([15, 16, 18]);
+
+    expect(harness.scheduler.scheduled).toEqual([]);
+    await expect(harness.registry.getByTabId(15)).resolves.toMatchObject({
+      state: "stopped"
+    });
+    await expect(harness.registry.getByTabId(16)).resolves.toMatchObject({
+      state: "stopped"
+    });
+    expect(harness.registry.history.at(-1)).not.toMatchObject({ tabId: 17 });
+  });
+
+  it("does not let an in-flight pass schedule itself after Stop All", async () => {
+    let resolveRun: ((result: AutomationRunResult) => void) | undefined;
+    const harness = createHarness({
+      run: () =>
+        new Promise((resolve) => {
+          resolveRun = resolve;
+        })
+    });
+    const run = harness.controller.runManual(createPreset(), 19);
+    await vi.waitFor(() => expect(harness.runner.run).toHaveBeenCalledOnce());
+
+    await expect(harness.controller.stopAll()).resolves.toContain(19);
+    resolveRun?.(runResult(19));
+    await expect(run).resolves.toEqual(runResult(19));
+
+    expect(harness.scheduler.scheduled).toEqual([]);
+    await expect(harness.registry.getByTabId(19)).resolves.toMatchObject({
+      state: "stopped"
+    });
+  });
 });
 
 function createHarness(options: {

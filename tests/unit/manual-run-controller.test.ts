@@ -8,6 +8,7 @@ import type { PresetV1 } from "../../src/core/domain/preset";
 import type { AutomationEngine } from "../../src/core/ports/automation-engine";
 import type { PresetRepository } from "../../src/core/ports/preset-repository";
 import type { RepeatCycleController } from "../../src/core/application/repeat-cycle-controller";
+import type { RepeatCycleRegistry } from "../../src/core/ports/repeat-cycle-registry";
 
 const PRESET_ID = "550e8400-e29b-41d4-a716-446655440000";
 
@@ -71,6 +72,40 @@ describe("ManualRunController", () => {
     ).resolves.toMatchObject({ sessionId: "repeat-session" });
     expect(repeatCycles.runManual).toHaveBeenCalledWith(repeating, 42);
     expect(engine.start).not.toHaveBeenCalled();
+  });
+
+  it("reports a waiting repeat cycle so Stop remains available", async () => {
+    const repeating = createPreset({
+      siteSettings: {
+        enabled: true,
+        repeat: { enabled: true, intervalMinutes: 3 }
+      }
+    });
+    const repeatCycleStates = {
+      getByTabId: vi.fn(async () => ({
+        tabId: 42,
+        presetId: PRESET_ID,
+        state: "waiting" as const,
+        nextRunAt: 1_800_000_000_000
+      }))
+    } satisfies Pick<RepeatCycleRegistry, "getByTabId">;
+    const { controller } = createController(
+      [repeating],
+      createEngine(),
+      undefined,
+      repeatCycleStates
+    );
+
+    await expect(
+      controller.status(42, "https://example.com/account")
+    ).resolves.toEqual({
+      state: "waiting",
+      tabId: 42,
+      hostname: "example.com",
+      presetId: PRESET_ID,
+      presetName: "Example automation",
+      nextRunAt: 1_800_000_000_000
+    });
   });
 
   it("does not match another subdomain", async () => {
@@ -164,7 +199,8 @@ describe("ManualRunController", () => {
 function createController(
   presets: PresetV1[],
   engine = createEngine(),
-  repeatCycles?: Pick<RepeatCycleController, "runManual">
+  repeatCycles?: Pick<RepeatCycleController, "runManual">,
+  repeatCycleStates?: Pick<RepeatCycleRegistry, "getByTabId">
 ): { controller: ManualRunController; sessions: TabSessionManager } {
   const repository = new MemoryPresetRepository(presets);
   const sessions = new TabSessionManager(engine, {
@@ -181,7 +217,8 @@ function createController(
       repository,
       runner,
       sessions,
-      repeatCycles
+      repeatCycles,
+      repeatCycleStates
     ),
     sessions
   };
