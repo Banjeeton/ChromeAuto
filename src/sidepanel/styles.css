@@ -795,6 +795,37 @@ button:disabled {
   color: #bdc7d0;
 }
 
+.log-entry-content {
+  min-width: 0;
+}
+
+.log-details {
+  margin-top: 7px;
+  color: #82909d;
+}
+
+.log-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.log-details pre {
+  max-height: 180px;
+  margin: 7px 0 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid #303b46;
+  border-radius: 7px;
+  color: #aeb9c3;
+  background: #0b1014;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 360px) {
   .app-shell {
     padding: 14px;

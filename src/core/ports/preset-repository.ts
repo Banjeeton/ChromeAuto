@@ -4,6 +4,10 @@ export interface PresetRepository {
   list(): Promise<readonly PresetV1[]>;
   getById(presetId: string): Promise<PresetV1 | undefined>;
   save(preset: PresetV1): Promise<void>;
+  saveIfUnchanged(
+    preset: PresetV1,
+    expectedUpdatedAt: string | null
+  ): Promise<boolean>;
   remove(presetId: string): Promise<boolean>;
 }
 

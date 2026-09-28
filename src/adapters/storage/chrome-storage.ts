@@ -39,12 +39,37 @@ export class ChromePresetRepository implements PresetRepository {
   }
 
   async save(preset: PresetV1): Promise<void> {
-    const normalized = structuredClone(preset);
-    normalized.site.hostname = normalized.site.hostname.toLowerCase();
-    assertValidPreset(normalized);
+    await this.#save(preset, undefined);
+  }
+
+  async saveIfUnchanged(
+    preset: PresetV1,
+    expectedUpdatedAt: string | null
+  ): Promise<boolean> {
+    return this.#save(preset, expectedUpdatedAt);
+  }
+
+  async #save(
+    preset: PresetV1,
+    expectedUpdatedAt: string | null | undefined
+  ): Promise<boolean> {
+    const normalized = normalizePreset(preset);
 
     return this.#enqueueMutation(async () => {
       const presets = await this.#readPresets();
+      const existingIndex = presets.findIndex(
+        (item) => item.id === normalized.id
+      );
+      if (
+        expectedUpdatedAt !== undefined &&
+        (expectedUpdatedAt === null
+          ? existingIndex !== -1
+          : existingIndex === -1 ||
+            presets[existingIndex].updatedAt !== expectedUpdatedAt)
+      ) {
+        return false;
+      }
+
       const conflicting = presets.filter(
         (item) =>
           item.id !== normalized.id &&
@@ -59,15 +84,13 @@ export class ChromePresetRepository implements PresetRepository {
         );
       }
 
-      const existingIndex = presets.findIndex(
-        (item) => item.id === normalized.id
-      );
       if (existingIndex === -1) {
         presets.push(normalized);
       } else {
         presets[existingIndex] = normalized;
       }
       await this.#writePresets(presets);
+      return true;
     });
   }
 
@@ -112,6 +135,13 @@ export class ChromePresetRepository implements PresetRepository {
     );
     return result;
   }
+}
+
+function normalizePreset(preset: PresetV1): PresetV1 {
+  const normalized = structuredClone(preset);
+  normalized.site.hostname = normalized.site.hostname.toLowerCase();
+  assertValidPreset(normalized);
+  return normalized;
 }
 
 function decodePresetCollection(value: unknown): PresetV1[] {

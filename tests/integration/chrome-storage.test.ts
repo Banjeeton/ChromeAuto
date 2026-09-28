@@ -59,6 +59,35 @@ describe("Chrome storage adapter", () => {
     });
   });
 
+  it("atomically refuses stale or unexpected preset overwrites", async () => {
+    const repository = new ChromePresetRepository(new MemoryChromeStorage());
+    const original = createPreset();
+    await repository.save(original);
+
+    const changed = createPreset({
+      name: "Imported automation",
+      updatedAt: "2026-09-28T12:00:00.000Z"
+    });
+    await expect(
+      repository.saveIfUnchanged(changed, null)
+    ).resolves.toBe(false);
+    await expect(
+      repository.saveIfUnchanged(changed, "2026-09-26T12:00:00.000Z")
+    ).resolves.toBe(false);
+    await expect(repository.getById(PRESET_ID)).resolves.toMatchObject({
+      name: "Example automation",
+      updatedAt: original.updatedAt
+    });
+
+    await expect(
+      repository.saveIfUnchanged(changed, original.updatedAt)
+    ).resolves.toBe(true);
+    await expect(repository.getById(PRESET_ID)).resolves.toMatchObject({
+      name: "Imported automation",
+      updatedAt: changed.updatedAt
+    });
+  });
+
   it("serializes concurrent mutations without losing presets", async () => {
     const repository = new ChromePresetRepository(new MemoryChromeStorage());
 
@@ -219,6 +248,11 @@ describe("Chrome storage adapter", () => {
       operation: "write",
       cause
     } satisfies Partial<PresetRepositoryWriteError>);
+
+    storage.setError = undefined;
+    await expect(
+      new ChromePresetRepository(storage).list()
+    ).resolves.toEqual([]);
   });
 
   it("rejects an invalid preset before writing to storage", async () => {

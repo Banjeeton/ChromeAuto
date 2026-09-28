@@ -14,8 +14,10 @@ import { PRESET_STORAGE_KEY } from "../shared/constants";
 import {
   AUTOMATION_RUNTIME_MESSAGE,
   type AutomationRuntimeMessage,
+  type AutomationRuntimeErrorDetails,
   type AutomationRuntimeResponse
 } from "../shared/types/automation-runtime";
+import { formatRuntimeErrorDetails } from "../shared/utils";
 import {
   PresetEditor,
   PresetList,
@@ -32,6 +34,14 @@ type Notice = {
   id: number;
   status: "error" | "success";
   text: string;
+  details?: string;
+};
+
+type PendingPresetImport = {
+  source: string;
+  incomingPresetName: string;
+  existingPresetName: string;
+  existingUpdatedAt: string;
 };
 
 type PresetEditorState = {
@@ -57,13 +67,20 @@ function App() {
     useState<string>();
   const [deletingPresetId, setDeletingPresetId] = useState<string>();
   const [presetOperationError, setPresetOperationError] = useState<string>();
+  const [pendingPresetImport, setPendingPresetImport] =
+    useState<PendingPresetImport>();
   const presetRequestId = useRef(0);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const addNotice = useCallback(
-    (status: Notice["status"], text: string) => {
+    (status: Notice["status"], text: string, details?: string) => {
       setNotices((current) => [
-        { id: Date.now() + Math.random(), status, text },
+        {
+          id: Date.now() + Math.random(),
+          status,
+          text,
+          ...(details === undefined ? {} : { details })
+        },
         ...current
       ]);
     },
@@ -89,18 +106,23 @@ function App() {
     ]);
 
     if (!statusResponse.ok) {
-      throw new Error(statusResponse.error);
+      throw runtimeResponseError(statusResponse);
+    }
+    if (!sessionsResponse.ok) {
+      throw runtimeResponseError(sessionsResponse);
+    }
+    if (!logsResponse.ok) {
+      throw runtimeResponseError(logsResponse);
     }
     if (statusResponse.result.kind === "manual-status") {
       setManualStatus(statusResponse.result.status);
     }
     if (
-      sessionsResponse.ok &&
       sessionsResponse.result.kind === "sessions"
     ) {
       setSessions(sessionsResponse.result.sessions);
     }
-    if (logsResponse.ok && logsResponse.result.kind === "logs") {
+    if (logsResponse.result.kind === "logs") {
       setStepLogs(logsResponse.result.entries);
     }
   }, []);
@@ -117,7 +139,7 @@ function App() {
         action: "presets"
       });
       if (!response.ok) {
-        throw new Error(response.error);
+        throw runtimeResponseError(response);
       }
       if (response.result.kind !== "presets") {
         throw new Error("The extension returned an unexpected preset response.");
@@ -137,14 +159,11 @@ function App() {
       if (requestId !== presetRequestId.current) {
         return;
       }
-      setPresetListState({
-        status: "error",
-        message: `Unable to load presets: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      });
+      const message = `Unable to load presets: ${errorMessage(error)}`;
+      setPresetListState({ status: "error", message });
+      addNotice("error", message, errorTechnicalDetails(error));
     }
-  }, []);
+  }, [addNotice]);
 
   const refreshActiveTab = useCallback(async () => {
     const [tab] = await chrome.tabs.query({
@@ -169,12 +188,19 @@ function App() {
     void refreshActiveTab().catch((error: unknown) => {
       addNotice(
         "error",
-        error instanceof Error ? error.message : String(error)
+        `Unable to inspect the active tab: ${errorMessage(error)}`,
+        errorTechnicalDetails(error)
       );
     });
 
     const handleActivation = () => {
-      void refreshActiveTab();
+      void refreshActiveTab().catch((error: unknown) => {
+        addNotice(
+          "error",
+          `Unable to inspect the active tab: ${errorMessage(error)}`,
+          errorTechnicalDetails(error)
+        );
+      });
     };
     const handleUpdated = (
       _tabId: number,
@@ -182,7 +208,13 @@ function App() {
       tab: chrome.tabs.Tab
     ) => {
       if (tab.active && changeInfo.url !== undefined) {
-        void refreshActiveTab();
+        void refreshActiveTab().catch((error: unknown) => {
+          addNotice(
+            "error",
+            `Unable to inspect the active tab: ${errorMessage(error)}`,
+            errorTechnicalDetails(error)
+          );
+        });
       }
     };
     chrome.tabs.onActivated.addListener(handleActivation);
@@ -206,9 +238,8 @@ function App() {
         void refreshActiveTab().catch((error: unknown) => {
           addNotice(
             "error",
-            `Unable to refresh the active-site status: ${
-              error instanceof Error ? error.message : String(error)
-            }`
+            `Unable to refresh the active-site status: ${errorMessage(error)}`,
+            errorTechnicalDetails(error)
           );
         });
       }
@@ -247,7 +278,7 @@ function App() {
         tabId: activeTab.id
       });
       if (!response.ok) {
-        throw new Error(response.error);
+        throw runtimeResponseError(response);
       }
       if (response.result.kind === "run") {
         addNotice(
@@ -258,7 +289,8 @@ function App() {
     } catch (error) {
       addNotice(
         "error",
-        `Run failed: ${error instanceof Error ? error.message : String(error)}`
+        `Run failed: ${errorMessage(error)}`,
+        errorTechnicalDetails(error)
       );
     } finally {
       setBusyAction(undefined);
@@ -278,7 +310,7 @@ function App() {
         tabId: activeTab.id
       });
       if (!response.ok) {
-        throw new Error(response.error);
+        throw runtimeResponseError(response);
       }
       if (response.result.kind === "stop") {
         addNotice(
@@ -291,7 +323,8 @@ function App() {
     } catch (error) {
       addNotice(
         "error",
-        `Stop failed: ${error instanceof Error ? error.message : String(error)}`
+        `Stop failed: ${errorMessage(error)}`,
+        errorTechnicalDetails(error)
       );
     } finally {
       setBusyAction(undefined);
@@ -307,13 +340,14 @@ function App() {
         action: "stop-all"
       });
       if (!response.ok) {
-        throw new Error(response.error);
+        throw runtimeResponseError(response);
       }
       addNotice("success", "All automation sessions were stopped.");
     } catch (error) {
       addNotice(
         "error",
-        `Stop All failed: ${error instanceof Error ? error.message : String(error)}`
+        `Stop All failed: ${errorMessage(error)}`,
+        errorTechnicalDetails(error)
       );
     } finally {
       setBusyAction(undefined);
@@ -327,14 +361,23 @@ function App() {
     if (activeTab === undefined) {
       return;
     }
-    const response = await sendRuntimeMessage({
-      type: AUTOMATION_RUNTIME_MESSAGE,
-      action: "clear-logs",
-      tabId: activeTab.id
-    });
-    if (response.ok) {
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "clear-logs",
+        tabId: activeTab.id
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
       setStepLogs([]);
       setNotices([]);
+    } catch (error) {
+      addNotice(
+        "error",
+        `Unable to clear the run log: ${errorMessage(error)}`,
+        errorTechnicalDetails(error)
+      );
     }
   };
 
@@ -371,6 +414,22 @@ function App() {
     });
   };
 
+  const refreshPresetViews = async (completedAction: string) => {
+    await refreshPresets();
+    if (activeTab === undefined) {
+      return;
+    }
+    try {
+      await refreshWorkspace(activeTab.id);
+    } catch (error) {
+      addNotice(
+        "error",
+        `${completedAction}, but the active-site status could not be refreshed: ${errorMessage(error)}`,
+        errorTechnicalDetails(error)
+      );
+    }
+  };
+
   const savePreset = async (fields: PresetEditableFields) => {
     if (presetEditor === undefined) {
       return;
@@ -394,7 +453,7 @@ function App() {
             };
       const response = await sendRuntimeMessage(message);
       if (!response.ok) {
-        throw new Error(response.error);
+        throw runtimeResponseError(response);
       }
       if (response.result.kind !== "preset-saved") {
         throw new Error("The extension returned an unexpected save response.");
@@ -410,16 +469,11 @@ function App() {
             ? `Preset “${response.result.preset.name}” was duplicated.`
             : `Preset “${response.result.preset.name}” was created.`
       );
-      await refreshPresets();
-      if (activeTab !== undefined) {
-        await refreshWorkspace(activeTab.id);
-      }
+      await refreshPresetViews("The preset was saved");
     } catch (error) {
-      setPresetSaveError(
-        `Unable to save preset: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      const message = `Unable to save preset: ${errorMessage(error)}`;
+      setPresetSaveError(message);
+      addNotice("error", message, errorTechnicalDetails(error));
     } finally {
       setBusyAction(undefined);
     }
@@ -435,7 +489,7 @@ function App() {
         presetId: preset.id
       });
       if (!response.ok) {
-        throw new Error(response.error);
+        throw runtimeResponseError(response);
       }
       if (response.result.kind !== "preset-deleted") {
         throw new Error("The extension returned an unexpected delete response.");
@@ -448,52 +502,62 @@ function App() {
           : current
       );
       addNotice("success", `Preset “${preset.name}” was deleted.`);
-      await refreshPresets();
-      if (activeTab !== undefined) {
-        await refreshWorkspace(activeTab.id);
-      }
+      await refreshPresetViews("The preset was deleted");
     } catch (error) {
-      setPresetOperationError(
-        `Unable to delete preset: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      const message = `Unable to delete preset: ${errorMessage(error)}`;
+      setPresetOperationError(message);
+      addNotice("error", message, errorTechnicalDetails(error));
     } finally {
       setDeletingPresetId(undefined);
     }
   };
 
-  const importPresetFile = async (file: File) => {
+  const importPreset = async (
+    source: File | string,
+    overwriteExistingUpdatedAt?: string
+  ) => {
     setBusyAction("import-preset");
     setPresetOperationError(undefined);
+    if (overwriteExistingUpdatedAt === undefined) {
+      setPendingPresetImport(undefined);
+    }
     try {
+      const json = typeof source === "string" ? source : await source.text();
       const response = await sendRuntimeMessage({
         type: AUTOMATION_RUNTIME_MESSAGE,
         action: "import-preset",
-        source: await file.text()
+        source: json,
+        ...(overwriteExistingUpdatedAt === undefined
+          ? {}
+          : { overwriteExistingUpdatedAt })
       });
       if (!response.ok) {
-        throw new Error(response.error);
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind === "preset-import-confirmation-required") {
+        setPendingPresetImport({
+          source: json,
+          incomingPresetName: response.result.incomingPresetName,
+          existingPresetName: response.result.existingPresetName,
+          existingUpdatedAt: response.result.existingUpdatedAt
+        });
+        return;
       }
       if (response.result.kind !== "preset-imported") {
         throw new Error("The extension returned an unexpected import response.");
       }
 
+      setPendingPresetImport(undefined);
       setSelectedPresetId(response.result.preset.id);
       addNotice(
         "success",
         `Preset “${response.result.preset.name}” was imported.`
       );
-      await refreshPresets();
-      if (activeTab !== undefined) {
-        await refreshWorkspace(activeTab.id);
-      }
+      await refreshPresetViews("The preset was imported");
     } catch (error) {
-      setPresetOperationError(
-        `Unable to import preset: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      const message = `Unable to import preset: ${errorMessage(error)}`;
+      setPresetOperationError(message);
+      addNotice("error", message, errorTechnicalDetails(error));
     } finally {
       setBusyAction(undefined);
     }
@@ -509,7 +573,7 @@ function App() {
         presetId: preset.id
       });
       if (!response.ok) {
-        throw new Error(response.error);
+        throw runtimeResponseError(response);
       }
       if (response.result.kind !== "preset-exported") {
         throw new Error("The extension returned an unexpected export response.");
@@ -522,11 +586,9 @@ function App() {
       );
       addNotice("success", `Preset “${preset.name}” was exported.`);
     } catch (error) {
-      setPresetOperationError(
-        `Unable to export preset: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      const message = `Unable to export preset: ${errorMessage(error)}`;
+      setPresetOperationError(message);
+      addNotice("error", message, errorTechnicalDetails(error));
     } finally {
       setBusyAction(undefined);
     }
@@ -565,7 +627,15 @@ function App() {
             </div>
             <button
               className="icon-button"
-              onClick={() => void refreshActiveTab()}
+              onClick={() =>
+                void refreshActiveTab().catch((error: unknown) => {
+                  addNotice(
+                    "error",
+                    `Unable to inspect the active tab: ${errorMessage(error)}`,
+                    errorTechnicalDetails(error)
+                  );
+                })
+              }
             >
               Refresh
             </button>
@@ -628,7 +698,7 @@ function App() {
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = "";
                   if (file !== undefined) {
-                    void importPresetFile(file);
+                    void importPreset(file);
                   }
                 }}
                 ref={importInputRef}
@@ -669,6 +739,21 @@ function App() {
             selectedPresetId={selectedPresetId}
             state={presetListState}
           />
+
+          {pendingPresetImport !== undefined && (
+            <PresetOverwriteConfirmation
+              busy={busyAction === "import-preset"}
+              existingPresetName={pendingPresetImport.existingPresetName}
+              incomingPresetName={pendingPresetImport.incomingPresetName}
+              onCancel={() => setPendingPresetImport(undefined)}
+              onConfirm={() =>
+                void importPreset(
+                  pendingPresetImport.source,
+                  pendingPresetImport.existingUpdatedAt
+                )
+              }
+            />
+          )}
 
           {presetOperationError !== undefined && (
             <p className="editor-error preset-operation-error" role="alert">
@@ -738,7 +823,15 @@ function App() {
               {notices.map((notice) => (
                 <li className={`log-entry ${notice.status}`} key={notice.id}>
                   <span>{notice.status === "success" ? "DONE" : "ERROR"}</span>
-                  <p>{notice.text}</p>
+                  <div className="log-entry-content">
+                    <p>{notice.text}</p>
+                    {notice.details !== undefined && (
+                      <details className="log-details">
+                        <summary>Technical details</summary>
+                        <pre>{notice.details}</pre>
+                      </details>
+                    )}
+                  </div>
                 </li>
               ))}
               {[...stepLogs].reverse().map((entry) => (
@@ -788,6 +881,80 @@ function statusTone(status?: ManualRunStatus): string {
 }
 
 export default App;
+
+type PresetOverwriteConfirmationProps = {
+  readonly busy: boolean;
+  readonly existingPresetName: string;
+  readonly incomingPresetName: string;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+};
+
+export function PresetOverwriteConfirmation({
+  busy,
+  existingPresetName,
+  incomingPresetName,
+  onCancel,
+  onConfirm
+}: PresetOverwriteConfirmationProps) {
+  return (
+    <div className="delete-confirmation overwrite-confirmation" role="alert">
+      <p>
+        Replace saved preset <strong>“{existingPresetName}”</strong> with imported
+        preset <strong>“{incomingPresetName}”</strong>? The saved preset with this
+        ID will be overwritten.
+      </p>
+      <div>
+        <button
+          className="inline-button neutral"
+          disabled={busy}
+          onClick={onCancel}
+          type="button"
+        >
+          Cancel
+        </button>
+        <button
+          className="inline-button destructive"
+          disabled={busy}
+          onClick={onConfirm}
+          type="button"
+        >
+          {busy ? "Replacing…" : "Replace preset"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+class RuntimeRequestError extends Error {
+  readonly details: AutomationRuntimeErrorDetails;
+
+  constructor(message: string, details: AutomationRuntimeErrorDetails) {
+    super(message);
+    this.name = "RuntimeRequestError";
+    this.details = details;
+  }
+}
+
+function runtimeResponseError(
+  response: Extract<AutomationRuntimeResponse, { readonly ok: false }>
+): RuntimeRequestError {
+  return new RuntimeRequestError(response.error, response.details);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function errorTechnicalDetails(error: unknown): string {
+  if (error instanceof RuntimeRequestError) {
+    return formatRuntimeErrorDetails(error.details);
+  }
+  if (error instanceof Error) {
+    return error.stack ?? `${error.name}: ${error.message}`;
+  }
+  return String(error);
+}
 
 function sortPresets(presets: readonly PresetV1[]): readonly PresetV1[] {
   return [...presets].sort((left, right) =>

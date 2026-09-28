@@ -41,6 +41,7 @@ export type AutomationRuntimeMessage =
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
       readonly action: "import-preset";
       readonly source: string;
+      readonly overwriteExistingUpdatedAt?: string;
     }
   | {
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
@@ -59,6 +60,13 @@ export type AutomationRuntimeResult =
   | { readonly kind: "preset-deleted"; readonly presetId: string }
   | { readonly kind: "preset-imported"; readonly preset: PresetV1 }
   | {
+      readonly kind: "preset-import-confirmation-required";
+      readonly incomingPresetId: string;
+      readonly incomingPresetName: string;
+      readonly existingPresetName: string;
+      readonly existingUpdatedAt: string;
+    }
+  | {
       readonly kind: "preset-exported";
       readonly presetId: string;
       readonly presetName: string;
@@ -69,4 +77,18 @@ export type AutomationRuntimeResult =
 
 export type AutomationRuntimeResponse =
   | { readonly ok: true; readonly result: AutomationRuntimeResult }
-  | { readonly ok: false; readonly error: string };
+  | {
+      readonly ok: false;
+      readonly error: string;
+      readonly details: AutomationRuntimeErrorDetails;
+    };
+
+export interface AutomationRuntimeErrorDetails {
+  readonly action: AutomationRuntimeMessage["action"];
+  readonly name: string;
+  readonly message: string;
+  readonly code?: string;
+  readonly cause?: string;
+  readonly data?: string;
+  readonly stack?: string;
+}

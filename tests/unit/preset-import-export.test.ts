@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   exportPresetJson,
   importPresetJson,
+  importPresetJsonSafely,
   parsePresetJson,
   PresetJsonSyntaxError
 } from "../../src/adapters/storage/preset-import-export";
@@ -20,6 +21,62 @@ describe("preset JSON import and export", () => {
       validPresetJson
     );
     expect(repository.save).toHaveBeenCalledWith(validPresetJson);
+  });
+
+  it("requires explicit confirmation before overwriting an imported preset", async () => {
+    const existing = structuredClone(validPresetJson) as PresetV1;
+    existing.name = "Saved preset";
+    const incoming = structuredClone(validPresetJson) as PresetV1;
+    incoming.name = "Imported preset";
+    const repository = createRepository(existing);
+
+    await expect(
+      importPresetJsonSafely(JSON.stringify(incoming), repository)
+    ).resolves.toMatchObject({
+      status: "confirmation-required",
+      incomingPreset: { name: "Imported preset" },
+      existingPreset: { name: "Saved preset" }
+    });
+    expect(repository.save).not.toHaveBeenCalled();
+    expect(repository.saveIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it("overwrites only the unchanged preset that the user confirmed", async () => {
+    const existing = structuredClone(validPresetJson) as PresetV1;
+    const incoming = structuredClone(validPresetJson) as PresetV1;
+    incoming.name = "Imported preset";
+    const repository = createRepository(existing);
+
+    await expect(
+      importPresetJsonSafely(
+        JSON.stringify(incoming),
+        repository,
+        existing.updatedAt
+      )
+    ).resolves.toMatchObject({
+      status: "imported",
+      preset: { name: "Imported preset" }
+    });
+    expect(repository.saveIfUnchanged).toHaveBeenCalledWith(
+      incoming,
+      existing.updatedAt
+    );
+  });
+
+  it("asks again when the saved preset changed after confirmation", async () => {
+    const existing = structuredClone(validPresetJson) as PresetV1;
+    existing.updatedAt = "2026-09-28T12:00:00.000Z";
+    const repository = createRepository(existing);
+
+    await expect(
+      importPresetJsonSafely(
+        JSON.stringify(validPresetJson),
+        repository,
+        "2026-09-27T12:00:00.000Z"
+      )
+    ).resolves.toMatchObject({ status: "confirmation-required" });
+    expect(repository.save).not.toHaveBeenCalled();
+    expect(repository.saveIfUnchanged).not.toHaveBeenCalled();
   });
 
   it("reports malformed JSON at the document root", () => {
@@ -93,13 +150,20 @@ describe("preset JSON import and export", () => {
   });
 });
 
-function createRepository(): PresetRepository & {
+function createRepository(existing?: PresetV1): PresetRepository & {
   save: ReturnType<typeof vi.fn>;
+  saveIfUnchanged: ReturnType<typeof vi.fn>;
 } {
   return {
-    list: vi.fn(async () => []),
-    getById: vi.fn(async () => undefined),
+    list: vi.fn(async () => (existing === undefined ? [] : [existing])),
+    getById: vi.fn(async (id: string) =>
+      existing?.id === id ? structuredClone(existing) : undefined
+    ),
     save: vi.fn(async () => undefined),
+    saveIfUnchanged: vi.fn(
+      async (_preset: PresetV1, expectedUpdatedAt: string | null) =>
+        expectedUpdatedAt === (existing?.updatedAt ?? null)
+    ),
     remove: vi.fn(async () => false)
   };
 }

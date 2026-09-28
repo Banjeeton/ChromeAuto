@@ -213,6 +213,11 @@ class MemoryPresetRepository implements PresetRepository {
     this.presets.push(preset);
   }
 
+  async saveIfUnchanged(preset: PresetV1): Promise<boolean> {
+    this.presets.push(preset);
+    return true;
+  }
+
   async remove(presetId: string): Promise<boolean> {
     const index = this.presets.findIndex((preset) => preset.id === presetId);
     if (index === -1) {

@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import App, { createPresetFilename } from "../../src/sidepanel/App";
+import App, {
+  createPresetFilename,
+  PresetOverwriteConfirmation
+} from "../../src/sidepanel/App";
 
 describe("side panel React entry", () => {
   it("renders the manual automation controls", () => {
@@ -31,5 +34,23 @@ describe("side panel React entry", () => {
         "550e8400-e29b-41d4-a716-446655440000"
       )
     ).toBe("preset-550e8400.preset.json");
+  });
+
+  it("renders an explicit confirmation before import overwrites a preset", () => {
+    const html = renderToStaticMarkup(
+      <PresetOverwriteConfirmation
+        busy={false}
+        existingPresetName="Saved checkout"
+        incomingPresetName="Imported checkout"
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />
+    );
+
+    expect(html).toContain("Saved checkout");
+    expect(html).toContain("Imported checkout");
+    expect(html).toContain("will be overwritten");
+    expect(html).toContain("Replace preset");
+    expect(html).toContain("Cancel");
   });
 });

@@ -262,6 +262,10 @@ function createRepository(
     }),
     getById: vi.fn(async () => read()),
     save: vi.fn(async (preset: PresetV1) => write(preset)),
+    saveIfUnchanged: vi.fn(async (preset: PresetV1) => {
+      write(preset);
+      return true;
+    }),
     remove: vi.fn(async (presetId: string) => remove(presetId))
   };
 }

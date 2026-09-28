@@ -3,7 +3,7 @@ import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-lo
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import {
   exportPresetJson,
-  importPresetJson
+  importPresetJsonSafely
 } from "../adapters/storage/preset-import-export";
 import { AutomationRunner } from "../core/application/automation-runner";
 import { ManualRunController } from "../core/application/manual-run-controller";
@@ -18,6 +18,7 @@ import {
   type AutomationRuntimeResponse,
   type AutomationRuntimeResult
 } from "../shared/types/automation-runtime";
+import { createRuntimeErrorDetails } from "../shared/utils";
 import {
   PLAYWRIGHT_CRX_SPIKE_MESSAGE,
   type PlaywrightSpikeMessage,
@@ -86,9 +87,14 @@ chrome.runtime.onMessage.addListener(
     void handleAutomationRuntimeMessage(message)
       .then((result) => sendResponse({ ok: true, result }))
       .catch((error: unknown) => {
+        console.error(
+          `Automation runtime action “${message.action}” failed.`,
+          error
+        );
         sendResponse({
           ok: false,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
+          details: createRuntimeErrorDetails(message.action, error)
         });
       });
 
@@ -136,7 +142,13 @@ function isAutomationRuntimeMessage(
   }
 
   if (candidate.action === "import-preset") {
-    return "source" in candidate && typeof candidate.source === "string";
+    return (
+      "source" in candidate &&
+      typeof candidate.source === "string" &&
+      (!("overwriteExistingUpdatedAt" in candidate) ||
+        candidate.overwriteExistingUpdatedAt === undefined ||
+        typeof candidate.overwriteExistingUpdatedAt === "string")
+    );
   }
 
   if (candidate.action === "export-preset") {
@@ -201,8 +213,21 @@ async function handleAutomationRuntimeMessage(
       return { kind: "preset-deleted", presetId: message.presetId };
     }
     case "import-preset": {
-      const preset = await importPresetJson(message.source, presetRepository);
-      return { kind: "preset-imported", preset };
+      const result = await importPresetJsonSafely(
+        message.source,
+        presetRepository,
+        message.overwriteExistingUpdatedAt
+      );
+      if (result.status === "confirmation-required") {
+        return {
+          kind: "preset-import-confirmation-required",
+          incomingPresetId: result.incomingPreset.id,
+          incomingPresetName: result.incomingPreset.name,
+          existingPresetName: result.existingPreset.name,
+          existingUpdatedAt: result.existingPreset.updatedAt
+        };
+      }
+      return { kind: "preset-imported", preset: result.preset };
     }
     case "export-preset": {
       const preset = await presetRepository.getById(message.presetId);
