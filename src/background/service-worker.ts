@@ -1,5 +1,10 @@
 import { PlaywrightEngine } from "../adapters/playwright/playwright-engine";
+import {
+  ChromeAlarmScheduler,
+  parseCycleAlarmName
+} from "../adapters/chrome/alarm-scheduler";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
+import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import {
   exportPresetJson,
@@ -7,6 +12,7 @@ import {
 } from "../adapters/storage/preset-import-export";
 import { AutomationRunner } from "../core/application/automation-runner";
 import { ManualRunController } from "../core/application/manual-run-controller";
+import { RepeatCycleController } from "../core/application/repeat-cycle-controller";
 import {
   PresetEditorController
 } from "../core/application/preset-editor";
@@ -37,10 +43,18 @@ const automationRunner = new AutomationRunner(
   tabSessionManager,
   executionLog
 );
+const cycleScheduler = new ChromeAlarmScheduler();
+const repeatCycleRegistry = new ChromeRepeatCycleRegistry();
+const repeatCycleController = new RepeatCycleController(
+  automationRunner,
+  cycleScheduler,
+  repeatCycleRegistry
+);
 const manualRunController = new ManualRunController(
   presetRepository,
   automationRunner,
-  tabSessionManager
+  tabSessionManager,
+  repeatCycleController
 );
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -48,6 +62,21 @@ chrome.runtime.onInstalled.addListener(() => {
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error: unknown) => {
       console.error("Unable to configure the side panel behavior.", error);
+    });
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  const identity = parseCycleAlarmName(alarm.name);
+  if (identity === undefined) {
+    return;
+  }
+
+  void runScheduledCycle(identity.tabId, identity.presetId, alarm.scheduledTime)
+    .catch((error: unknown) => {
+      console.error(
+        `Scheduled repeat cycle for tab ${identity.tabId} failed.`,
+        error
+      );
     });
 });
 
@@ -245,6 +274,19 @@ async function getTabUrl(tabId: number): Promise<string> {
     throw new Error(`Chrome did not expose the URL for tab ${tabId}.`);
   }
   return tab.url;
+}
+
+async function runScheduledCycle(
+  tabId: number,
+  presetId: string,
+  scheduledFor: number
+): Promise<void> {
+  const preset = await presetRepository.getById(presetId);
+  if (preset === undefined) {
+    await repeatCycleRegistry.removeByTabId(tabId);
+    return;
+  }
+  await repeatCycleController.runScheduled(preset, tabId, scheduledFor);
 }
 
 function isPlaywrightSpikeMessage(

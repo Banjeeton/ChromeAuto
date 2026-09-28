@@ -7,6 +7,7 @@ import { TabSessionManager } from "../../src/core/application/tab-session-manage
 import type { PresetV1 } from "../../src/core/domain/preset";
 import type { AutomationEngine } from "../../src/core/ports/automation-engine";
 import type { PresetRepository } from "../../src/core/ports/preset-repository";
+import type { RepeatCycleController } from "../../src/core/application/repeat-cycle-controller";
 
 const PRESET_ID = "550e8400-e29b-41d4-a716-446655440000";
 
@@ -40,6 +41,36 @@ describe("ManualRunController", () => {
         step: expect.objectContaining({ id: "wait-ready" })
       })
     );
+  });
+
+  it("starts a repeat cycle for a preset with repeat enabled", async () => {
+    const engine = createEngine();
+    const repeatCycles = {
+      runManual: vi.fn(async () => ({
+        sessionId: "repeat-session",
+        presetId: PRESET_ID,
+        tabId: 42,
+        executedSteps: 1,
+        skippedSteps: 0
+      }))
+    } satisfies Pick<RepeatCycleController, "runManual">;
+    const repeating = createPreset({
+      siteSettings: {
+        enabled: true,
+        repeat: { enabled: true, intervalMinutes: 3 }
+      }
+    });
+    const { controller } = createController(
+      [repeating],
+      engine,
+      repeatCycles
+    );
+
+    await expect(
+      controller.run(42, "https://example.com")
+    ).resolves.toMatchObject({ sessionId: "repeat-session" });
+    expect(repeatCycles.runManual).toHaveBeenCalledWith(repeating, 42);
+    expect(engine.start).not.toHaveBeenCalled();
   });
 
   it("does not match another subdomain", async () => {
@@ -132,7 +163,8 @@ describe("ManualRunController", () => {
 
 function createController(
   presets: PresetV1[],
-  engine = createEngine()
+  engine = createEngine(),
+  repeatCycles?: Pick<RepeatCycleController, "runManual">
 ): { controller: ManualRunController; sessions: TabSessionManager } {
   const repository = new MemoryPresetRepository(presets);
   const sessions = new TabSessionManager(engine, {
@@ -145,7 +177,12 @@ function createController(
     { createLogEntryId: () => "log-1" }
   );
   return {
-    controller: new ManualRunController(repository, runner, sessions),
+    controller: new ManualRunController(
+      repository,
+      runner,
+      sessions,
+      repeatCycles
+    ),
     sessions
   };
 }

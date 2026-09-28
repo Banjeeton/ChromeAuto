@@ -10,6 +10,7 @@ import type { TabSessionManager } from "./tab-session-manager";
 import { validatePresetForRun } from "../domain/preset-validator";
 import type { PresetV1 } from "../domain/preset";
 import type { PresetRepository } from "../ports/preset-repository";
+import type { RepeatCycleController } from "./repeat-cycle-controller";
 
 export type ManualRunUnavailableReason =
   | "unsupported-url"
@@ -53,15 +54,18 @@ export class ManualRunController {
   readonly #presets: PresetRepository;
   readonly #runner: AutomationRunner;
   readonly #sessions: TabSessionManager;
+  readonly #repeatCycles?: Pick<RepeatCycleController, "runManual">;
 
   constructor(
     presets: PresetRepository,
     runner: AutomationRunner,
-    sessions: TabSessionManager
+    sessions: TabSessionManager,
+    repeatCycles?: Pick<RepeatCycleController, "runManual">
   ) {
     this.#presets = presets;
     this.#runner = runner;
     this.#sessions = sessions;
+    this.#repeatCycles = repeatCycles;
   }
 
   async status(tabId: number, tabUrl: string): Promise<ManualRunStatus> {
@@ -76,6 +80,13 @@ export class ManualRunController {
           ? resolved.status.message
           : "This tab already has a running automation."
       );
+    }
+
+    if (resolved.preset.siteSettings.repeat.enabled) {
+      if (this.#repeatCycles === undefined) {
+        throw new Error("Repeat-cycle runtime is unavailable.");
+      }
+      return this.#repeatCycles.runManual(resolved.preset, tabId);
     }
 
     return this.#runner.run({
