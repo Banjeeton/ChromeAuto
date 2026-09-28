@@ -9,6 +9,7 @@ type PresetListProps = {
   readonly state: PresetListState;
   readonly selectedPresetId?: string;
   readonly onSelect: (presetId: string) => void;
+  readonly onEdit: (preset: PresetV1) => void;
   readonly onRetry: () => void;
 };
 
@@ -16,6 +17,7 @@ export function PresetList({
   state,
   selectedPresetId,
   onSelect,
+  onEdit,
   onRetry
 }: PresetListProps) {
   if (state.status === "loading") {
@@ -81,13 +83,19 @@ export function PresetList({
       </div>
 
       {selectedPreset !== undefined && (
-        <SelectedPresetDetails preset={selectedPreset} />
+        <SelectedPresetDetails onEdit={onEdit} preset={selectedPreset} />
       )}
     </>
   );
 }
 
-function SelectedPresetDetails({ preset }: { readonly preset: PresetV1 }) {
+function SelectedPresetDetails({
+  preset,
+  onEdit
+}: {
+  readonly preset: PresetV1;
+  readonly onEdit: (preset: PresetV1) => void;
+}) {
   const repeat = preset.siteSettings.repeat;
 
   return (
@@ -114,6 +122,13 @@ function SelectedPresetDetails({ preset }: { readonly preset: PresetV1 }) {
           </dd>
         </div>
       </dl>
+      <button
+        className="inline-button neutral preset-edit-button"
+        onClick={() => onEdit(preset)}
+        type="button"
+      >
+        Edit preset
+      </button>
     </div>
   );
 }

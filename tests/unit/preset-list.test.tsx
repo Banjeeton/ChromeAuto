@@ -63,6 +63,7 @@ function render(
   return renderToStaticMarkup(
     <PresetList
       onRetry={vi.fn()}
+      onEdit={vi.fn()}
       onSelect={vi.fn()}
       selectedPresetId={selectedPresetId}
       state={state}

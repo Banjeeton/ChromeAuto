@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ManualRunStatus } from "../core/application/manual-run-controller";
+import {
+  createPresetEditorDefaults,
+  editableFieldsFromPreset,
+  type PresetEditableFields
+} from "../core/application/preset-editor";
 import type { PresetV1 } from "../core/domain/preset";
 import type { RunSession } from "../core/domain/run-session";
 import type { StepLogEntry } from "../core/domain/step-log-entry";
@@ -10,7 +15,11 @@ import {
   type AutomationRuntimeMessage,
   type AutomationRuntimeResponse
 } from "../shared/types/automation-runtime";
-import { PresetList, type PresetListState } from "./features/presets";
+import {
+  PresetEditor,
+  PresetList,
+  type PresetListState
+} from "./features/presets";
 
 type ActiveTab = {
   id: number;
@@ -24,6 +33,12 @@ type Notice = {
   text: string;
 };
 
+type PresetEditorState = {
+  readonly mode: "create" | "edit";
+  readonly presetId?: string;
+  readonly fields: PresetEditableFields;
+};
+
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>();
   const [manualStatus, setManualStatus] = useState<ManualRunStatus>();
@@ -35,6 +50,8 @@ function App() {
     status: "loading"
   });
   const [selectedPresetId, setSelectedPresetId] = useState<string>();
+  const [presetEditor, setPresetEditor] = useState<PresetEditorState>();
+  const [presetSaveError, setPresetSaveError] = useState<string>();
   const presetRequestId = useRef(0);
 
   const addNotice = useCallback(
@@ -307,6 +324,76 @@ function App() {
     }
   };
 
+  const openNewPreset = () => {
+    const site = defaultSiteFromUrl(activeTab?.url);
+    setPresetSaveError(undefined);
+    setPresetEditor({
+      mode: "create",
+      fields: createPresetEditorDefaults(site.hostname, site.protocol)
+    });
+  };
+
+  const openPresetEditor = (preset: PresetV1) => {
+    setPresetSaveError(undefined);
+    setPresetEditor({
+      mode: "edit",
+      presetId: preset.id,
+      fields: editableFieldsFromPreset(preset)
+    });
+  };
+
+  const savePreset = async (fields: PresetEditableFields) => {
+    if (presetEditor === undefined) {
+      return;
+    }
+
+    setBusyAction("save-preset");
+    setPresetSaveError(undefined);
+    try {
+      const message: AutomationRuntimeMessage =
+        presetEditor.mode === "create"
+          ? {
+              type: AUTOMATION_RUNTIME_MESSAGE,
+              action: "create-preset",
+              fields
+            }
+          : {
+              type: AUTOMATION_RUNTIME_MESSAGE,
+              action: "update-preset",
+              presetId: presetEditor.presetId ?? "",
+              fields
+            };
+      const response = await sendRuntimeMessage(message);
+      if (!response.ok) {
+        throw new Error(response.error);
+      }
+      if (response.result.kind !== "preset-saved") {
+        throw new Error("The extension returned an unexpected save response.");
+      }
+
+      setSelectedPresetId(response.result.preset.id);
+      setPresetEditor(undefined);
+      addNotice(
+        "success",
+        presetEditor.mode === "create"
+          ? `Preset “${response.result.preset.name}” was created.`
+          : `Preset “${response.result.preset.name}” was updated.`
+      );
+      await refreshPresets();
+      if (activeTab !== undefined) {
+        await refreshWorkspace(activeTab.id);
+      }
+    } catch (error) {
+      setPresetSaveError(
+        `Unable to save preset: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } finally {
+      setBusyAction(undefined);
+    }
+  };
+
   const canRun = manualStatus?.state === "ready" && busyAction === undefined;
   const currentTabIsRunning = manualStatus?.state === "running";
 
@@ -380,21 +467,46 @@ function App() {
               <p className="section-label">Automation library</p>
               <h2 id="presets-title">Saved presets</h2>
             </div>
-            <button
-              className="icon-button"
-              onClick={() => void refreshPresets(true)}
-              type="button"
-            >
-              Refresh
-            </button>
+            <div className="header-actions">
+              <button
+                className="icon-button"
+                onClick={() => void refreshPresets(true)}
+                type="button"
+              >
+                Refresh
+              </button>
+              <button
+                className="inline-button neutral"
+                onClick={openNewPreset}
+                type="button"
+              >
+                New preset
+              </button>
+            </div>
           </div>
 
           <PresetList
+            onEdit={openPresetEditor}
             onRetry={() => void refreshPresets(true)}
             onSelect={setSelectedPresetId}
             selectedPresetId={selectedPresetId}
             state={presetListState}
           />
+
+          {presetEditor !== undefined && (
+            <PresetEditor
+              initialFields={presetEditor.fields}
+              key={`${presetEditor.mode}-${presetEditor.presetId ?? "new"}`}
+              mode={presetEditor.mode}
+              onCancel={() => {
+                setPresetEditor(undefined);
+                setPresetSaveError(undefined);
+              }}
+              onSave={(fields) => void savePreset(fields)}
+              saveError={presetSaveError}
+              saving={busyAction === "save-preset"}
+            />
+          )}
         </section>
 
         <section className="card" aria-labelledby="sessions-title">
@@ -498,4 +610,23 @@ function sortPresets(presets: readonly PresetV1[]): readonly PresetV1[] {
   return [...presets].sort((left, right) =>
     left.name.localeCompare(right.name, "en", { sensitivity: "base" })
   );
+}
+
+function defaultSiteFromUrl(url?: string): {
+  hostname: string;
+  protocol: "http" | "https";
+} {
+  if (url === undefined) {
+    return { hostname: "", protocol: "https" };
+  }
+
+  try {
+    const parsed = new URL(url);
+    return {
+      hostname: parsed.hostname,
+      protocol: parsed.protocol === "http:" ? "http" : "https"
+    };
+  } catch {
+    return { hostname: "", protocol: "https" };
+  }
 }

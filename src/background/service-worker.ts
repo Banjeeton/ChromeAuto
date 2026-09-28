@@ -3,6 +3,9 @@ import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-lo
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import { AutomationRunner } from "../core/application/automation-runner";
 import { ManualRunController } from "../core/application/manual-run-controller";
+import {
+  PresetEditorController
+} from "../core/application/preset-editor";
 import { AutomationRuntimeController } from "../core/application/automation-runtime-controller";
 import { TabSessionManager } from "../core/application/tab-session-manager";
 import {
@@ -23,6 +26,7 @@ const tabSessionManager = new TabSessionManager(playwrightEngine);
 const runtimeController = new AutomationRuntimeController(tabSessionManager);
 const executionLog = new InMemoryExecutionLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
+const presetEditorController = new PresetEditorController(presetRepository);
 const automationRunner = new AutomationRunner(
   playwrightEngine,
   tabSessionManager,
@@ -108,6 +112,19 @@ function isAutomationRuntimeMessage(
     return true;
   }
 
+  if (candidate.action === "create-preset") {
+    return "fields" in candidate && isObject(candidate.fields);
+  }
+
+  if (candidate.action === "update-preset") {
+    return (
+      "presetId" in candidate &&
+      typeof candidate.presetId === "string" &&
+      "fields" in candidate &&
+      isObject(candidate.fields)
+    );
+  }
+
   return (
     (candidate.action === "manual-status" ||
       candidate.action === "run" ||
@@ -148,6 +165,17 @@ async function handleAutomationRuntimeMessage(
       return { kind: "sessions", sessions: runtimeController.sessions() };
     case "presets":
       return { kind: "presets", presets: await presetRepository.list() };
+    case "create-preset": {
+      const preset = await presetEditorController.create(message.fields);
+      return { kind: "preset-saved", preset };
+    }
+    case "update-preset": {
+      const preset = await presetEditorController.update(
+        message.presetId,
+        message.fields
+      );
+      return { kind: "preset-saved", preset };
+    }
     case "logs":
       return {
         kind: "logs",
@@ -157,6 +185,10 @@ async function handleAutomationRuntimeMessage(
       await executionLog.clear({ tabId: message.tabId });
       return { kind: "clear-logs" };
   }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 async function getTabUrl(tabId: number): Promise<string> {

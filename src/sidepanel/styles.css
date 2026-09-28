@@ -299,6 +299,18 @@ button:disabled {
   font-weight: 700;
 }
 
+.inline-button.neutral {
+  border-color: #36515b;
+  color: #bde5ec;
+  background: #193039;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
 .preset-list {
   display: grid;
   gap: 7px;
@@ -427,6 +439,227 @@ button:disabled {
   white-space: nowrap;
 }
 
+.preset-edit-button {
+  width: 100%;
+  margin-top: 11px;
+}
+
+.preset-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #2c3741;
+}
+
+.editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-heading h3 {
+  margin: 0;
+  overflow: hidden;
+  color: #e6edf3;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #29343e;
+  border-radius: 10px;
+  background: #10161b;
+}
+
+.editor-section legend {
+  padding: 0 5px;
+  color: #7fd7e7;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.editor-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.editor-field > span {
+  color: #98a6b3;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.editor-field input,
+.editor-field textarea,
+.step-toolbar select {
+  width: 100%;
+  border: 1px solid #34414d;
+  border-radius: 8px;
+  color: #dce4eb;
+  background: #171e24;
+}
+
+.editor-field input,
+.step-toolbar select {
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
+.editor-field textarea {
+  resize: vertical;
+  padding: 9px;
+  line-height: 1.45;
+}
+
+.editor-field input:focus,
+.editor-field textarea:focus,
+.step-toolbar select:focus {
+  border-color: #58afc0;
+  outline: 2px solid rgb(105 208 226 / 12%);
+}
+
+.editor-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.editor-check-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #b5c0c9;
+  font-size: 11px;
+}
+
+.editor-check-row input {
+  accent-color: #69d0e2;
+}
+
+.compact-field input {
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-number-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.step-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.editor-step-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.editor-step-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 9px;
+  border: 1px solid #2c3741;
+  border-radius: 8px;
+  background: #151c22;
+}
+
+.editor-step-list > li > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.editor-step-list strong,
+.editor-step-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-step-list strong {
+  color: #d6dfe7;
+  font-size: 11px;
+}
+
+.editor-step-list small {
+  color: #71808d;
+  font-size: 10px;
+}
+
+.step-order-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.step-order-actions button {
+  min-width: 27px;
+  min-height: 27px;
+  padding: 3px 6px;
+  border: 1px solid #34414d;
+  border-radius: 6px;
+  color: #9fadb9;
+  background: #202830;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.step-order-actions button.danger-text {
+  color: #f3a1a1;
+}
+
+.code-editor {
+  min-height: 190px;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  tab-size: 2;
+}
+
+.editor-help,
+.editor-error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.editor-help {
+  color: #75838f;
+}
+
+.editor-error {
+  padding: 9px 10px;
+  border: 1px solid #603a3d;
+  border-radius: 8px;
+  color: #f2b2b5;
+  background: #28191b;
+  overflow-wrap: anywhere;
+}
+
+.editor-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 9px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -521,6 +754,11 @@ button:disabled {
   }
 
   .button-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-number-grid,
+  .editor-actions {
     grid-template-columns: 1fr;
   }
 }
