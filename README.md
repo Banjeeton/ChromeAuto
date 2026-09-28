@@ -41,3 +41,15 @@ Individual checks are available through `npm run typecheck` and `npm test`.
 ## Quality assurance
 
 - [Preset Management MVP manual regression checklist](docs/preset-management-regression.md)
+
+## Local manual-test preset
+
+The portable preset
+[`examples/presets/local-manual-test.preset.json`](examples/presets/local-manual-test.preset.json)
+is ready to import from the side panel. It targets
+`http://localhost:4173/playwright-crx-fixture.html` and verifies click, human
+input, element waits, custom JavaScript, the in-page HTML modal, reload and log
+output.
+
+Run `npm run build`, reload the unpacked `dist` extension, start
+`npm run preview`, open the fixture URL and import the preset manually.

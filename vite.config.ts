@@ -12,6 +12,11 @@ export default defineConfig({
   base: "./",
   publicDir: resolve(projectRoot, "public"),
   plugins: [react()],
+  // WorkerNavigator does not expose the deprecated appVersion property.
+  // playwright-crx reads it through its bundled Node `os.release()` shim.
+  define: {
+    "navigator.appVersion": "navigator.userAgent"
+  },
   build: {
     outDir: resolve(projectRoot, "dist"),
     emptyOutDir: true,
@@ -21,12 +26,20 @@ export default defineConfig({
       input: {
         sidepanel: resolve(sidePanelRoot, "index.html"),
         background: resolve(projectRoot, "src/background/service-worker.ts"),
+        playwrightRuntime: resolve(
+          projectRoot,
+          "src/adapters/playwright/playwright-engine.ts"
+        ),
         content: resolve(projectRoot, "src/content/content-script.ts")
       },
       output: {
         entryFileNames: (chunk) => {
           if (chunk.name === "background") {
             return "background/service-worker.js";
+          }
+
+          if (chunk.name === "playwrightRuntime") {
+            return "background/playwright-engine.js";
           }
 
           if (chunk.name === "content") {

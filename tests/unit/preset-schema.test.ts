@@ -12,6 +12,7 @@ import {
   validatePresetStructure
 } from "../../src/core/domain/preset-validator";
 import presetSchema from "../../schemas/preset-v1.schema.json";
+import manualTestPresetJson from "../../examples/presets/local-manual-test.preset.json";
 import validPresetJson from "../fixtures/presets/valid-full.json";
 
 const ajv = new Ajv2020({
@@ -28,6 +29,16 @@ function cloneValidPreset(): PresetV1 {
 }
 
 describe("preset v1 JSON Schema", () => {
+  it("accepts the portable local manual-test preset", () => {
+    const preset = structuredClone(manualTestPresetJson) as PresetV1;
+
+    expect(validateSchema(preset), JSON.stringify(validateSchema.errors)).toBe(
+      true
+    );
+    expect(validatePresetSemantics(preset)).toEqual([]);
+    expect(validatePresetForRun(preset)).toEqual([]);
+  });
+
   it("accepts a complete preset containing every step type", () => {
     const preset = cloneValidPreset();
 

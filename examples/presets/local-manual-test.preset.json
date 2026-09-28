@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "id": "8f4e7c0a-6f7c-4e18-b0d1-7b46a6bb8521",
+  "name": "Local fixture — manual smoke test",
+  "description": "Opens the fixture HTML modal, types with human delays, validates the DOM, closes the modal, reloads the page and validates the reload counter.",
+  "createdAt": "2026-09-28T12:00:00.000Z",
+  "updatedAt": "2026-09-28T12:00:00.000Z",
+  "site": {
+    "hostname": "localhost",
+    "protocols": [
+      "http"
+    ]
+  },
+  "automation": {
+    "defaults": {
+      "timeoutMs": 10000,
+      "postActionDelayMs": 150,
+      "humanInput": {
+        "enabled": true,
+        "minDelayMs": 25,
+        "maxDelayMs": 75
+      }
+    },
+    "steps": [
+      {
+        "id": "verify-initial-page",
+        "type": "customCode",
+        "name": "Verify fixture page",
+        "enabled": true,
+        "language": "javascript",
+        "apiVersion": 1,
+        "executionContext": "page",
+        "source": "if (document.title !== 'Playwright CRX Fixture') { throw new Error(`Unexpected page title: ${document.title}`); }\nautomation.log({ phase: 'initial', title: document.title });\nreturn { title: document.title };"
+      },
+      {
+        "id": "open-html-modal",
+        "type": "click",
+        "name": "Open HTML modal",
+        "enabled": true,
+        "target": {
+          "primary": {
+            "type": "css",
+            "value": "[data-spike-open-modal]"
+          },
+          "fallbacks": [
+            {
+              "type": "role",
+              "role": "button",
+              "name": "Open HTML modal",
+              "exact": true
+            }
+          ]
+        },
+        "button": "left",
+        "clickCount": 1
+      },
+      {
+        "id": "wait-for-modal",
+        "type": "wait",
+        "name": "Wait for modal",
+        "enabled": true,
+        "condition": {
+          "type": "element",
+          "state": "visible",
+          "target": {
+            "primary": {
+              "type": "css",
+              "value": "[data-spike-modal]"
+            },
+            "fallbacks": [
+              {
+                "type": "role",
+                "role": "dialog",
+                "name": "HTML modal",
+                "exact": true
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "fill-modal-input",
+        "type": "input",
+        "name": "Type test value",
+        "enabled": true,
+        "target": {
+          "primary": {
+            "type": "css",
+            "value": "[data-spike-modal-input]"
+          },
+          "fallbacks": [
+            {
+              "type": "label",
+              "value": "Test value",
+              "exact": true
+            }
+          ]
+        },
+        "value": "Human input works",
+        "clearFirst": true,
+        "inputMode": "human",
+        "humanInput": {
+          "minDelayMs": 30,
+          "maxDelayMs": 80
+        }
+      },
+      {
+        "id": "verify-modal-input",
+        "type": "customCode",
+        "name": "Verify typed value",
+        "enabled": true,
+        "language": "javascript",
+        "apiVersion": 1,
+        "executionContext": "page",
+        "source": "const input = document.querySelector('[data-spike-modal-input]');\nif (!(input instanceof HTMLInputElement)) { throw new Error('Modal input was not found'); }\nif (input.value !== 'Human input works') { throw new Error(`Unexpected input value: ${input.value}`); }\nautomation.log({ phase: 'input', value: input.value });\nreturn input.value;"
+      },
+      {
+        "id": "close-html-modal",
+        "type": "click",
+        "name": "Save and close modal",
+        "enabled": true,
+        "target": {
+          "primary": {
+            "type": "css",
+            "value": "[data-spike-close-modal]"
+          },
+          "fallbacks": [
+            {
+              "type": "role",
+              "role": "button",
+              "name": "Save and close",
+              "exact": true
+            }
+          ]
+        },
+        "button": "left",
+        "clickCount": 1
+      },
+      {
+        "id": "wait-for-modal-close",
+        "type": "wait",
+        "name": "Wait for modal to close",
+        "enabled": true,
+        "condition": {
+          "type": "element",
+          "state": "hidden",
+          "target": {
+            "primary": {
+              "type": "css",
+              "value": "[data-spike-modal]"
+            },
+            "fallbacks": []
+          }
+        }
+      },
+      {
+        "id": "reload-fixture-page",
+        "type": "reload",
+        "name": "Reload fixture page",
+        "enabled": true,
+        "waitUntil": "domcontentloaded"
+      },
+      {
+        "id": "verify-reload-result",
+        "type": "customCode",
+        "name": "Verify reload and finish",
+        "enabled": true,
+        "language": "javascript",
+        "apiVersion": 1,
+        "executionContext": "page",
+        "source": "const counter = document.querySelector('[data-spike-reload-count]');\nconst reloadCount = Number(counter?.textContent);\nif (!Number.isInteger(reloadCount) || reloadCount < 2) { throw new Error(`Reload counter did not increase: ${counter?.textContent}`); }\ndocument.body.dataset.automationManualTest = 'passed';\nautomation.log({ phase: 'complete', status: 'passed', reloadCount });\nreturn { status: 'passed', reloadCount, title: document.title };"
+      }
+    ]
+  },
+  "siteSettings": {
+    "enabled": true,
+    "repeat": {
+      "enabled": false,
+      "intervalMinutes": 1
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { PlaywrightEngine } from "../adapters/playwright/playwright-engine";
+import { LazyPlaywrightEngine } from "../adapters/playwright/lazy-playwright-engine";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import {
@@ -22,11 +22,11 @@ import { createRuntimeErrorDetails } from "../shared/utils";
 import {
   PLAYWRIGHT_CRX_SPIKE_MESSAGE,
   type PlaywrightSpikeMessage,
-  type PlaywrightSpikeResponse,
   type PlaywrightSpikeResult
 } from "../shared/types/playwright-crx-spike";
+import { createBackgroundMessageListener } from "./message-router";
 
-const playwrightEngine = new PlaywrightEngine();
+const playwrightEngine = new LazyPlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
 const runtimeController = new AutomationRuntimeController(tabSessionManager);
 const executionLog = new InMemoryExecutionLog();
@@ -52,54 +52,35 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (
-    message: unknown,
-    _sender,
-    sendResponse: (response: PlaywrightSpikeResponse) => void
-  ) => {
-    if (!isPlaywrightSpikeMessage(message)) {
-      return false;
-    }
-
-    void handlePlaywrightSpikeMessage(message)
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((error: unknown) => {
-        sendResponse({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error)
-        });
-      });
-
-    return true;
-  }
-);
-
-chrome.runtime.onMessage.addListener(
-  (
-    message: unknown,
-    _sender,
-    sendResponse: (response: AutomationRuntimeResponse) => void
-  ) => {
-    if (!isAutomationRuntimeMessage(message)) {
-      return false;
-    }
-
-    void handleAutomationRuntimeMessage(message)
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((error: unknown) => {
+  createBackgroundMessageListener([
+    {
+      matches: isPlaywrightSpikeMessage,
+      handle: (message) =>
+        handlePlaywrightSpikeMessage(message as PlaywrightSpikeMessage),
+      createErrorResponse: (error) => ({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    },
+    {
+      matches: isAutomationRuntimeMessage,
+      handle: (message) =>
+        handleAutomationRuntimeMessage(message as AutomationRuntimeMessage),
+      createErrorResponse: (error, message) => {
+        const action = (message as AutomationRuntimeMessage).action;
         console.error(
-          `Automation runtime action “${message.action}” failed.`,
+          `Automation runtime action “${action}” failed.`,
           error
         );
-        sendResponse({
+        const response: AutomationRuntimeResponse = {
           ok: false,
           error: error instanceof Error ? error.message : String(error),
-          details: createRuntimeErrorDetails(message.action, error)
-        });
-      });
-
-    return true;
-  }
+          details: createRuntimeErrorDetails(action, error)
+        };
+        return response;
+      }
+    }
+  ])
 );
 
 function isAutomationRuntimeMessage(

@@ -1,8 +1,12 @@
-import Ajv2020, { type ErrorObject } from "ajv/dist/2020.js";
-import addFormats from "ajv-formats";
-
-import presetSchema from "../../../schemas/preset-v1.schema.json";
+import type { ErrorObject } from "ajv";
+import generatedValidateSchema from "../../generated/preset-v1-validator";
 import type { PresetV1 } from "./preset";
+
+type GeneratedSchemaValidator = ((value: unknown) => boolean) & {
+  errors?: readonly ErrorObject[] | null;
+};
+
+const validateSchema = generatedValidateSchema as GeneratedSchemaValidator;
 
 export type PresetSemanticIssueCode =
   | "duplicate_step_id"
@@ -35,15 +39,6 @@ export class PresetValidationError extends Error {
     this.issues = Object.freeze(issues.map((issue) => ({ ...issue })));
   }
 }
-
-const ajv = new Ajv2020({
-  allErrors: true,
-  strict: true
-});
-
-addFormats(ajv);
-
-const validateSchema = ajv.compile<PresetV1>(presetSchema);
 
 /** Validates the portable JSON representation without applying business rules. */
 export function validatePresetStructure(

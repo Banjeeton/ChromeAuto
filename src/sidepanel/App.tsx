@@ -469,7 +469,7 @@ function App() {
             ? `Preset “${response.result.preset.name}” was duplicated.`
             : `Preset “${response.result.preset.name}” was created.`
       );
-      await refreshPresetViews("The preset was saved");
+      void refreshPresetViews("The preset was saved");
     } catch (error) {
       const message = `Unable to save preset: ${errorMessage(error)}`;
       setPresetSaveError(message);
@@ -502,7 +502,7 @@ function App() {
           : current
       );
       addNotice("success", `Preset “${preset.name}” was deleted.`);
-      await refreshPresetViews("The preset was deleted");
+      void refreshPresetViews("The preset was deleted");
     } catch (error) {
       const message = `Unable to delete preset: ${errorMessage(error)}`;
       setPresetOperationError(message);
@@ -553,7 +553,7 @@ function App() {
         "success",
         `Preset “${response.result.preset.name}” was imported.`
       );
-      await refreshPresetViews("The preset was imported");
+      void refreshPresetViews("The preset was imported");
     } catch (error) {
       const message = `Unable to import preset: ${errorMessage(error)}`;
       setPresetOperationError(message);
@@ -851,10 +851,51 @@ function App() {
   );
 }
 
-async function sendRuntimeMessage(
+type RuntimeMessageSender = (
   message: AutomationRuntimeMessage
+) => Promise<AutomationRuntimeResponse>;
+
+export interface RuntimeMessageOptions {
+  readonly timeoutMs?: number;
+  readonly sender?: RuntimeMessageSender;
+}
+
+export async function sendRuntimeMessage(
+  message: AutomationRuntimeMessage,
+  options: RuntimeMessageOptions = {}
 ): Promise<AutomationRuntimeResponse> {
-  return chrome.runtime.sendMessage(message) as Promise<AutomationRuntimeResponse>;
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const sender =
+    options.sender ??
+    ((runtimeMessage) =>
+      chrome.runtime.sendMessage(
+        runtimeMessage
+      ) as Promise<AutomationRuntimeResponse>);
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(
+        new Error(
+          `Background did not respond to “${message.action}” within ${timeoutMs} ms. Reload the extension and try again.`
+        )
+      );
+    }, timeoutMs);
+  });
+
+  try {
+    const response = await Promise.race([sender(message), timeout]);
+    if (response === undefined) {
+      throw new Error(
+        `Background returned no response for “${message.action}”. Reload the extension and try again.`
+      );
+    }
+    return response;
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 function statusMessage(status?: ManualRunStatus): string {

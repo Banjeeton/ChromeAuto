@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import App, {
   createPresetFilename,
-  PresetOverwriteConfirmation
+  PresetOverwriteConfirmation,
+  sendRuntimeMessage
 } from "../../src/sidepanel/App";
+import { AUTOMATION_RUNTIME_MESSAGE } from "../../src/shared/types/automation-runtime";
 
 describe("side panel React entry", () => {
   it("renders the manual automation controls", () => {
@@ -52,5 +54,43 @@ describe("side panel React entry", () => {
     expect(html).toContain("will be overwritten");
     expect(html).toContain("Replace preset");
     expect(html).toContain("Cancel");
+  });
+
+  it("fails a runtime request instead of waiting forever", async () => {
+    await expect(
+      sendRuntimeMessage(
+        {
+          type: AUTOMATION_RUNTIME_MESSAGE,
+          action: "presets"
+        },
+        {
+          timeoutMs: 5,
+          sender: () => new Promise(() => undefined)
+        }
+      )
+    ).rejects.toThrow(
+      /Background did not respond to .*presets.* within 5 ms/
+    );
+  });
+
+  it("returns a runtime response before the timeout", async () => {
+    await expect(
+      sendRuntimeMessage(
+        {
+          type: AUTOMATION_RUNTIME_MESSAGE,
+          action: "presets"
+        },
+        {
+          timeoutMs: 50,
+          sender: async () => ({
+            ok: true,
+            result: { kind: "presets", presets: [] }
+          })
+        }
+      )
+    ).resolves.toEqual({
+      ok: true,
+      result: { kind: "presets", presets: [] }
+    });
   });
 });
