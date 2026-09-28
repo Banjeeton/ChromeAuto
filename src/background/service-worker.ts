@@ -30,6 +30,7 @@ import { AutomationRuntimeController } from "../core/application/automation-runt
 import { RecordedStepMapper } from "../core/application/recorded-step-mapper";
 import { RecorderNavigationController } from "../core/application/recorder-navigation-controller";
 import { RecorderPanelController } from "../core/application/recorder-panel-controller";
+import { RecorderDraftController } from "../core/application/recorder-draft-controller";
 import { TabSessionManager } from "../core/application/tab-session-manager";
 import {
   AUTOMATION_RUNTIME_MESSAGE,
@@ -86,6 +87,9 @@ const automationRecorder = new AutomationRecorder(
 );
 const recorderPanelController = new RecorderPanelController(
   automationRecorder,
+  recorderSessionRegistry
+);
+const recorderDraftController = new RecorderDraftController(
   recorderSessionRegistry
 );
 const repeatCycleController = new RepeatCycleController(
@@ -320,6 +324,26 @@ function isAutomationRuntimeMessage(
     );
   }
 
+  if (candidate.action === "save-recorder-draft") {
+    return (
+      "tabId" in candidate &&
+      typeof candidate.tabId === "number" &&
+      "sessionId" in candidate &&
+      typeof candidate.sessionId === "string" &&
+      "steps" in candidate &&
+      Array.isArray(candidate.steps)
+    );
+  }
+
+  if (candidate.action === "discard-recorder-draft") {
+    return (
+      "tabId" in candidate &&
+      typeof candidate.tabId === "number" &&
+      "sessionId" in candidate &&
+      typeof candidate.sessionId === "string"
+    );
+  }
+
   return (
     (candidate.action === "manual-status" ||
       candidate.action === "run" ||
@@ -328,7 +352,8 @@ function isAutomationRuntimeMessage(
       candidate.action === "clear-logs" ||
       candidate.action === "recorder-status" ||
       candidate.action === "record" ||
-      candidate.action === "stop-recording") &&
+      candidate.action === "stop-recording" ||
+      candidate.action === "recorder-draft") &&
     "tabId" in candidate &&
     typeof candidate.tabId === "number"
   );
@@ -366,6 +391,25 @@ async function handleAutomationRuntimeMessage(
         status: await recorderPanelController.stop(message.tabId, tabUrl)
       };
     }
+    case "recorder-draft":
+      return {
+        kind: "recorder-draft",
+        draft: await recorderDraftController.get(message.tabId)
+      };
+    case "save-recorder-draft":
+      return {
+        kind: "recorder-draft",
+        draft: await recorderDraftController.save(message)
+      };
+    case "discard-recorder-draft":
+      return {
+        kind: "recorder-draft-discarded",
+        tabId: message.tabId,
+        discarded: await recorderDraftController.discard(
+          message.tabId,
+          message.sessionId
+        )
+      };
     case "run": {
       const tabUrl = await getTabUrl(message.tabId);
       return {

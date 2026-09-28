@@ -13,6 +13,8 @@ import type { StepLogEntry } from "../core/domain/step-log-entry";
 import type { RepeatCycleLogEntry } from "../core/domain/repeat-cycle-log-entry";
 import type { RepeatCycleStatusView } from "../core/application/repeat-cycle-status-controller";
 import type { RecorderPanelStatus } from "../core/application/recorder-panel-controller";
+import type { RecorderDraftView } from "../core/application/recorder-draft-controller";
+import type { AutomationStep } from "../core/domain/automation-step";
 import {
   PRESET_STORAGE_KEY,
   RECORDER_SESSION_STORAGE_KEY,
@@ -30,6 +32,7 @@ import {
   PresetList,
   type PresetListState
 } from "./features/presets";
+import { RecordedStepsEditor } from "./features/recorder";
 
 type ActiveTab = {
   id: number;
@@ -61,6 +64,9 @@ function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>();
   const [manualStatus, setManualStatus] = useState<ManualRunStatus>();
   const [recorderStatus, setRecorderStatus] = useState<RecorderPanelStatus>();
+  const [recorderDraft, setRecorderDraft] = useState<RecorderDraftView>();
+  const [recorderDraftLoading, setRecorderDraftLoading] = useState(false);
+  const [recorderDraftError, setRecorderDraftError] = useState<string>();
   const [sessions, setSessions] = useState<readonly RunSession[]>([]);
   const [repeatCycles, setRepeatCycles] =
     useState<readonly RepeatCycleStatusView[]>([]);
@@ -224,6 +230,29 @@ function App() {
     await refreshWorkspace(tab.id);
   }, [refreshWorkspace]);
 
+  const loadRecorderDraft = useCallback(async (tabId: number) => {
+    setRecorderDraftLoading(true);
+    setRecorderDraftError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "recorder-draft",
+        tabId
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorder-draft") {
+        throw new Error("The extension returned an unexpected draft response.");
+      }
+      setRecorderDraft(response.result.draft);
+    } catch (error) {
+      setRecorderDraftError(`Unable to load recorded steps: ${errorMessage(error)}`);
+    } finally {
+      setRecorderDraftLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshActiveTab().catch((error: unknown) => {
       addNotice(
@@ -303,6 +332,25 @@ function App() {
       chrome.storage.onChanged.removeListener(handleStorageChange);
     };
   }, [addNotice, refreshActiveTab, refreshPresets]);
+
+  useEffect(() => {
+    const editable =
+      recorderStatus?.state === "stopped" ||
+      recorderStatus?.state === "failed";
+    if (!editable || activeTab === undefined) {
+      setRecorderDraft(undefined);
+      setRecorderDraftError(undefined);
+      setRecorderDraftLoading(false);
+      return;
+    }
+    void loadRecorderDraft(activeTab.id);
+  }, [
+    activeTab,
+    loadRecorderDraft,
+    recorderStatus?.sessionId,
+    recorderStatus?.state,
+    recorderStatus?.stepCount
+  ]);
 
   const runAutomation = async () => {
     if (activeTab === undefined) {
@@ -390,6 +438,8 @@ function App() {
       return;
     }
     setBusyAction("record");
+    setRecorderDraft(undefined);
+    setRecorderDraftError(undefined);
     try {
       const response = await sendRuntimeMessage({
         type: AUTOMATION_RUNTIME_MESSAGE,
@@ -444,6 +494,68 @@ function App() {
         `Unable to stop recording: ${errorMessage(error)}`,
         errorTechnicalDetails(error)
       );
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
+  const saveRecorderDraft = async (steps: readonly AutomationStep[]) => {
+    if (activeTab === undefined || recorderDraft === undefined) {
+      return;
+    }
+    setBusyAction("save-recorder-draft");
+    setRecorderDraftError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "save-recorder-draft",
+        tabId: activeTab.id,
+        sessionId: recorderDraft.sessionId,
+        steps
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (
+        response.result.kind !== "recorder-draft" ||
+        response.result.draft === undefined
+      ) {
+        throw new Error("The extension returned an unexpected draft response.");
+      }
+      setRecorderDraft(response.result.draft);
+      addNotice("success", "Recorded step changes were saved to the draft.");
+    } catch (error) {
+      setRecorderDraftError(`Unable to save draft: ${errorMessage(error)}`);
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
+  const discardRecorderDraft = async () => {
+    if (activeTab === undefined || recorderDraft === undefined) {
+      return;
+    }
+    setBusyAction("discard-recorder-draft");
+    setRecorderDraftError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "discard-recorder-draft",
+        tabId: activeTab.id,
+        sessionId: recorderDraft.sessionId
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorder-draft-discarded") {
+        throw new Error("The extension returned an unexpected discard response.");
+      }
+      setRecorderDraft(undefined);
+      addNotice("success", "Recorded draft was discarded.");
+    } catch (error) {
+      setRecorderDraftError(`Unable to discard draft: ${errorMessage(error)}`);
     } finally {
       setBusyAction(undefined);
       await refreshWorkspace(activeTab.id).catch(() => undefined);
@@ -831,6 +943,41 @@ function App() {
             </div>
           </div>
         </section>
+
+        {(recorderStatus?.state === "stopped" ||
+          recorderStatus?.state === "failed") && (
+          <section className="card" aria-labelledby="recorded-draft-title">
+            <div className="section-heading recorded-draft-heading">
+              <div>
+                <p className="section-label">Recorder</p>
+                <h2 id="recorded-draft-title">Recorded steps</h2>
+              </div>
+            </div>
+
+            {recorderDraftLoading ? (
+              <div className="preset-list-state">
+                <span className="loading-indicator" />
+                <p>Loading recorded steps…</p>
+              </div>
+            ) : recorderDraft === undefined ? (
+              <p className="editor-error" role="alert">
+                {recorderDraftError ?? "The recorded draft is unavailable."}
+              </p>
+            ) : (
+              <RecordedStepsEditor
+                busy={
+                  busyAction === "save-recorder-draft" ||
+                  busyAction === "discard-recorder-draft"
+                }
+                draft={recorderDraft}
+                key={recorderDraft.sessionId}
+                onDiscard={() => void discardRecorderDraft()}
+                onSave={(steps) => void saveRecorderDraft(steps)}
+                saveError={recorderDraftError}
+              />
+            )}
+          </section>
+        )}
 
         <section className="card" aria-labelledby="presets-title">
           <div className="section-heading">
