@@ -53,3 +53,10 @@ output.
 
 Run `npm run build`, reload the unpacked `dist` extension, start
 `npm run preview`, open the fixture URL and import the preset manually.
+
+For the independent-tabs regression case, import
+[`examples/presets/local-independent-tabs-test.preset.json`](examples/presets/local-independent-tabs-test.preset.json).
+It contains one five-second wait step. Open the fixture URL in two tabs, start
+the preset manually in both tabs, and inspect `Running tabs` and the run logs.
+Disable or remove any other active `localhost` preset before importing because
+only one automation can be assigned to an exact hostname.

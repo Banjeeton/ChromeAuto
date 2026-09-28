@@ -1,4 +1,4 @@
-import { LazyPlaywrightEngine } from "../adapters/playwright/lazy-playwright-engine";
+import { PlaywrightEngine } from "../adapters/playwright/playwright-engine";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import {
@@ -26,7 +26,7 @@ import {
 } from "../shared/types/playwright-crx-spike";
 import { createBackgroundMessageListener } from "./message-router";
 
-const playwrightEngine = new LazyPlaywrightEngine();
+const playwrightEngine = new PlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
 const runtimeController = new AutomationRuntimeController(tabSessionManager);
 const executionLog = new InMemoryExecutionLog();
