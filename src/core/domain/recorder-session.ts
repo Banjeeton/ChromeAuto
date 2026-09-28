@@ -12,6 +12,11 @@ export type RecorderState = (typeof RECORDER_STATES)[number];
 export type RecorderSessionId = string;
 export type RecorderProtocol = "http" | "https";
 
+export interface RecorderSessionIdentity {
+  readonly sessionId: RecorderSessionId;
+  readonly tabId: number;
+}
+
 export type RecorderStopReason =
   | "user"
   | "tab-context-changed"
@@ -28,9 +33,7 @@ export interface IdleRecorderState {
   readonly tabId: number;
 }
 
-export interface RecorderSessionBase {
-  readonly sessionId: RecorderSessionId;
-  readonly tabId: number;
+export interface RecorderSessionBase extends RecorderSessionIdentity {
   readonly context: RecorderSourceContext;
   readonly startedAt: string;
   readonly recordedEventCount: number;
@@ -62,9 +65,10 @@ export interface FailedRecorderState extends RecorderSessionBase {
   readonly failure: RecorderFailureDetails;
 }
 
-export type RecorderRuntimeState =
-  | IdleRecorderState
+export type RecorderSessionState =
   | RecordingRecorderState
   | StoppingRecorderState
   | StoppedRecorderState
   | FailedRecorderState;
+
+export type RecorderRuntimeState = IdleRecorderState | RecorderSessionState;
