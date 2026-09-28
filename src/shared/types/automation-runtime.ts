@@ -1,5 +1,6 @@
 import type { AutomationRunResult } from "../../core/application/automation-runner";
 import type { ManualRunStatus } from "../../core/application/manual-run-controller";
+import type { PresetV1 } from "../../core/domain/preset";
 import type { RunSession } from "../../core/domain/run-session";
 import type { StepLogEntry } from "../../core/domain/step-log-entry";
 import type {
@@ -17,7 +18,7 @@ export type AutomationRuntimeMessage =
     }
   | {
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
-      readonly action: "stop-all" | "sessions";
+      readonly action: "stop-all" | "sessions" | "presets";
     };
 
 export type AutomationRuntimeResult =
@@ -26,6 +27,7 @@ export type AutomationRuntimeResult =
   | { readonly kind: "stop"; readonly stop: StopAutomationResult }
   | { readonly kind: "stop-all"; readonly stopAll: StopAllAutomationsResult }
   | { readonly kind: "sessions"; readonly sessions: readonly RunSession[] }
+  | { readonly kind: "presets"; readonly presets: readonly PresetV1[] }
   | { readonly kind: "logs"; readonly entries: readonly StepLogEntry[] }
   | { readonly kind: "clear-logs" };
 

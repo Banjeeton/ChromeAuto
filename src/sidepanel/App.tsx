@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ManualRunStatus } from "../core/application/manual-run-controller";
+import type { PresetV1 } from "../core/domain/preset";
 import type { RunSession } from "../core/domain/run-session";
 import type { StepLogEntry } from "../core/domain/step-log-entry";
+import { PRESET_STORAGE_KEY } from "../shared/constants";
 import {
   AUTOMATION_RUNTIME_MESSAGE,
   type AutomationRuntimeMessage,
   type AutomationRuntimeResponse
 } from "../shared/types/automation-runtime";
+import { PresetList, type PresetListState } from "./features/presets";
 
 type ActiveTab = {
   id: number;
@@ -28,6 +31,11 @@ function App() {
   const [stepLogs, setStepLogs] = useState<readonly StepLogEntry[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [busyAction, setBusyAction] = useState<string>();
+  const [presetListState, setPresetListState] = useState<PresetListState>({
+    status: "loading"
+  });
+  const [selectedPresetId, setSelectedPresetId] = useState<string>();
+  const presetRequestId = useRef(0);
 
   const addNotice = useCallback(
     (status: Notice["status"], text: string) => {
@@ -71,6 +79,47 @@ function App() {
     }
     if (logsResponse.ok && logsResponse.result.kind === "logs") {
       setStepLogs(logsResponse.result.entries);
+    }
+  }, []);
+
+  const refreshPresets = useCallback(async (showLoading = false) => {
+    const requestId = ++presetRequestId.current;
+    if (showLoading) {
+      setPresetListState({ status: "loading" });
+    }
+
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "presets"
+      });
+      if (!response.ok) {
+        throw new Error(response.error);
+      }
+      if (response.result.kind !== "presets") {
+        throw new Error("The extension returned an unexpected preset response.");
+      }
+
+      const presets = sortPresets(response.result.presets);
+      if (requestId !== presetRequestId.current) {
+        return;
+      }
+      setPresetListState({ status: "ready", presets });
+      setSelectedPresetId((current) =>
+        current !== undefined && presets.some((preset) => preset.id === current)
+          ? current
+          : presets[0]?.id
+      );
+    } catch (error) {
+      if (requestId !== presetRequestId.current) {
+        return;
+      }
+      setPresetListState({
+        status: "error",
+        message: `Unable to load presets: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      });
     }
   }, []);
 
@@ -121,6 +170,25 @@ function App() {
       chrome.tabs.onUpdated.removeListener(handleUpdated);
     };
   }, [addNotice, refreshActiveTab]);
+
+  useEffect(() => {
+    void refreshPresets(true);
+
+    const handleStorageChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string
+    ) => {
+      if (areaName === "local" && PRESET_STORAGE_KEY in changes) {
+        void refreshPresets();
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => {
+      presetRequestId.current += 1;
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
+  }, [refreshPresets]);
 
   const runAutomation = async () => {
     if (activeTab === undefined) {
@@ -306,6 +374,29 @@ function App() {
           </div>
         </section>
 
+        <section className="card" aria-labelledby="presets-title">
+          <div className="section-heading">
+            <div>
+              <p className="section-label">Automation library</p>
+              <h2 id="presets-title">Saved presets</h2>
+            </div>
+            <button
+              className="icon-button"
+              onClick={() => void refreshPresets(true)}
+              type="button"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <PresetList
+            onRetry={() => void refreshPresets(true)}
+            onSelect={setSelectedPresetId}
+            selectedPresetId={selectedPresetId}
+            state={presetListState}
+          />
+        </section>
+
         <section className="card" aria-labelledby="sessions-title">
           <div className="section-heading">
             <div>
@@ -402,3 +493,9 @@ function statusTone(status?: ManualRunStatus): string {
 }
 
 export default App;
+
+function sortPresets(presets: readonly PresetV1[]): readonly PresetV1[] {
+  return [...presets].sort((left, right) =>
+    left.name.localeCompare(right.name, "en", { sensitivity: "base" })
+  );
+}

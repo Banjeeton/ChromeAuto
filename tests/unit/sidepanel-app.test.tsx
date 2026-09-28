@@ -10,6 +10,8 @@ describe("side panel React entry", () => {
     expect(html).toContain("Automation Runner");
     expect(html).toContain("Run automation");
     expect(html).toContain("Current site");
+    expect(html).toContain("Saved presets");
+    expect(html).toContain("Loading presets…");
     expect(html).toContain("Running tabs");
     expect(html).toContain(">Stop<");
     expect(html).toContain("Stop All");

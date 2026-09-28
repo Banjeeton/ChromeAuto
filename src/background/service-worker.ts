@@ -100,7 +100,11 @@ function isAutomationRuntimeMessage(
     return false;
   }
 
-  if (candidate.action === "stop-all" || candidate.action === "sessions") {
+  if (
+    candidate.action === "stop-all" ||
+    candidate.action === "sessions" ||
+    candidate.action === "presets"
+  ) {
     return true;
   }
 
@@ -142,6 +146,8 @@ async function handleAutomationRuntimeMessage(
       return { kind: "stop-all", stopAll: await runtimeController.stopAll() };
     case "sessions":
       return { kind: "sessions", sessions: runtimeController.sessions() };
+    case "presets":
+      return { kind: "presets", presets: await presetRepository.list() };
     case "logs":
       return {
         kind: "logs",

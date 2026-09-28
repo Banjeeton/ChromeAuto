@@ -1,5 +1,6 @@
 import type { PresetV1 } from "../../core/domain/preset";
 import { assertValidPreset } from "../../core/domain/preset-validator";
+import { PRESET_STORAGE_KEY } from "../../shared/constants";
 import {
   type PresetRepository,
   PresetRepositoryDataError,
@@ -7,8 +8,6 @@ import {
   PresetRepositoryWriteError,
   PresetRepositoryConflictError
 } from "../../core/ports/preset-repository";
-
-export const PRESET_STORAGE_KEY = "automation.presets.v1";
 
 export interface ChromeStorageArea {
   get(key: string): Promise<Record<string, unknown>>;
