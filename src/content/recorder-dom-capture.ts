@@ -5,6 +5,7 @@ import type {
   RecorderInputType,
   RecorderTargetCandidate
 } from "../core/domain/recorder-event";
+import { generateDomLocatorTarget } from "./locator-generator";
 
 export interface RecorderCaptureSession {
   readonly sessionId: string;
@@ -37,6 +38,9 @@ export interface RecorderCaptureOptions {
     delayMs: number
   ) => ReturnType<typeof setTimeout>;
   readonly cancelScheduled?: (handle: ReturnType<typeof setTimeout>) => void;
+  readonly generateTarget?: (
+    element: RecorderCaptureElement
+  ) => RecorderTargetCandidate;
 }
 
 type RecorderDocumentEvent = Pick<Event, "isTrusted" | "target" | "composedPath">;
@@ -55,7 +59,7 @@ export interface RecorderDocumentEventSource {
   ): void;
 }
 
-interface ElementLike {
+export interface RecorderCaptureElement {
   readonly tagName: string;
   readonly textContent?: string | null;
   readonly isContentEditable?: boolean;
@@ -64,7 +68,7 @@ interface ElementLike {
 }
 
 interface PendingInput {
-  readonly element: ElementLike;
+  readonly element: RecorderCaptureElement;
   event: RecorderInputEvent;
   handle: ReturnType<typeof setTimeout>;
 }
@@ -82,7 +86,8 @@ export class RecorderDomCapture {
   readonly #cancelScheduled: NonNullable<
     RecorderCaptureOptions["cancelScheduled"]
   >;
-  readonly #pendingInputs = new Map<ElementLike, PendingInput>();
+  readonly #generateTarget: NonNullable<RecorderCaptureOptions["generateTarget"]>;
+  readonly #pendingInputs = new Map<RecorderCaptureElement, PendingInput>();
   #session?: RecorderCaptureSession;
 
   readonly #handleClick = (event: RecorderDocumentEvent): void => {
@@ -104,7 +109,7 @@ export class RecorderDomCapture {
     };
     const captured: RecorderClickEvent = {
       ...this.#eventBase("click"),
-      target: basicTargetCandidate(element),
+      target: this.#generateTarget(element),
       payload: {
         button:
           mouse.button === 1 ? "middle" : mouse.button === 2 ? "right" : "left",
@@ -140,7 +145,7 @@ export class RecorderDomCapture {
 
     const captured: RecorderInputEvent = {
       ...this.#eventBase("input"),
-      target: basicTargetCandidate(element),
+      target: this.#generateTarget(element),
       payload: input
     };
     const handle = this.#schedule(() => {
@@ -166,6 +171,9 @@ export class RecorderDomCapture {
     this.#createEventId = options.createEventId ?? (() => crypto.randomUUID());
     this.#schedule = options.schedule ?? setTimeout;
     this.#cancelScheduled = options.cancelScheduled ?? clearTimeout;
+    this.#generateTarget =
+      options.generateTarget ??
+      ((element) => generateDomLocatorTarget(element as unknown as Element));
   }
 
   start(session: RecorderCaptureSession): RecorderCaptureStartResult {
@@ -228,7 +236,9 @@ export class RecorderDomCapture {
   }
 }
 
-function eventElement(event: RecorderDocumentEvent): ElementLike | undefined {
+function eventElement(
+  event: RecorderDocumentEvent
+): RecorderCaptureElement | undefined {
   for (const candidate of event.composedPath()) {
     if (isElementLike(candidate)) {
       return candidate;
@@ -238,7 +248,7 @@ function eventElement(event: RecorderDocumentEvent): ElementLike | undefined {
   return isElementLike(target) ? target : undefined;
 }
 
-function isElementLike(value: unknown): value is ElementLike {
+function isElementLike(value: unknown): value is RecorderCaptureElement {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -250,7 +260,7 @@ function isElementLike(value: unknown): value is ElementLike {
 }
 
 function readInput(
-  element: ElementLike
+  element: RecorderCaptureElement
 ): { readonly value: string; readonly inputType: RecorderInputType } | undefined {
   const tagName = element.tagName.toLowerCase();
   if (tagName === "input") {
@@ -278,33 +288,4 @@ function readInput(
     };
   }
   return undefined;
-}
-
-function basicTargetCandidate(element: ElementLike): RecorderTargetCandidate {
-  const testId = element.getAttribute("data-testid");
-  if (testId !== null && testId.length > 0) {
-    return { locators: [{ type: "testId", value: testId }] };
-  }
-  const id = element.getAttribute("id");
-  if (id !== null && id.length > 0) {
-    return { locators: [{ type: "css", value: `#${escapeCss(id)}` }] };
-  }
-  const tagName = element.tagName.toLowerCase();
-  const name = element.getAttribute("name");
-  if (name !== null && name.length > 0) {
-    return {
-      locators: [
-        { type: "css", value: `${tagName}[name="${escapeAttribute(name)}"]` }
-      ]
-    };
-  }
-  return { locators: [{ type: "css", value: tagName }] };
-}
-
-function escapeCss(value: string): string {
-  return value.replaceAll(/([^a-zA-Z0-9_-])/g, "\\$1");
-}
-
-function escapeAttribute(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }

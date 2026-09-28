@@ -205,7 +205,27 @@ function createHarness() {
     clock: () => "2026-09-28T18:00:00.000Z",
     createEventId: () => `event-${++eventIndex}`,
     schedule: scheduler.schedule,
-    cancelScheduled: scheduler.cancel
+    cancelScheduled: scheduler.cancel,
+    generateTarget: (element) => {
+      const testId = element.getAttribute("data-testid");
+      if (testId !== null) {
+        return { locators: [{ type: "testId", value: testId }] };
+      }
+      const id = element.getAttribute("id");
+      if (id !== null) {
+        return { locators: [{ type: "css", value: `#${id}` }] };
+      }
+      const tag = element.tagName.toLowerCase();
+      const name = element.getAttribute("name");
+      return {
+        locators: [
+          {
+            type: "css",
+            value: name === null ? tag : `${tag}[name="${name}"]`
+          }
+        ]
+      };
+    }
   };
   const capture = new RecorderDomCapture(
     source,
