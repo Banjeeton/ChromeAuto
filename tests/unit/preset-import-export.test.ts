@@ -82,7 +82,11 @@ describe("preset JSON import and export", () => {
 
   it("exports only a valid portable preset", () => {
     const preset = structuredClone(validPresetJson) as PresetV1;
-    expect(JSON.parse(exportPresetJson(preset))).toEqual(validPresetJson);
+    const exported = JSON.parse(exportPresetJson(preset)) as PresetV1;
+    expect(exported).toEqual(validPresetJson);
+    expect(exported.automation).toEqual(validPresetJson.automation);
+    expect(exported.siteSettings).toEqual(validPresetJson.siteSettings);
+    expect(exported).not.toHaveProperty("runtimeState");
 
     preset.automation.steps[1].id = preset.automation.steps[0].id;
     expect(() => exportPresetJson(preset)).toThrowError(PresetValidationError);

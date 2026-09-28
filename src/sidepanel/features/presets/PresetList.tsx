@@ -10,10 +10,11 @@ type PresetListProps = {
   readonly selectedPresetId?: string;
   readonly deleteConfirmationPresetId?: string;
   readonly deletingPresetId?: string;
-  readonly operationError?: string;
+  readonly exportingPresetId?: string;
   readonly onSelect: (presetId: string) => void;
   readonly onEdit: (preset: PresetV1) => void;
   readonly onDuplicate: (preset: PresetV1) => void;
+  readonly onExport: (preset: PresetV1) => void;
   readonly onRequestDelete: (presetId: string) => void;
   readonly onCancelDelete: () => void;
   readonly onConfirmDelete: (preset: PresetV1) => void;
@@ -25,10 +26,11 @@ export function PresetList({
   selectedPresetId,
   deleteConfirmationPresetId,
   deletingPresetId,
-  operationError,
+  exportingPresetId,
   onSelect,
   onEdit,
   onDuplicate,
+  onExport,
   onRequestDelete,
   onCancelDelete,
   onConfirmDelete,
@@ -100,18 +102,15 @@ export function PresetList({
         <SelectedPresetDetails
           confirmingDelete={deleteConfirmationPresetId === selectedPreset.id}
           deleting={deletingPresetId === selectedPreset.id}
+          exporting={exportingPresetId === selectedPreset.id}
           onCancelDelete={onCancelDelete}
           onConfirmDelete={onConfirmDelete}
           onDuplicate={onDuplicate}
+          onExport={onExport}
           onEdit={onEdit}
           onRequestDelete={onRequestDelete}
           preset={selectedPreset}
         />
-      )}
-      {operationError !== undefined && (
-        <p className="editor-error preset-operation-error" role="alert">
-          {operationError}
-        </p>
       )}
     </>
   );
@@ -121,8 +120,10 @@ function SelectedPresetDetails({
   preset,
   confirmingDelete,
   deleting,
+  exporting,
   onEdit,
   onDuplicate,
+  onExport,
   onRequestDelete,
   onCancelDelete,
   onConfirmDelete
@@ -130,8 +131,10 @@ function SelectedPresetDetails({
   readonly preset: PresetV1;
   readonly confirmingDelete: boolean;
   readonly deleting: boolean;
+  readonly exporting: boolean;
   readonly onEdit: (preset: PresetV1) => void;
   readonly onDuplicate: (preset: PresetV1) => void;
+  readonly onExport: (preset: PresetV1) => void;
   readonly onRequestDelete: (presetId: string) => void;
   readonly onCancelDelete: () => void;
   readonly onConfirmDelete: (preset: PresetV1) => void;
@@ -201,6 +204,14 @@ function SelectedPresetDetails({
             type="button"
           >
             Duplicate
+          </button>
+          <button
+            className="inline-button neutral"
+            disabled={exporting}
+            onClick={() => onExport(preset)}
+            type="button"
+          >
+            {exporting ? "Exporting…" : "Export JSON"}
           </button>
           <button
             className="inline-button destructive"

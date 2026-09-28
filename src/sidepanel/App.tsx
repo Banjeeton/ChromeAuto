@@ -58,6 +58,7 @@ function App() {
   const [deletingPresetId, setDeletingPresetId] = useState<string>();
   const [presetOperationError, setPresetOperationError] = useState<string>();
   const presetRequestId = useRef(0);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const addNotice = useCallback(
     (status: Notice["status"], text: string) => {
@@ -454,6 +455,75 @@ function App() {
     }
   };
 
+  const importPresetFile = async (file: File) => {
+    setBusyAction("import-preset");
+    setPresetOperationError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "import-preset",
+        source: await file.text()
+      });
+      if (!response.ok) {
+        throw new Error(response.error);
+      }
+      if (response.result.kind !== "preset-imported") {
+        throw new Error("The extension returned an unexpected import response.");
+      }
+
+      setSelectedPresetId(response.result.preset.id);
+      addNotice(
+        "success",
+        `Preset “${response.result.preset.name}” was imported.`
+      );
+      await refreshPresets();
+      if (activeTab !== undefined) {
+        await refreshWorkspace(activeTab.id);
+      }
+    } catch (error) {
+      setPresetOperationError(
+        `Unable to import preset: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } finally {
+      setBusyAction(undefined);
+    }
+  };
+
+  const exportPreset = async (preset: PresetV1) => {
+    setBusyAction("export-preset");
+    setPresetOperationError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "export-preset",
+        presetId: preset.id
+      });
+      if (!response.ok) {
+        throw new Error(response.error);
+      }
+      if (response.result.kind !== "preset-exported") {
+        throw new Error("The extension returned an unexpected export response.");
+      }
+
+      downloadPresetJson(
+        response.result.presetName,
+        response.result.presetId,
+        response.result.json
+      );
+      addNotice("success", `Preset “${preset.name}” was exported.`);
+    } catch (error) {
+      setPresetOperationError(
+        `Unable to export preset: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } finally {
+      setBusyAction(undefined);
+    }
+  };
+
   const canRun = manualStatus?.state === "ready" && busyAction === undefined;
   const currentTabIsRunning = manualStatus?.state === "running";
 
@@ -537,6 +607,28 @@ function App() {
               </button>
               <button
                 className="inline-button neutral"
+                disabled={busyAction !== undefined}
+                onClick={() => importInputRef.current?.click()}
+                type="button"
+              >
+                {busyAction === "import-preset" ? "Importing…" : "Import JSON"}
+              </button>
+              <input
+                accept="application/json,.json"
+                hidden
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file !== undefined) {
+                    void importPresetFile(file);
+                  }
+                }}
+                ref={importInputRef}
+                type="file"
+              />
+              <button
+                className="inline-button neutral"
+                disabled={busyAction !== undefined}
                 onClick={openNewPreset}
                 type="button"
               >
@@ -548,8 +640,12 @@ function App() {
           <PresetList
             deleteConfirmationPresetId={deleteConfirmationPresetId}
             deletingPresetId={deletingPresetId}
+            exportingPresetId={
+              busyAction === "export-preset" ? selectedPresetId : undefined
+            }
             onEdit={openPresetEditor}
             onDuplicate={openDuplicateEditor}
+            onExport={(preset) => void exportPreset(preset)}
             onRequestDelete={(presetId) => {
               setPresetOperationError(undefined);
               setDeleteConfirmationPresetId(presetId);
@@ -562,10 +658,15 @@ function App() {
               setDeleteConfirmationPresetId(undefined);
               setPresetOperationError(undefined);
             }}
-            operationError={presetOperationError}
             selectedPresetId={selectedPresetId}
             state={presetListState}
           />
+
+          {presetOperationError !== undefined && (
+            <p className="editor-error preset-operation-error" role="alert">
+              {presetOperationError}
+            </p>
+          )}
 
           {presetEditor !== undefined && (
             <PresetEditor
@@ -703,4 +804,27 @@ function defaultSiteFromUrl(url?: string): {
   } catch {
     return { hostname: "", protocol: "https" };
   }
+}
+
+function downloadPresetJson(name: string, presetId: string, json: string) {
+  const blobUrl = URL.createObjectURL(
+    new Blob([json], { type: "application/json" })
+  );
+  const anchor = document.createElement("a");
+  anchor.href = blobUrl;
+  anchor.download = createPresetFilename(name, presetId);
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+}
+
+export function createPresetFilename(name: string, presetId: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return `${slug || "preset"}-${presetId.slice(0, 8)}.preset.json`;
 }

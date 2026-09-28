@@ -36,6 +36,16 @@ export type AutomationRuntimeMessage =
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
       readonly action: "delete-preset";
       readonly presetId: string;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "import-preset";
+      readonly source: string;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "export-preset";
+      readonly presetId: string;
     };
 
 export type AutomationRuntimeResult =
@@ -47,6 +57,13 @@ export type AutomationRuntimeResult =
   | { readonly kind: "presets"; readonly presets: readonly PresetV1[] }
   | { readonly kind: "preset-saved"; readonly preset: PresetV1 }
   | { readonly kind: "preset-deleted"; readonly presetId: string }
+  | { readonly kind: "preset-imported"; readonly preset: PresetV1 }
+  | {
+      readonly kind: "preset-exported";
+      readonly presetId: string;
+      readonly presetName: string;
+      readonly json: string;
+    }
   | { readonly kind: "logs"; readonly entries: readonly StepLogEntry[] }
   | { readonly kind: "clear-logs" };
 

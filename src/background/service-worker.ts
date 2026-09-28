@@ -1,6 +1,10 @@
 import { PlaywrightEngine } from "../adapters/playwright/playwright-engine";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
+import {
+  exportPresetJson,
+  importPresetJson
+} from "../adapters/storage/preset-import-export";
 import { AutomationRunner } from "../core/application/automation-runner";
 import { ManualRunController } from "../core/application/manual-run-controller";
 import {
@@ -131,6 +135,16 @@ function isAutomationRuntimeMessage(
     );
   }
 
+  if (candidate.action === "import-preset") {
+    return "source" in candidate && typeof candidate.source === "string";
+  }
+
+  if (candidate.action === "export-preset") {
+    return (
+      "presetId" in candidate && typeof candidate.presetId === "string"
+    );
+  }
+
   return (
     (candidate.action === "manual-status" ||
       candidate.action === "run" ||
@@ -185,6 +199,24 @@ async function handleAutomationRuntimeMessage(
     case "delete-preset": {
       await presetEditorController.remove(message.presetId);
       return { kind: "preset-deleted", presetId: message.presetId };
+    }
+    case "import-preset": {
+      const preset = await importPresetJson(message.source, presetRepository);
+      return { kind: "preset-imported", preset };
+    }
+    case "export-preset": {
+      const preset = await presetRepository.getById(message.presetId);
+      if (preset === undefined) {
+        throw new Error(
+          `Preset ${message.presetId} no longer exists and cannot be exported.`
+        );
+      }
+      return {
+        kind: "preset-exported",
+        presetId: preset.id,
+        presetName: preset.name,
+        json: exportPresetJson(preset)
+      };
     }
     case "logs":
       return {

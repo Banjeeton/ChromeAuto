@@ -54,6 +54,7 @@ describe("PresetList", () => {
     expect(html).toContain("Every 5 min");
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain("Duplicate");
+    expect(html).toContain("Export JSON");
     expect(html).toContain("Delete");
   });
 
@@ -81,6 +82,7 @@ function render(
       onRetry={vi.fn()}
       onEdit={vi.fn()}
       onDuplicate={vi.fn()}
+      onExport={vi.fn()}
       onRequestDelete={vi.fn()}
       onCancelDelete={vi.fn()}
       onConfirmDelete={vi.fn()}
