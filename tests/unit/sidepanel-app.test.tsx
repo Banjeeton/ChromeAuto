@@ -18,7 +18,7 @@ describe("side panel React entry", () => {
     expect(html).toContain("Saved presets");
     expect(html).toContain("Loading presets…");
     expect(html).toContain("Import JSON");
-    expect(html).toContain("Running tabs");
+    expect(html).toContain("Automation status");
     expect(html).toContain(">Stop<");
     expect(html).toContain("Stop All");
   });

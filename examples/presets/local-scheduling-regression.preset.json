@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "id": "7b1e1fc8-72b4-4d8b-9a66-3559d3c688a3",
+  "name": "Local fixture — scheduling regression",
+  "description": "Runs every minute after a manual start, displays a per-tab run counter on the fixture page and includes a disabled failure probe for scheduler regression testing.",
+  "createdAt": "2026-09-28T17:30:00.000Z",
+  "updatedAt": "2026-09-28T17:30:00.000Z",
+  "site": {
+    "hostname": "localhost",
+    "protocols": [
+      "http"
+    ]
+  },
+  "automation": {
+    "defaults": {
+      "timeoutMs": 10000,
+      "postActionDelayMs": 0,
+      "humanInput": {
+        "enabled": false,
+        "minDelayMs": 40,
+        "maxDelayMs": 120
+      }
+    },
+    "steps": [
+      {
+        "id": "mark-scheduling-run-started",
+        "type": "customCode",
+        "name": "Mark scheduling run as started",
+        "enabled": true,
+        "language": "javascript",
+        "apiVersion": 1,
+        "executionContext": "page",
+        "source": "const storageKey = 'automation-scheduling-regression-run-count';\nconst runCount = Number(sessionStorage.getItem(storageKey) ?? '0') + 1;\nsessionStorage.setItem(storageKey, String(runCount));\nlet status = document.querySelector('[data-scheduling-regression-status]');\nif (!(status instanceof HTMLElement)) {\n  status = document.createElement('div');\n  status.dataset.schedulingRegressionStatus = '';\n  status.style.cssText = 'margin-top:16px;padding:14px;border-radius:10px;background:#fff4cc;color:#5f4700;font:700 14px/1.4 system-ui,sans-serif';\n  document.querySelector('main')?.append(status);\n}\nstatus.dataset.runCount = String(runCount);\nstatus.textContent = `Scheduling run ${runCount}: running`;\nautomation.log({ event: 'scheduling-run-started', runCount, title: document.title });\nreturn { runCount, state: 'running' };"
+      },
+      {
+        "id": "keep-run-visible",
+        "type": "wait",
+        "name": "Keep Running state visible for 5 seconds",
+        "enabled": true,
+        "condition": {
+          "type": "timeout",
+          "durationMs": 5000
+        }
+      },
+      {
+        "id": "manual-failure-probe",
+        "type": "customCode",
+        "name": "Failure probe — enable only for the error test",
+        "enabled": false,
+        "language": "javascript",
+        "apiVersion": 1,
+        "executionContext": "page",
+        "source": "throw new Error('Intentional scheduling regression failure');"
+      },
+      {
+        "id": "mark-scheduling-run-completed",
+        "type": "customCode",
+        "name": "Mark scheduling run as completed",
+        "enabled": true,
+        "language": "javascript",
+        "apiVersion": 1,
+        "executionContext": "page",
+        "source": "const status = document.querySelector('[data-scheduling-regression-status]');\nif (!(status instanceof HTMLElement)) { throw new Error('Scheduling status marker was not found'); }\nconst runCount = Number(status.dataset.runCount);\nstatus.style.background = '#dff7e8';\nstatus.style.color = '#14532d';\nstatus.textContent = `Scheduling run ${runCount}: completed`;\nautomation.log({ event: 'scheduling-run-completed', runCount, title: document.title });\nreturn { runCount, state: 'completed' };"
+      }
+    ]
+  },
+  "siteSettings": {
+    "enabled": true,
+    "repeat": {
+      "enabled": true,
+      "intervalMinutes": 1
+    }
+  }
+}

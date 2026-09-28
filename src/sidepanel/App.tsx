@@ -10,7 +10,12 @@ import {
 import type { PresetV1 } from "../core/domain/preset";
 import type { RunSession } from "../core/domain/run-session";
 import type { StepLogEntry } from "../core/domain/step-log-entry";
-import { PRESET_STORAGE_KEY } from "../shared/constants";
+import type { RepeatCycleLogEntry } from "../core/domain/repeat-cycle-log-entry";
+import type { RepeatCycleStatusView } from "../core/application/repeat-cycle-status-controller";
+import {
+  PRESET_STORAGE_KEY,
+  REPEAT_CYCLE_STORAGE_KEY
+} from "../shared/constants";
 import {
   AUTOMATION_RUNTIME_MESSAGE,
   type AutomationRuntimeMessage,
@@ -54,7 +59,11 @@ function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>();
   const [manualStatus, setManualStatus] = useState<ManualRunStatus>();
   const [sessions, setSessions] = useState<readonly RunSession[]>([]);
+  const [repeatCycles, setRepeatCycles] =
+    useState<readonly RepeatCycleStatusView[]>([]);
   const [stepLogs, setStepLogs] = useState<readonly StepLogEntry[]>([]);
+  const [cycleLogs, setCycleLogs] =
+    useState<readonly RepeatCycleLogEntry[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [busyAction, setBusyAction] = useState<string>();
   const [presetListState, setPresetListState] = useState<PresetListState>({
@@ -88,22 +97,27 @@ function App() {
   );
 
   const refreshWorkspace = useCallback(async (tabId: number) => {
-    const [statusResponse, sessionsResponse, logsResponse] = await Promise.all([
-      sendRuntimeMessage({
-        type: AUTOMATION_RUNTIME_MESSAGE,
-        action: "manual-status",
-        tabId
-      }),
-      sendRuntimeMessage({
-        type: AUTOMATION_RUNTIME_MESSAGE,
-        action: "sessions"
-      }),
-      sendRuntimeMessage({
-        type: AUTOMATION_RUNTIME_MESSAGE,
-        action: "logs",
-        tabId
-      })
-    ]);
+    const [statusResponse, sessionsResponse, repeatResponse, logsResponse] =
+      await Promise.all([
+        sendRuntimeMessage({
+          type: AUTOMATION_RUNTIME_MESSAGE,
+          action: "manual-status",
+          tabId
+        }),
+        sendRuntimeMessage({
+          type: AUTOMATION_RUNTIME_MESSAGE,
+          action: "sessions"
+        }),
+        sendRuntimeMessage({
+          type: AUTOMATION_RUNTIME_MESSAGE,
+          action: "repeat-statuses"
+        }),
+        sendRuntimeMessage({
+          type: AUTOMATION_RUNTIME_MESSAGE,
+          action: "logs",
+          tabId
+        })
+      ]);
 
     if (!statusResponse.ok) {
       throw runtimeResponseError(statusResponse);
@@ -111,19 +125,24 @@ function App() {
     if (!sessionsResponse.ok) {
       throw runtimeResponseError(sessionsResponse);
     }
+    if (!repeatResponse.ok) {
+      throw runtimeResponseError(repeatResponse);
+    }
     if (!logsResponse.ok) {
       throw runtimeResponseError(logsResponse);
     }
     if (statusResponse.result.kind === "manual-status") {
       setManualStatus(statusResponse.result.status);
     }
-    if (
-      sessionsResponse.result.kind === "sessions"
-    ) {
+    if (sessionsResponse.result.kind === "sessions") {
       setSessions(sessionsResponse.result.sessions);
+    }
+    if (repeatResponse.result.kind === "repeat-statuses") {
+      setRepeatCycles(repeatResponse.result.statuses);
     }
     if (logsResponse.result.kind === "logs") {
       setStepLogs(logsResponse.result.entries);
+      setCycleLogs(logsResponse.result.cycleEntries);
     }
   }, []);
 
@@ -239,6 +258,17 @@ function App() {
           addNotice(
             "error",
             `Unable to refresh the active-site status: ${errorMessage(error)}`,
+            errorTechnicalDetails(error)
+          );
+        });
+      } else if (
+        areaName === "session" &&
+        REPEAT_CYCLE_STORAGE_KEY in changes
+      ) {
+        void refreshActiveTab().catch((error: unknown) => {
+          addNotice(
+            "error",
+            `Unable to refresh repeat-cycle status: ${errorMessage(error)}`,
             errorTechnicalDetails(error)
           );
         });
@@ -371,6 +401,7 @@ function App() {
         throw runtimeResponseError(response);
       }
       setStepLogs([]);
+      setCycleLogs([]);
       setNotices([]);
     } catch (error) {
       addNotice(
@@ -595,7 +626,8 @@ function App() {
   };
 
   const canRun = manualStatus?.state === "ready" && busyAction === undefined;
-  const currentTabIsRunning = manualStatus?.state === "running";
+  const currentTabHasActiveCycle =
+    manualStatus?.state === "running" || manualStatus?.state === "waiting";
 
   return (
     <main className="app-shell">
@@ -661,7 +693,7 @@ function App() {
             </button>
             <button
               className="action-button secondary"
-              disabled={!currentTabIsRunning || busyAction === "stop"}
+              disabled={!currentTabHasActiveCycle || busyAction === "stop"}
               onClick={() => void stopActiveTab()}
             >
               {busyAction === "stop" ? "Stopping…" : "Stop"}
@@ -780,24 +812,47 @@ function App() {
         <section className="card" aria-labelledby="sessions-title">
           <div className="section-heading">
             <div>
-              <p className="section-label">Independent sessions</p>
-              <h2 id="sessions-title">Running tabs</h2>
+              <p className="section-label">Independent tabs</p>
+              <h2 id="sessions-title">Automation status</h2>
             </div>
             <button
               className="icon-button danger-text"
-              disabled={sessions.length === 0 || busyAction === "stop-all"}
+              disabled={busyAction === "stop-all"}
               onClick={() => void stopAll()}
             >
               Stop All
             </button>
           </div>
 
-          {sessions.length === 0 ? (
+          {sessions.length === 0 && repeatCycles.length === 0 ? (
             <p className="empty-state">No automations are running.</p>
           ) : (
             <div className="session-list">
+              {repeatCycles.map((cycle) => (
+                <div
+                  className={`session-pill repeat-cycle-pill ${cycle.state}`}
+                  key={`${cycle.tabId}-${cycle.presetId}`}
+                >
+                  <span className="session-indicator" />
+                  <span>
+                    <strong>
+                      {cycle.state === "running" ? "Running" : "Waiting"}
+                    </strong>
+                    {` · Tab #${cycle.tabId} · every ${cycle.intervalMinutes} min`}
+                    {cycle.nextRunAt === undefined
+                      ? ""
+                      : ` · next ${formatNextRun(cycle.nextRunAt)}`}
+                  </span>
+                </div>
+              ))}
               {sessions.map((session) => (
-                <span className="session-pill" key={session.sessionId}>
+                <span
+                  className="session-pill"
+                  key={session.sessionId}
+                  hidden={repeatCycles.some(
+                    (cycle) => cycle.tabId === session.tabId
+                  )}
+                >
                   <span className="session-indicator" /> Tab #{session.tabId}
                 </span>
               ))}
@@ -816,7 +871,9 @@ function App() {
             </button>
           </div>
 
-          {notices.length === 0 && stepLogs.length === 0 ? (
+          {notices.length === 0 &&
+          stepLogs.length === 0 &&
+          cycleLogs.length === 0 ? (
             <p className="empty-state">Step results will appear here.</p>
           ) : (
             <ol className="log-list">
@@ -832,6 +889,15 @@ function App() {
                       </details>
                     )}
                   </div>
+                </li>
+              ))}
+              {[...cycleLogs].reverse().map((entry) => (
+                <li
+                  className={`log-entry cycle-${entry.event} ${cycleLogTone(entry)}`}
+                  key={entry.id}
+                >
+                  <span>{entry.event.toUpperCase()}</span>
+                  <p>{entry.message}</p>
                 </li>
               ))}
               {[...stepLogs].reverse().map((entry) => (
@@ -908,6 +974,9 @@ function statusMessage(status?: ManualRunStatus): string {
   if (status.state === "running") {
     return `“${status.presetName}” is running in this tab.`;
   }
+  if (status.state === "waiting") {
+    return `“${status.presetName}” is waiting for its next run.`;
+  }
   return status.message;
 }
 
@@ -915,10 +984,28 @@ function statusTone(status?: ManualRunStatus): string {
   if (status?.state === "ready") {
     return "ready";
   }
-  if (status?.state === "running") {
+  if (status?.state === "running" || status?.state === "waiting") {
     return "running";
   }
   return "muted";
+}
+
+function formatNextRun(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
+function cycleLogTone(entry: RepeatCycleLogEntry): string {
+  if (entry.event === "failed") {
+    return "failed";
+  }
+  if (entry.event === "stopped") {
+    return "stopped";
+  }
+  return "succeeded";
 }
 
 export default App;

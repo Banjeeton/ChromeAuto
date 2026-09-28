@@ -1,5 +1,12 @@
 import { PlaywrightEngine } from "../adapters/playwright/playwright-engine";
+import {
+  ChromeAlarmScheduler,
+  parseCycleAlarmName
+} from "../adapters/chrome/alarm-scheduler";
+import { ChromeTabUrlProvider } from "../adapters/chrome/tab-url-provider";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
+import { InMemoryRepeatCycleLog } from "../adapters/logging/in-memory-repeat-cycle-log";
+import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import {
   exportPresetJson,
@@ -7,6 +14,11 @@ import {
 } from "../adapters/storage/preset-import-export";
 import { AutomationRunner } from "../core/application/automation-runner";
 import { ManualRunController } from "../core/application/manual-run-controller";
+import { RepeatCycleController } from "../core/application/repeat-cycle-controller";
+import { RepeatCycleStatusController } from "../core/application/repeat-cycle-status-controller";
+import {
+  RepeatCycleRecoveryController
+} from "../core/application/repeat-cycle-recovery-controller";
 import {
   PresetEditorController
 } from "../core/application/preset-editor";
@@ -28,8 +40,8 @@ import { createBackgroundMessageListener } from "./message-router";
 
 const playwrightEngine = new PlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
-const runtimeController = new AutomationRuntimeController(tabSessionManager);
 const executionLog = new InMemoryExecutionLog();
+const repeatCycleLog = new InMemoryRepeatCycleLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
 const presetEditorController = new PresetEditorController(presetRepository);
 const automationRunner = new AutomationRunner(
@@ -37,10 +49,35 @@ const automationRunner = new AutomationRunner(
   tabSessionManager,
   executionLog
 );
+const cycleScheduler = new ChromeAlarmScheduler();
+const repeatCycleRegistry = new ChromeRepeatCycleRegistry();
+const repeatCycleController = new RepeatCycleController(
+  automationRunner,
+  cycleScheduler,
+  repeatCycleRegistry,
+  { log: repeatCycleLog }
+);
+const repeatCycleStatusController = new RepeatCycleStatusController(
+  repeatCycleRegistry,
+  presetRepository
+);
+const runtimeController = new AutomationRuntimeController(
+  tabSessionManager,
+  repeatCycleController
+);
+const repeatCycleRecoveryController = new RepeatCycleRecoveryController(
+  repeatCycleController,
+  cycleScheduler,
+  repeatCycleRegistry,
+  presetRepository,
+  new ChromeTabUrlProvider()
+);
 const manualRunController = new ManualRunController(
   presetRepository,
   automationRunner,
-  tabSessionManager
+  tabSessionManager,
+  repeatCycleController,
+  repeatCycleRegistry
 );
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -49,6 +86,51 @@ chrome.runtime.onInstalled.addListener(() => {
     .catch((error: unknown) => {
       console.error("Unable to configure the side panel behavior.", error);
     });
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  const identity = parseCycleAlarmName(alarm.name);
+  if (identity === undefined) {
+    return;
+  }
+
+  void repeatCycleRecoveryController
+    .handleAlarm({ ...identity, scheduledFor: alarm.scheduledTime })
+    .catch((error: unknown) => {
+      console.error(
+        `Scheduled repeat cycle for tab ${identity.tabId} failed.`,
+        error
+      );
+    });
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url === undefined) {
+    return;
+  }
+
+  void stopCycleForChangedTab(tabId, changeInfo.url).catch(
+    (error: unknown) => {
+      console.error(
+        `Unable to validate the repeat cycle after tab ${tabId} navigation.`,
+        error
+      );
+    }
+  );
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void stopCycleForRemovedTab(tabId).catch((error: unknown) => {
+    console.error(`Unable to clean up repeat cycle for tab ${tabId}.`, error);
+  });
+});
+
+// Top-level recovery runs whenever Manifest V3 recreates this service worker.
+void repeatCycleRecoveryController.recover().catch((error: unknown) => {
+  console.error(
+    "Unable to restore repeat cycles after service worker startup.",
+    error
+  );
 });
 
 chrome.runtime.onMessage.addListener(
@@ -98,7 +180,8 @@ function isAutomationRuntimeMessage(
   if (
     candidate.action === "stop-all" ||
     candidate.action === "sessions" ||
-    candidate.action === "presets"
+      candidate.action === "presets" ||
+      candidate.action === "repeat-statuses"
   ) {
     return true;
   }
@@ -176,6 +259,11 @@ async function handleAutomationRuntimeMessage(
       return { kind: "stop-all", stopAll: await runtimeController.stopAll() };
     case "sessions":
       return { kind: "sessions", sessions: runtimeController.sessions() };
+    case "repeat-statuses":
+      return {
+        kind: "repeat-statuses",
+        statuses: await repeatCycleStatusController.list()
+      };
     case "presets":
       return { kind: "presets", presets: await presetRepository.list() };
     case "create-preset": {
@@ -227,10 +315,14 @@ async function handleAutomationRuntimeMessage(
     case "logs":
       return {
         kind: "logs",
-        entries: await executionLog.list({ tabId: message.tabId })
+        entries: await executionLog.list({ tabId: message.tabId }),
+        cycleEntries: await repeatCycleLog.list()
       };
     case "clear-logs":
-      await executionLog.clear({ tabId: message.tabId });
+      await Promise.all([
+        executionLog.clear({ tabId: message.tabId }),
+        repeatCycleLog.clear()
+      ]);
       return { kind: "clear-logs" };
   }
 }
@@ -245,6 +337,21 @@ async function getTabUrl(tabId: number): Promise<string> {
     throw new Error(`Chrome did not expose the URL for tab ${tabId}.`);
   }
   return tab.url;
+}
+
+async function stopCycleForChangedTab(
+  tabId: number,
+  tabUrl: string
+): Promise<void> {
+  if (await repeatCycleRecoveryController.handleTabUrlChanged(tabId, tabUrl)) {
+    await runtimeController.stopByTabId(tabId);
+  }
+}
+
+async function stopCycleForRemovedTab(tabId: number): Promise<void> {
+  if (await repeatCycleRecoveryController.handleTabRemoved(tabId)) {
+    await runtimeController.stopByTabId(tabId);
+  }
 }
 
 function isPlaywrightSpikeMessage(

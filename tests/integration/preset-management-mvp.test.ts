@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { InMemoryExecutionLog } from "../../src/adapters/logging/in-memory-execution-log";
+import { ChromeRepeatCycleRegistry } from "../../src/adapters/storage/chrome-repeat-cycle-registry";
 import {
   ChromePresetRepository,
   type ChromeStorageArea
@@ -11,6 +12,7 @@ import {
 } from "../../src/adapters/storage/preset-import-export";
 import { AutomationRunner } from "../../src/core/application/automation-runner";
 import { ManualRunController } from "../../src/core/application/manual-run-controller";
+import { RepeatCycleController } from "../../src/core/application/repeat-cycle-controller";
 import {
   createPresetEditorDefaults,
   editableFieldsFromPreset,
@@ -18,6 +20,12 @@ import {
 } from "../../src/core/application/preset-editor";
 import { TabSessionManager } from "../../src/core/application/tab-session-manager";
 import type { AutomationEngine } from "../../src/core/ports/automation-engine";
+import type {
+  CycleScheduler,
+  ScheduledCycleTimer,
+  ScheduleCycleTimerRequest
+} from "../../src/core/ports/cycle-scheduler";
+import type { RepeatCycleIdentity } from "../../src/core/domain/repeat-cycle";
 
 const PRESET_ID = "550e8400-e29b-41d4-a716-446655440000";
 
@@ -89,7 +97,22 @@ describe("Preset Management MVP integration", () => {
       new InMemoryExecutionLog(),
       { createLogEntryId: () => "preset-management-log" }
     );
-    const manualRun = new ManualRunController(repository, runner, sessions);
+    const cycleRegistry = new ChromeRepeatCycleRegistry(
+      new MemoryChromeStorage()
+    );
+    const cycleScheduler = new MemoryCycleScheduler();
+    const repeatCycles = new RepeatCycleController(
+      runner,
+      cycleScheduler,
+      cycleRegistry,
+      { clock: () => Date.parse("2026-09-28T10:00:00.000Z") }
+    );
+    const manualRun = new ManualRunController(
+      repository,
+      runner,
+      sessions,
+      repeatCycles
+    );
 
     await expect(
       manualRun.status(42, "https://example.com/checkout")
@@ -110,6 +133,19 @@ describe("Preset Management MVP integration", () => {
     expect(engine.start).toHaveBeenCalledOnce();
     expect(engine.executeStep).toHaveBeenCalledOnce();
     expect(engine.complete).toHaveBeenCalledOnce();
+    await expect(cycleRegistry.getByTabId(42)).resolves.toEqual({
+      tabId: 42,
+      presetId: PRESET_ID,
+      state: "waiting",
+      nextRunAt: Date.parse("2026-09-28T10:05:00.000Z")
+    });
+    expect(cycleScheduler.scheduled).toEqual([
+      {
+        tabId: 42,
+        presetId: PRESET_ID,
+        scheduledFor: Date.parse("2026-09-28T10:05:00.000Z")
+      }
+    ]);
   });
 
   it("keeps stored data unchanged when an imported preset is invalid", async () => {
@@ -162,5 +198,38 @@ class MemoryChromeStorage implements ChromeStorageArea {
 
   async set(items: Record<string, unknown>): Promise<void> {
     Object.assign(this.values, structuredClone(items));
+  }
+}
+
+class MemoryCycleScheduler implements CycleScheduler {
+  readonly scheduled: ScheduleCycleTimerRequest[] = [];
+
+  async schedule(request: ScheduleCycleTimerRequest): Promise<void> {
+    this.scheduled.push(structuredClone(request));
+  }
+
+  async get(
+    identity: RepeatCycleIdentity
+  ): Promise<ScheduledCycleTimer | undefined> {
+    return this.scheduled.find(
+      (timer) =>
+        timer.tabId === identity.tabId && timer.presetId === identity.presetId
+    );
+  }
+
+  async list(): Promise<readonly ScheduledCycleTimer[]> {
+    return structuredClone(this.scheduled);
+  }
+
+  async cancel(identity: RepeatCycleIdentity): Promise<boolean> {
+    const index = this.scheduled.findIndex(
+      (timer) =>
+        timer.tabId === identity.tabId && timer.presetId === identity.presetId
+    );
+    if (index === -1) {
+      return false;
+    }
+    this.scheduled.splice(index, 1);
+    return true;
   }
 }

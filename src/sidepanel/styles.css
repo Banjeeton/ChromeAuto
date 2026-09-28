@@ -732,6 +732,19 @@ button:disabled {
   font-size: 12px;
 }
 
+.repeat-cycle-pill {
+  width: 100%;
+  border-radius: 10px;
+}
+
+.repeat-cycle-pill.waiting .session-indicator {
+  background: #e7c676;
+}
+
+.repeat-cycle-pill strong {
+  color: #eef4f8;
+}
+
 .session-indicator {
   width: 6px;
   height: 6px;

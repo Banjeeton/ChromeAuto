@@ -14,6 +14,7 @@ import {
 import presetSchema from "../../schemas/preset-v1.schema.json";
 import independentTabsTestPresetJson from "../../examples/presets/local-independent-tabs-test.preset.json";
 import manualTestPresetJson from "../../examples/presets/local-manual-test.preset.json";
+import schedulingRegressionPresetJson from "../../examples/presets/local-scheduling-regression.preset.json";
 import validPresetJson from "../fixtures/presets/valid-full.json";
 
 const ajv = new Ajv2020({
@@ -42,6 +43,16 @@ describe("preset v1 JSON Schema", () => {
 
   it("accepts the portable local manual-test preset", () => {
     const preset = structuredClone(manualTestPresetJson) as PresetV1;
+
+    expect(validateSchema(preset), JSON.stringify(validateSchema.errors)).toBe(
+      true
+    );
+    expect(validatePresetSemantics(preset)).toEqual([]);
+    expect(validatePresetForRun(preset)).toEqual([]);
+  });
+
+  it("accepts the portable local scheduling-regression preset", () => {
+    const preset = structuredClone(schedulingRegressionPresetJson) as PresetV1;
 
     expect(validateSchema(preset), JSON.stringify(validateSchema.errors)).toBe(
       true

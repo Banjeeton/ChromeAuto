@@ -10,6 +10,8 @@ import type { TabSessionManager } from "./tab-session-manager";
 import { validatePresetForRun } from "../domain/preset-validator";
 import type { PresetV1 } from "../domain/preset";
 import type { PresetRepository } from "../ports/preset-repository";
+import type { RepeatCycleController } from "./repeat-cycle-controller";
+import type { RepeatCycleRegistry } from "../ports/repeat-cycle-registry";
 
 export type ManualRunUnavailableReason =
   | "unsupported-url"
@@ -35,6 +37,14 @@ export type ManualRunStatus =
       readonly sessionId: string;
     }
   | {
+      readonly state: "waiting";
+      readonly tabId: number;
+      readonly hostname: string;
+      readonly presetId: string;
+      readonly presetName: string;
+      readonly nextRunAt: number;
+    }
+  | {
       readonly state: "unavailable";
       readonly tabId: number;
       readonly hostname?: string;
@@ -53,15 +63,21 @@ export class ManualRunController {
   readonly #presets: PresetRepository;
   readonly #runner: AutomationRunner;
   readonly #sessions: TabSessionManager;
+  readonly #repeatCycles?: Pick<RepeatCycleController, "runManual">;
+  readonly #repeatCycleStates?: Pick<RepeatCycleRegistry, "getByTabId">;
 
   constructor(
     presets: PresetRepository,
     runner: AutomationRunner,
-    sessions: TabSessionManager
+    sessions: TabSessionManager,
+    repeatCycles?: Pick<RepeatCycleController, "runManual">,
+    repeatCycleStates?: Pick<RepeatCycleRegistry, "getByTabId">
   ) {
     this.#presets = presets;
     this.#runner = runner;
     this.#sessions = sessions;
+    this.#repeatCycles = repeatCycles;
+    this.#repeatCycleStates = repeatCycleStates;
   }
 
   async status(tabId: number, tabUrl: string): Promise<ManualRunStatus> {
@@ -76,6 +92,13 @@ export class ManualRunController {
           ? resolved.status.message
           : "This tab already has a running automation."
       );
+    }
+
+    if (resolved.preset.siteSettings.repeat.enabled) {
+      if (this.#repeatCycles === undefined) {
+        throw new Error("Repeat-cycle runtime is unavailable.");
+      }
+      return this.#repeatCycles.runManual(resolved.preset, tabId);
     }
 
     return this.#runner.run({
@@ -122,6 +145,30 @@ export class ManualRunController {
         },
         preset: sessionPreset
       };
+    }
+
+    const repeatState = await this.#repeatCycleStates?.getByTabId(tabId);
+    if (repeatState?.state === "waiting") {
+      const repeatPreset = presets.find(
+        (item) =>
+          item.id === repeatState.presetId &&
+          item.siteSettings.enabled &&
+          item.siteSettings.repeat.enabled &&
+          siteBindingMatchesUrl(item.site, tabUrl)
+      );
+      if (repeatPreset !== undefined && repeatState.nextRunAt !== undefined) {
+        return {
+          status: {
+            state: "waiting",
+            tabId,
+            hostname: location.hostname,
+            presetId: repeatPreset.id,
+            presetName: repeatPreset.name,
+            nextRunAt: repeatState.nextRunAt
+          },
+          preset: repeatPreset
+        };
+      }
     }
 
     if (preset === undefined) {
