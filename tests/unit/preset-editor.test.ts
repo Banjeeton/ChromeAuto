@@ -266,6 +266,9 @@ function createRepository(
       write(preset);
       return true;
     }),
+    saveReplacingActiveHostname: vi.fn(async (preset: PresetV1) =>
+      write(preset)
+    ),
     remove: vi.fn(async (presetId: string) => remove(presetId))
   };
 }

@@ -863,7 +863,13 @@ button:disabled {
 }
 
 .recorded-editor-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 2px;
+}
+
+.create-recorded-preset-button {
+  color: #061013;
+  background: #69d0e2;
 }
 
 .editor-help {
@@ -1034,6 +1040,7 @@ button:disabled {
 
   .editor-number-grid,
   .editor-actions,
+  .recorded-editor-actions,
   .preset-management-actions {
     grid-template-columns: 1fr;
   }

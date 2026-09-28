@@ -10,12 +10,15 @@ describe("RecordedStepsEditor", () => {
       <RecordedStepsEditor
         busy={false}
         draft={draftView()}
+        onCreatePreset={vi.fn()}
         onDiscard={vi.fn()}
         onSave={vi.fn()}
       />
     );
 
     expect(html).toContain("Review recorded steps");
+    expect(html).toContain("Portable preset");
+    expect(html).toContain("Preset name");
     expect(html).toContain("4 steps");
     expect(html).toContain("Step name");
     expect(html).toContain("Locators JSON");
@@ -26,6 +29,7 @@ describe("RecordedStepsEditor", () => {
     expect(html).toContain("Delete");
     expect(html).toContain("Cancel creation");
     expect(html).toContain("Save draft");
+    expect(html).toContain("Create preset");
     expect(html).toContain("do not modify saved presets");
   });
 
@@ -34,6 +38,7 @@ describe("RecordedStepsEditor", () => {
       <RecordedStepsEditor
         busy={false}
         draft={draftView()}
+        onCreatePreset={vi.fn()}
         onDiscard={vi.fn()}
         onSave={vi.fn()}
         saveError="/automation/steps/0/target: invalid locator"

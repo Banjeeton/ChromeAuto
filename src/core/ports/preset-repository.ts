@@ -8,6 +8,10 @@ export interface PresetRepository {
     preset: PresetV1,
     expectedUpdatedAt: string | null
   ): Promise<boolean>;
+  saveReplacingActiveHostname(
+    preset: PresetV1,
+    expectedActivePresetIds: readonly string[]
+  ): Promise<void>;
   remove(presetId: string): Promise<boolean>;
 }
 

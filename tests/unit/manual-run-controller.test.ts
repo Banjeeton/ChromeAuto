@@ -344,6 +344,22 @@ class MemoryPresetRepository implements PresetRepository {
     return true;
   }
 
+  async saveReplacingActiveHostname(
+    preset: PresetV1,
+    expectedActivePresetIds: readonly string[]
+  ): Promise<void> {
+    const expected = new Set(expectedActivePresetIds);
+    this.presets.forEach((item, index) => {
+      if (expected.has(item.id)) {
+        this.presets[index] = {
+          ...item,
+          siteSettings: { ...item.siteSettings, enabled: false }
+        };
+      }
+    });
+    this.presets.push(preset);
+  }
+
   async remove(presetId: string): Promise<boolean> {
     const index = this.presets.findIndex((preset) => preset.id === presetId);
     if (index === -1) {

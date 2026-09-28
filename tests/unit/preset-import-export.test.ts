@@ -164,6 +164,7 @@ function createRepository(existing?: PresetV1): PresetRepository & {
       async (_preset: PresetV1, expectedUpdatedAt: string | null) =>
         expectedUpdatedAt === (existing?.updatedAt ?? null)
     ),
+    saveReplacingActiveHostname: vi.fn(async () => undefined),
     remove: vi.fn(async () => false)
   };
 }

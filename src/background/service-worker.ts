@@ -31,6 +31,7 @@ import { RecordedStepMapper } from "../core/application/recorded-step-mapper";
 import { RecorderNavigationController } from "../core/application/recorder-navigation-controller";
 import { RecorderPanelController } from "../core/application/recorder-panel-controller";
 import { RecorderDraftController } from "../core/application/recorder-draft-controller";
+import { RecordedPresetController } from "../core/application/recorded-preset-controller";
 import { TabSessionManager } from "../core/application/tab-session-manager";
 import {
   AUTOMATION_RUNTIME_MESSAGE,
@@ -91,6 +92,10 @@ const recorderPanelController = new RecorderPanelController(
 );
 const recorderDraftController = new RecorderDraftController(
   recorderSessionRegistry
+);
+const recordedPresetController = new RecordedPresetController(
+  recorderSessionRegistry,
+  presetRepository
 );
 const repeatCycleController = new RepeatCycleController(
   automationRunner,
@@ -344,6 +349,28 @@ function isAutomationRuntimeMessage(
     );
   }
 
+  if (candidate.action === "save-recorded-preset") {
+    return (
+      "tabId" in candidate &&
+      typeof candidate.tabId === "number" &&
+      "sessionId" in candidate &&
+      typeof candidate.sessionId === "string" &&
+      "name" in candidate &&
+      typeof candidate.name === "string" &&
+      (!("description" in candidate) ||
+        candidate.description === undefined ||
+        typeof candidate.description === "string") &&
+      "steps" in candidate &&
+      Array.isArray(candidate.steps) &&
+      (!("confirmedActivePresetIds" in candidate) ||
+        candidate.confirmedActivePresetIds === undefined ||
+        (Array.isArray(candidate.confirmedActivePresetIds) &&
+          candidate.confirmedActivePresetIds.every(
+            (id) => typeof id === "string"
+          )))
+    );
+  }
+
   return (
     (candidate.action === "manual-status" ||
       candidate.action === "run" ||
@@ -409,6 +436,11 @@ async function handleAutomationRuntimeMessage(
           message.tabId,
           message.sessionId
         )
+      };
+    case "save-recorded-preset":
+      return {
+        kind: "recorded-preset-save",
+        result: await recordedPresetController.save(message)
       };
     case "run": {
       const tabUrl = await getTabUrl(message.tabId);

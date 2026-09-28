@@ -32,7 +32,10 @@ import {
   PresetList,
   type PresetListState
 } from "./features/presets";
-import { RecordedStepsEditor } from "./features/recorder";
+import {
+  RecordedStepsEditor,
+  type RecordedPresetFields
+} from "./features/recorder";
 
 type ActiveTab = {
   id: number;
@@ -60,6 +63,12 @@ type PresetEditorState = {
   readonly fields: PresetEditableFields;
 };
 
+type PendingRecordedPresetConflict = {
+  readonly fields: RecordedPresetFields;
+  readonly hostname: string;
+  readonly activePresets: readonly { readonly id: string; readonly name: string }[];
+};
+
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>();
   const [manualStatus, setManualStatus] = useState<ManualRunStatus>();
@@ -67,6 +76,8 @@ function App() {
   const [recorderDraft, setRecorderDraft] = useState<RecorderDraftView>();
   const [recorderDraftLoading, setRecorderDraftLoading] = useState(false);
   const [recorderDraftError, setRecorderDraftError] = useState<string>();
+  const [pendingRecordedPresetConflict, setPendingRecordedPresetConflict] =
+    useState<PendingRecordedPresetConflict>();
   const [sessions, setSessions] = useState<readonly RunSession[]>([]);
   const [repeatCycles, setRepeatCycles] =
     useState<readonly RepeatCycleStatusView[]>([]);
@@ -440,6 +451,7 @@ function App() {
     setBusyAction("record");
     setRecorderDraft(undefined);
     setRecorderDraftError(undefined);
+    setPendingRecordedPresetConflict(undefined);
     try {
       const response = await sendRuntimeMessage({
         type: AUTOMATION_RUNTIME_MESSAGE,
@@ -556,6 +568,61 @@ function App() {
       addNotice("success", "Recorded draft was discarded.");
     } catch (error) {
       setRecorderDraftError(`Unable to discard draft: ${errorMessage(error)}`);
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
+  const createRecordedPreset = async (
+    fields: RecordedPresetFields,
+    confirmedActivePresetIds?: readonly string[]
+  ) => {
+    if (activeTab === undefined || recorderDraft === undefined) {
+      return;
+    }
+    setBusyAction("save-recorded-preset");
+    setRecorderDraftError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "save-recorded-preset",
+        tabId: activeTab.id,
+        sessionId: recorderDraft.sessionId,
+        name: fields.name,
+        ...(fields.description === undefined
+          ? {}
+          : { description: fields.description }),
+        steps: fields.steps,
+        ...(confirmedActivePresetIds === undefined
+          ? {}
+          : { confirmedActivePresetIds })
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorded-preset-save") {
+        throw new Error("The extension returned an unexpected preset response.");
+      }
+      if (response.result.result.status === "confirmation-required") {
+        setPendingRecordedPresetConflict({
+          fields,
+          hostname: response.result.result.hostname,
+          activePresets: response.result.result.activePresets
+        });
+        return;
+      }
+
+      const preset = response.result.result.preset;
+      setPendingRecordedPresetConflict(undefined);
+      setRecorderDraft(undefined);
+      setSelectedPresetId(preset.id);
+      addNotice("success", `Recorded preset “${preset.name}” was created.`);
+      await refreshPresets();
+    } catch (error) {
+      setRecorderDraftError(
+        `Unable to create preset: ${errorMessage(error)}`
+      );
     } finally {
       setBusyAction(undefined);
       await refreshWorkspace(activeTab.id).catch(() => undefined);
@@ -967,14 +1034,56 @@ function App() {
               <RecordedStepsEditor
                 busy={
                   busyAction === "save-recorder-draft" ||
-                  busyAction === "discard-recorder-draft"
+                  busyAction === "discard-recorder-draft" ||
+                  busyAction === "save-recorded-preset"
                 }
                 draft={recorderDraft}
                 key={recorderDraft.sessionId}
+                creatingPreset={busyAction === "save-recorded-preset"}
+                onCreatePreset={(fields) => void createRecordedPreset(fields)}
                 onDiscard={() => void discardRecorderDraft()}
                 onSave={(steps) => void saveRecorderDraft(steps)}
                 saveError={recorderDraftError}
               />
+            )}
+
+            {pendingRecordedPresetConflict !== undefined && (
+              <div className="delete-confirmation recorder-preset-conflict">
+                <p>
+                  {pendingRecordedPresetConflict.hostname} is already assigned to
+                  {" "}
+                  {pendingRecordedPresetConflict.activePresets
+                    .map(({ name }) => `“${name}”`)
+                    .join(", ")}
+                  . Replace the active assignment? The existing preset will be
+                  kept but disabled.
+                </p>
+                <div>
+                  <button
+                    className="inline-button neutral"
+                    disabled={busyAction !== undefined}
+                    onClick={() => setPendingRecordedPresetConflict(undefined)}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="inline-button destructive"
+                    disabled={busyAction !== undefined}
+                    onClick={() =>
+                      void createRecordedPreset(
+                        pendingRecordedPresetConflict.fields,
+                        pendingRecordedPresetConflict.activePresets.map(
+                          ({ id }) => id
+                        )
+                      )
+                    }
+                    type="button"
+                  >
+                    Replace assignment
+                  </button>
+                </div>
+              </div>
             )}
           </section>
         )}

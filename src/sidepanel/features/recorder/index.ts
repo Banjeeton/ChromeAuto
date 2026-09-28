@@ -1,1 +1,4 @@
-export { RecordedStepsEditor } from "./RecordedStepsEditor";
+export {
+  RecordedStepsEditor,
+  type RecordedPresetFields
+} from "./RecordedStepsEditor";

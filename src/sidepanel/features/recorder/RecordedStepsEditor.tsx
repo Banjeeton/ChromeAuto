@@ -16,7 +16,15 @@ export interface RecordedStepsEditorProps {
   readonly busy: boolean;
   readonly saveError?: string;
   readonly onSave: (steps: readonly AutomationStep[]) => void;
+  readonly onCreatePreset: (fields: RecordedPresetFields) => void;
   readonly onDiscard: () => void;
+  readonly creatingPreset?: boolean;
+}
+
+export interface RecordedPresetFields {
+  readonly name: string;
+  readonly description?: string;
+  readonly steps: readonly AutomationStep[];
 }
 
 export function RecordedStepsEditor({
@@ -24,7 +32,9 @@ export function RecordedStepsEditor({
   busy,
   saveError,
   onSave,
-  onDiscard
+  onCreatePreset,
+  onDiscard,
+  creatingPreset = false
 }: RecordedStepsEditorProps) {
   const [steps, setSteps] = useState<AutomationStep[]>(() =>
     [...structuredClone(draft.steps)]
@@ -37,15 +47,25 @@ export function RecordedStepsEditor({
   const [targetErrors, setTargetErrors] = useState<Record<string, string>>({});
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [presetName, setPresetName] = useState(
+    `Recorded automation for ${draft.hostname}`
+  );
+  const [presetDescription, setPresetDescription] = useState("");
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const invalidTargetIds = Object.keys(targetErrors);
-    if (invalidTargetIds.length > 0) {
+    if (!validateStepsForAction()) {
+      return;
+    }
+    onSave(structuredClone(steps));
+  };
+
+  const validateStepsForAction = (): boolean => {
+    if (Object.keys(targetErrors).length > 0) {
       setValidationErrors([
         "Fix invalid locator JSON before saving the draft."
       ]);
-      return;
+      return false;
     }
     const issues = validateRecorderDraftSteps(
       steps,
@@ -56,10 +76,27 @@ export function RecordedStepsEditor({
       setValidationErrors(
         issues.map((issue) => `${issue.path}: ${issue.message}`)
       );
-      return;
+      return false;
     }
     setValidationErrors([]);
-    onSave(structuredClone(steps));
+    return true;
+  };
+
+  const createPreset = () => {
+    if (!validateStepsForAction()) {
+      return;
+    }
+    if (presetName.trim().length === 0) {
+      setValidationErrors(["/name: Preset name is required."]);
+      return;
+    }
+    onCreatePreset({
+      name: presetName.trim(),
+      ...(presetDescription.trim().length === 0
+        ? {}
+        : { description: presetDescription.trim() }),
+      steps: structuredClone(steps)
+    });
   };
 
   const updateStep = (
@@ -133,6 +170,31 @@ export function RecordedStepsEditor({
       <p className="editor-help">
         Changes stay in this draft and do not modify saved presets.
       </p>
+
+      <fieldset className="editor-section recorded-preset-fields">
+        <legend>Portable preset</legend>
+        <label className="editor-field">
+          <span>Preset name</span>
+          <input
+            maxLength={120}
+            onChange={(event) => setPresetName(event.target.value)}
+            required
+            value={presetName}
+          />
+        </label>
+        <label className="editor-field">
+          <span>Description</span>
+          <textarea
+            onChange={(event) => setPresetDescription(event.target.value)}
+            placeholder="What does this recorded automation do?"
+            rows={2}
+            value={presetDescription}
+          />
+        </label>
+        <p className="editor-help">
+          Site: {draft.protocol}://{draft.hostname}
+        </p>
+      </fieldset>
 
       <div className="step-toolbar recorder-step-toolbar">
         <select
@@ -351,6 +413,14 @@ export function RecordedStepsEditor({
         </button>
         <button className="action-button" disabled={busy} type="submit">
           {busy ? "Saving…" : "Save draft"}
+        </button>
+        <button
+          className="action-button create-recorded-preset-button"
+          disabled={busy}
+          onClick={createPreset}
+          type="button"
+        >
+          {creatingPreset ? "Creating preset…" : "Create preset"}
         </button>
       </div>
     </form>

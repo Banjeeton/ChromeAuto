@@ -8,6 +8,7 @@ import type { RepeatCycleLogEntry } from "../../core/domain/repeat-cycle-log-ent
 import type { RepeatCycleStatusView } from "../../core/application/repeat-cycle-status-controller";
 import type { RecorderPanelStatus } from "../../core/application/recorder-panel-controller";
 import type { RecorderDraftView } from "../../core/application/recorder-draft-controller";
+import type { SaveRecordedPresetResult } from "../../core/application/recorded-preset-controller";
 import type { AutomationStep } from "../../core/domain/automation-step";
 import type {
   StopAllAutomationsResult,
@@ -43,6 +44,16 @@ export type AutomationRuntimeMessage =
       readonly action: "discard-recorder-draft";
       readonly tabId: number;
       readonly sessionId: string;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "save-recorded-preset";
+      readonly tabId: number;
+      readonly sessionId: string;
+      readonly name: string;
+      readonly description?: string;
+      readonly steps: readonly AutomationStep[];
+      readonly confirmedActivePresetIds?: readonly string[];
     }
   | {
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
@@ -88,6 +99,10 @@ export type AutomationRuntimeResult =
       readonly kind: "recorder-draft-discarded";
       readonly tabId: number;
       readonly discarded: boolean;
+    }
+  | {
+      readonly kind: "recorded-preset-save";
+      readonly result: SaveRecordedPresetResult;
     }
   | { readonly kind: "run"; readonly run: AutomationRunResult }
   | { readonly kind: "stop"; readonly stop: StopAutomationResult }
