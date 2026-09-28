@@ -3,7 +3,12 @@ import {
   isAutomationEngineError
 } from "../domain/automation-engine-error";
 import type { PresetV1 } from "../domain/preset";
+import type {
+  RepeatCycleLogEntry,
+  RepeatCycleStopReason
+} from "../domain/repeat-cycle-log-entry";
 import type { CycleScheduler } from "../ports/cycle-scheduler";
+import type { RepeatCycleLog } from "../ports/repeat-cycle-log";
 import type { RepeatCycleRegistry } from "../ports/repeat-cycle-registry";
 import type {
   AutomationRunResult,
@@ -16,6 +21,8 @@ type AutomationRunExecutor = Pick<AutomationRunner, "run">;
 
 export interface RepeatCycleControllerOptions {
   readonly clock?: () => number;
+  readonly createLogEntryId?: () => string;
+  readonly log?: RepeatCycleLog;
 }
 
 export class RepeatCycleAlreadyRunningError extends Error {
@@ -36,6 +43,8 @@ export class RepeatCycleController {
   readonly #scheduler: CycleScheduler;
   readonly #registry: RepeatCycleRegistry;
   readonly #clock: () => number;
+  readonly #createLogEntryId: () => string;
+  readonly #log?: RepeatCycleLog;
   readonly #runningTabs = new Set<number>();
   readonly #cycleGenerationByTabId = new Map<number, number>();
   #stopAllPromise?: Promise<readonly number[]>;
@@ -50,6 +59,9 @@ export class RepeatCycleController {
     this.#scheduler = scheduler;
     this.#registry = registry;
     this.#clock = options.clock ?? Date.now;
+    this.#createLogEntryId =
+      options.createLogEntryId ?? (() => crypto.randomUUID());
+    this.#log = options.log;
   }
 
   async runManual(
@@ -113,7 +125,10 @@ export class RepeatCycleController {
   }
 
   /** Stops one running or waiting cycle and invalidates in-flight scheduling. */
-  async stopByTabId(tabId: number): Promise<boolean> {
+  async stopByTabId(
+    tabId: number,
+    reason: RepeatCycleStopReason = "user"
+  ): Promise<boolean> {
     this.#invalidate(tabId);
     const state = await this.#registry.getByTabId(tabId);
     if (state === undefined) {
@@ -121,17 +136,28 @@ export class RepeatCycleController {
     }
 
     const wasActive = state.state === "running" || state.state === "waiting";
+    if (wasActive) {
+      await this.#appendLog({
+        tabId,
+        presetId: state.presetId,
+        event: "stopped",
+        reason,
+        message: stopMessage(reason, tabId)
+      });
+    }
     await this.#stopState(state);
     return wasActive;
   }
 
   /** Stops every running/waiting cycle while preserving tab isolation. */
-  stopAll(): Promise<readonly number[]> {
+  stopAll(
+    reason: RepeatCycleStopReason = "stop-all"
+  ): Promise<readonly number[]> {
     if (this.#stopAllPromise !== undefined) {
       return this.#stopAllPromise;
     }
 
-    const operation = this.#performStopAll().finally(() => {
+    const operation = this.#performStopAll(reason).finally(() => {
       this.#stopAllPromise = undefined;
     });
     this.#stopAllPromise = operation;
@@ -147,6 +173,11 @@ export class RepeatCycleController {
 
     try {
       this.#throwIfInvalidated(identity, generation);
+      await this.#appendLog({
+        ...identity,
+        event: "started",
+        message: `Repeat cycle started in tab ${tabId}.`
+      });
       await this.#registry.save({ ...identity, state: "running" });
       this.#throwIfInvalidated(identity, generation);
       const result = await this.#runner.run({
@@ -154,20 +185,32 @@ export class RepeatCycleController {
         tabId,
         automation: preset.automation
       });
+      const nextRunAt =
+        this.#clock() +
+        preset.siteSettings.repeat.intervalMinutes * MILLISECONDS_PER_MINUTE;
+      await this.#appendLog({
+        ...identity,
+        event: "completed",
+        message: `Repeat cycle completed in tab ${tabId}.`
+      });
 
       if (!this.#isCurrent(tabId, generation)) {
         await this.#stopState(identity);
         return result;
       }
 
-      const nextRunAt =
-        this.#clock() +
-        preset.siteSettings.repeat.intervalMinutes * MILLISECONDS_PER_MINUTE;
       await this.#scheduler.schedule({ ...identity, scheduledFor: nextRunAt });
       if (!this.#isCurrent(tabId, generation)) {
         await this.#stopState(identity);
         return result;
       }
+      await this.#appendLog({
+        ...identity,
+        event: "scheduled",
+        intervalMinutes: preset.siteSettings.repeat.intervalMinutes,
+        nextRunAt,
+        message: `Next run scheduled in ${preset.siteSettings.repeat.intervalMinutes} minute(s).`
+      });
       await this.#registry.save({
         ...identity,
         state: "waiting",
@@ -175,15 +218,25 @@ export class RepeatCycleController {
       });
       if (!this.#isCurrent(tabId, generation)) {
         await this.#stopState(identity);
+        return result;
       }
       return result;
     } catch (error) {
+      if (
+        this.#isCurrent(tabId, generation) ||
+        !isAutomationEngineError(error) ||
+        error.code !== "session-stopped"
+      ) {
+        await this.#appendFailureLog(identity, error);
+      }
       await this.#settleFailedPass(identity, error);
       throw error;
     }
   }
 
-  async #performStopAll(): Promise<readonly number[]> {
+  async #performStopAll(
+    reason: RepeatCycleStopReason
+  ): Promise<readonly number[]> {
     const inFlightTabIds = [...this.#runningTabs];
     inFlightTabIds.forEach((tabId) => this.#invalidate(tabId));
     const [states, timers] = await Promise.all([
@@ -199,6 +252,18 @@ export class RepeatCycleController {
       ...timers.map((timer) => timer.tabId)
     ]);
     affectedTabIds.forEach((tabId) => this.#invalidate(tabId));
+
+    await Promise.all(
+      activeStates.map((state) =>
+        this.#appendLog({
+          tabId: state.tabId,
+          presetId: state.presetId,
+          event: "stopped",
+          reason,
+          message: stopMessage(reason, state.tabId)
+        })
+      )
+    );
 
     const results = await Promise.allSettled([
       ...timers.map((timer) => this.#scheduler.cancel(timer)),
@@ -261,6 +326,50 @@ export class RepeatCycleController {
     }
   }
 
+  async #appendFailureLog(
+    identity: { readonly tabId: number; readonly presetId: string },
+    error: unknown
+  ): Promise<void> {
+    const stopped =
+      isAutomationEngineError(error) && error.code === "session-stopped";
+    const stepIndex = isAutomationEngineError(error)
+      ? error.context.stepIndex
+      : undefined;
+    const stepId = isAutomationEngineError(error)
+      ? error.context.stepId
+      : undefined;
+    const message = error instanceof Error ? error.message : String(error);
+    await this.#appendLog({
+      ...identity,
+      event: stopped ? "stopped" : "failed",
+      ...(stopped ? { reason: "automation-stop" as const } : {}),
+      ...(stepId === undefined ? {} : { stepId }),
+      ...(stepIndex === undefined ? {} : { stepNumber: stepIndex + 1 }),
+      error: message,
+      message:
+        stepIndex === undefined
+          ? `Repeat cycle stopped: ${message}`
+          : `Repeat cycle stopped at step ${stepIndex + 1}${stepId === undefined ? "" : ` (${stepId})`}: ${message}`
+    });
+  }
+
+  async #appendLog(
+    entry: Omit<RepeatCycleLogEntry, "id" | "recordedAt">
+  ): Promise<void> {
+    if (this.#log === undefined) {
+      return;
+    }
+    try {
+      await this.#log.append({
+        id: this.#createLogEntryId(),
+        recordedAt: new Date(this.#clock()).toISOString(),
+        ...entry
+      });
+    } catch {
+      // Observability must not change scheduling semantics.
+    }
+  }
+
   #claimTab(tabId: number): boolean {
     if (this.#runningTabs.has(tabId)) {
       return false;
@@ -300,5 +409,22 @@ export class RepeatCycleController {
         `Preset ${preset.id} does not have repeat scheduling enabled.`
       );
     }
+  }
+}
+
+function stopMessage(reason: RepeatCycleStopReason, tabId: number): string {
+  switch (reason) {
+    case "tab-closed":
+      return `Repeat cycle stopped because tab ${tabId} was closed.`;
+    case "tab-context-changed":
+      return `Repeat cycle stopped because tab ${tabId} left its assigned hostname or protocol.`;
+    case "invalid-context":
+      return `Repeat cycle stopped because tab ${tabId} or its preset is no longer valid.`;
+    case "stop-all":
+      return `Repeat cycle stopped by Stop All in tab ${tabId}.`;
+    case "automation-stop":
+      return `Repeat cycle stopped by automation code in tab ${tabId}.`;
+    case "user":
+      return `Repeat cycle stopped by the user in tab ${tabId}.`;
   }
 }

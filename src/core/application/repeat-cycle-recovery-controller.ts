@@ -15,7 +15,10 @@ import type { AutomationRunResult } from "./automation-runner";
 import type { RepeatCycleController } from "./repeat-cycle-controller";
 import { siteBindingMatchesUrl } from "./site-matcher";
 
-type ScheduledCycleRunner = Pick<RepeatCycleController, "runScheduled">;
+type ScheduledCycleRunner = Pick<
+  RepeatCycleController,
+  "runScheduled" | "stopByTabId"
+>;
 type WaitingRepeatCycleState = RepeatCycleRuntimeState & {
   readonly state: "waiting";
   readonly nextRunAt: number;
@@ -84,7 +87,7 @@ export class RepeatCycleRecoveryController {
 
     const preset = await this.#presets.getById(timer.presetId);
     if (preset === undefined || !(await this.#canRun(preset, timer.tabId))) {
-      await this.#discard(timer);
+      await this.#runner.stopByTabId(timer.tabId, "invalid-context");
       return undefined;
     }
 
@@ -102,7 +105,7 @@ export class RepeatCycleRecoveryController {
       return false;
     }
 
-    await this.#discard(state);
+    await this.#runner.stopByTabId(tabId, "tab-closed");
     return true;
   }
 
@@ -118,7 +121,7 @@ export class RepeatCycleRecoveryController {
       return false;
     }
 
-    await this.#discard(state);
+    await this.#runner.stopByTabId(tabId, "tab-context-changed");
     return true;
   }
 
@@ -204,20 +207,6 @@ export class RepeatCycleRecoveryController {
     }
 
     return siteBindingMatchesUrl(preset.site, tabUrl);
-  }
-
-  async #discard(identity: RepeatCycleIdentity): Promise<void> {
-    let schedulerError: unknown;
-    try {
-      await this.#scheduler.cancel(identity);
-    } catch (error) {
-      schedulerError = error;
-    }
-
-    await this.#registry.removeByTabId(identity.tabId);
-    if (schedulerError !== undefined) {
-      throw schedulerError;
-    }
   }
 
   #releaseRecovery(recovery: Promise<RepeatCycleRecoveryResult>): void {

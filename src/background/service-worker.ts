@@ -5,6 +5,7 @@ import {
 } from "../adapters/chrome/alarm-scheduler";
 import { ChromeTabUrlProvider } from "../adapters/chrome/tab-url-provider";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
+import { InMemoryRepeatCycleLog } from "../adapters/logging/in-memory-repeat-cycle-log";
 import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import {
@@ -14,6 +15,7 @@ import {
 import { AutomationRunner } from "../core/application/automation-runner";
 import { ManualRunController } from "../core/application/manual-run-controller";
 import { RepeatCycleController } from "../core/application/repeat-cycle-controller";
+import { RepeatCycleStatusController } from "../core/application/repeat-cycle-status-controller";
 import {
   RepeatCycleRecoveryController
 } from "../core/application/repeat-cycle-recovery-controller";
@@ -39,6 +41,7 @@ import { createBackgroundMessageListener } from "./message-router";
 const playwrightEngine = new PlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
 const executionLog = new InMemoryExecutionLog();
+const repeatCycleLog = new InMemoryRepeatCycleLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
 const presetEditorController = new PresetEditorController(presetRepository);
 const automationRunner = new AutomationRunner(
@@ -51,7 +54,12 @@ const repeatCycleRegistry = new ChromeRepeatCycleRegistry();
 const repeatCycleController = new RepeatCycleController(
   automationRunner,
   cycleScheduler,
-  repeatCycleRegistry
+  repeatCycleRegistry,
+  { log: repeatCycleLog }
+);
+const repeatCycleStatusController = new RepeatCycleStatusController(
+  repeatCycleRegistry,
+  presetRepository
 );
 const runtimeController = new AutomationRuntimeController(
   tabSessionManager,
@@ -172,7 +180,8 @@ function isAutomationRuntimeMessage(
   if (
     candidate.action === "stop-all" ||
     candidate.action === "sessions" ||
-    candidate.action === "presets"
+      candidate.action === "presets" ||
+      candidate.action === "repeat-statuses"
   ) {
     return true;
   }
@@ -250,6 +259,11 @@ async function handleAutomationRuntimeMessage(
       return { kind: "stop-all", stopAll: await runtimeController.stopAll() };
     case "sessions":
       return { kind: "sessions", sessions: runtimeController.sessions() };
+    case "repeat-statuses":
+      return {
+        kind: "repeat-statuses",
+        statuses: await repeatCycleStatusController.list()
+      };
     case "presets":
       return { kind: "presets", presets: await presetRepository.list() };
     case "create-preset": {
@@ -301,10 +315,14 @@ async function handleAutomationRuntimeMessage(
     case "logs":
       return {
         kind: "logs",
-        entries: await executionLog.list({ tabId: message.tabId })
+        entries: await executionLog.list({ tabId: message.tabId }),
+        cycleEntries: await repeatCycleLog.list()
       };
     case "clear-logs":
-      await executionLog.clear({ tabId: message.tabId });
+      await Promise.all([
+        executionLog.clear({ tabId: message.tabId }),
+        repeatCycleLog.clear()
+      ]);
       return { kind: "clear-logs" };
   }
 }

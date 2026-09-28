@@ -115,7 +115,11 @@ describe("RepeatCycleRecoveryController", () => {
 
     expect(harness.presets.getById).toHaveBeenCalledWith(PRESET_ID);
     expect(harness.runner.runScheduled).not.toHaveBeenCalled();
-    expect(harness.registry.states.has(11)).toBe(false);
+    expect(harness.runner.stopByTabId).toHaveBeenCalledWith(
+      11,
+      "invalid-context"
+    );
+    expect(harness.registry.states.get(11)).toMatchObject({ state: "stopped" });
     expect(harness.scheduler.timers).toEqual([]);
   });
 
@@ -137,7 +141,7 @@ describe("RepeatCycleRecoveryController", () => {
     ).resolves.toBeUndefined();
 
     expect(harness.runner.runScheduled).not.toHaveBeenCalled();
-    expect(harness.registry.states.has(15)).toBe(false);
+    expect(harness.registry.states.get(15)).toMatchObject({ state: "stopped" });
     expect(harness.scheduler.timers).toEqual([]);
   });
 
@@ -154,7 +158,7 @@ describe("RepeatCycleRecoveryController", () => {
     ).resolves.toBeUndefined();
 
     expect(harness.runner.runScheduled).not.toHaveBeenCalled();
-    expect(harness.registry.states.has(16)).toBe(false);
+    expect(harness.registry.states.get(16)).toMatchObject({ state: "stopped" });
   });
 
   it("keeps the cycle when navigation stays on the exact hostname and protocol", async () => {
@@ -183,7 +187,11 @@ describe("RepeatCycleRecoveryController", () => {
       harness.controller.handleTabUrlChanged(18, "https://other.example.com")
     ).resolves.toBe(true);
 
-    expect(harness.registry.states.has(18)).toBe(false);
+    expect(harness.registry.states.get(18)).toMatchObject({ state: "stopped" });
+    expect(harness.runner.stopByTabId).toHaveBeenCalledWith(
+      18,
+      "tab-context-changed"
+    );
     expect(harness.registry.states.get(19)).toEqual(waitingState(19, 19_000));
     expect(harness.scheduler.timers).toEqual([timer(19, 19_000)]);
   });
@@ -196,7 +204,8 @@ describe("RepeatCycleRecoveryController", () => {
 
     await expect(harness.controller.handleTabRemoved(20)).resolves.toBe(true);
 
-    expect(harness.registry.states.has(20)).toBe(false);
+    expect(harness.registry.states.get(20)).toMatchObject({ state: "stopped" });
+    expect(harness.runner.stopByTabId).toHaveBeenCalledWith(20, "tab-closed");
     expect(harness.registry.states.get(21)).toEqual(waitingState(21, 21_000));
     expect(harness.scheduler.timers).toEqual([timer(21, 21_000)]);
   });
@@ -261,7 +270,20 @@ function createHarness(options: { presets?: PresetV1[] } = {}) {
         tabId: number,
         scheduledFor: number
       ) => Promise<AutomationRunResult | undefined>
-    >()
+    >(),
+    stopByTabId: vi.fn(async (tabId: number) => {
+      const state = await registry.getByTabId(tabId);
+      if (state === undefined) {
+        return false;
+      }
+      await scheduler.cancel(state);
+      await registry.save({
+        tabId,
+        presetId: state.presetId,
+        state: "stopped"
+      });
+      return state.state === "running" || state.state === "waiting";
+    })
   };
   const controller = new RepeatCycleRecoveryController(
     runner,

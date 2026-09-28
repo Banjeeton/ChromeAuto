@@ -4,6 +4,8 @@ import type { PresetEditableFields } from "../../core/application/preset-editor"
 import type { PresetV1 } from "../../core/domain/preset";
 import type { RunSession } from "../../core/domain/run-session";
 import type { StepLogEntry } from "../../core/domain/step-log-entry";
+import type { RepeatCycleLogEntry } from "../../core/domain/repeat-cycle-log-entry";
+import type { RepeatCycleStatusView } from "../../core/application/repeat-cycle-status-controller";
 import type {
   StopAllAutomationsResult,
   StopAutomationResult
@@ -19,7 +21,11 @@ export type AutomationRuntimeMessage =
     }
   | {
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
-      readonly action: "stop-all" | "sessions" | "presets";
+      readonly action:
+        | "stop-all"
+        | "sessions"
+        | "presets"
+        | "repeat-statuses";
     }
   | {
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
@@ -55,6 +61,10 @@ export type AutomationRuntimeResult =
   | { readonly kind: "stop"; readonly stop: StopAutomationResult }
   | { readonly kind: "stop-all"; readonly stopAll: StopAllAutomationsResult }
   | { readonly kind: "sessions"; readonly sessions: readonly RunSession[] }
+  | {
+      readonly kind: "repeat-statuses";
+      readonly statuses: readonly RepeatCycleStatusView[];
+    }
   | { readonly kind: "presets"; readonly presets: readonly PresetV1[] }
   | { readonly kind: "preset-saved"; readonly preset: PresetV1 }
   | { readonly kind: "preset-deleted"; readonly presetId: string }
@@ -72,7 +82,11 @@ export type AutomationRuntimeResult =
       readonly presetName: string;
       readonly json: string;
     }
-  | { readonly kind: "logs"; readonly entries: readonly StepLogEntry[] }
+  | {
+      readonly kind: "logs";
+      readonly entries: readonly StepLogEntry[];
+      readonly cycleEntries: readonly RepeatCycleLogEntry[];
+    }
   | { readonly kind: "clear-logs" };
 
 export type AutomationRuntimeResponse =

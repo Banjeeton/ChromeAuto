@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { InMemoryRepeatCycleLog } from "../../src/adapters/logging/in-memory-repeat-cycle-log";
 
 import {
   RepeatCycleAlreadyRunningError,
@@ -48,6 +49,24 @@ describe("RepeatCycleController", () => {
     ]);
     expect(harness.scheduler.scheduled).toEqual([
       { tabId: 42, presetId: PRESET_ID, scheduledFor: 130_000 }
+    ]);
+  });
+
+  it("logs cycle start, completion and repeat scheduling", async () => {
+    const log = new InMemoryRepeatCycleLog();
+    const harness = createHarness({ now: 10_000, log });
+
+    await harness.controller.runManual(createPreset(), 42);
+
+    await expect(log.list({ tabId: 42 })).resolves.toMatchObject([
+      { event: "started", tabId: 42 },
+      { event: "completed", tabId: 42 },
+      {
+        event: "scheduled",
+        tabId: 42,
+        intervalMinutes: 2,
+        nextRunAt: 130_000
+      }
     ]);
   });
 
@@ -139,6 +158,33 @@ describe("RepeatCycleController", () => {
     });
   });
 
+  it("logs the failing step and the reason the cycle stopped", async () => {
+    const log = new InMemoryRepeatCycleLog();
+    const failure = new AutomationEngineError(
+      "step-failed",
+      "Checkout button was not found",
+      { context: { tabId: 10, stepId: "checkout", stepIndex: 2 } }
+    );
+    const harness = createHarness({
+      log,
+      run: async () => Promise.reject(failure)
+    });
+
+    await expect(
+      harness.controller.runManual(createPreset(), 10)
+    ).rejects.toBe(failure);
+
+    await expect(log.list({ tabId: 10 })).resolves.toContainEqual(
+      expect.objectContaining({
+        event: "failed",
+        stepId: "checkout",
+        stepNumber: 3,
+        error: "Checkout button was not found",
+        message: expect.stringContaining("step 3 (checkout)")
+      })
+    );
+  });
+
   it("marks an automation.stop result as stopped instead of failed", async () => {
     const stopped = new AutomationEngineError(
       "session-stopped",
@@ -172,7 +218,8 @@ describe("RepeatCycleController", () => {
   });
 
   it("stops a waiting cycle, cancels its timer and treats repeated Stop as a no-op", async () => {
-    const harness = createHarness();
+    const log = new InMemoryRepeatCycleLog();
+    const harness = createHarness({ log });
     const state = {
       tabId: 13,
       presetId: PRESET_ID,
@@ -191,6 +238,13 @@ describe("RepeatCycleController", () => {
       presetId: PRESET_ID,
       state: "stopped"
     });
+    await expect(log.list({ tabId: 13 })).resolves.toContainEqual(
+      expect.objectContaining({
+        event: "stopped",
+        reason: "user",
+        message: expect.stringContaining("stopped by the user")
+      })
+    );
   });
 
   it("does not schedule another timer when Stop races with pass completion", async () => {
@@ -287,6 +341,7 @@ describe("RepeatCycleController", () => {
 function createHarness(options: {
   now?: number;
   run?: (request: RunAutomationRequest) => Promise<AutomationRunResult>;
+  log?: InMemoryRepeatCycleLog;
 } = {}) {
   const scheduler = new MemoryCycleScheduler();
   const registry = new MemoryRepeatCycleRegistry();
@@ -297,7 +352,12 @@ function createHarness(options: {
     )
   };
   const controller = new RepeatCycleController(runner, scheduler, registry, {
-    clock: () => options.now ?? 1_000
+    clock: () => options.now ?? 1_000,
+    createLogEntryId: (() => {
+      let index = 0;
+      return () => `cycle-log-${++index}`;
+    })(),
+    ...(options.log === undefined ? {} : { log: options.log })
   });
   return { controller, registry, runner, scheduler };
 }
