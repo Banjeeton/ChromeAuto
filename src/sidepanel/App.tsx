@@ -203,6 +203,14 @@ function App() {
     ) => {
       if (areaName === "local" && PRESET_STORAGE_KEY in changes) {
         void refreshPresets();
+        void refreshActiveTab().catch((error: unknown) => {
+          addNotice(
+            "error",
+            `Unable to refresh the active-site status: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        });
       }
     };
 
@@ -211,7 +219,7 @@ function App() {
       presetRequestId.current += 1;
       chrome.storage.onChanged.removeListener(handleStorageChange);
     };
-  }, [refreshPresets]);
+  }, [addNotice, refreshActiveTab, refreshPresets]);
 
   const runAutomation = async () => {
     if (activeTab === undefined) {
