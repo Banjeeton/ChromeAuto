@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  findActiveAutomationForUrl,
   findAutomationForUrl,
   matchSiteBinding,
   SiteBindingConflictError,
   siteBindingMatchesUrl,
   type SiteBoundAutomation
 } from "../../src/core/application/site-matcher";
+import type { PresetV1 } from "../../src/core/domain/preset";
 import type { SiteBinding } from "../../src/core/domain/site-binding";
 
 const binding: SiteBinding = {
@@ -24,6 +26,18 @@ describe("site matcher", () => {
       }
     );
   });
+
+  it.each(["http", "https"])(
+    "supports an explicitly allowed %s page",
+    (protocol) => {
+      expect(
+        siteBindingMatchesUrl(
+          { hostname: "example.com", protocols: ["http", "https"] },
+          `${protocol}://example.com/path`
+        )
+      ).toBe(true);
+    }
+  );
 
   it.each(["www.example.com", "shop.example.com", "other-example.com"])(
     "treats %s as a different hostname",
@@ -96,6 +110,29 @@ describe("site matcher", () => {
     ).toBeUndefined();
   });
 
+  it.each([
+    ["http://example.com", "main-site"],
+    ["http://www.example.com", "www-site"],
+    ["http://shop.example.com", "shop-site"]
+  ])("resolves %s as an independent site", (url, expectedId) => {
+    const automations: SiteBoundAutomation[] = [
+      {
+        id: "main-site",
+        site: { hostname: "example.com", protocols: ["http"] }
+      },
+      {
+        id: "www-site",
+        site: { hostname: "www.example.com", protocols: ["http"] }
+      },
+      {
+        id: "shop-site",
+        site: { hostname: "shop.example.com", protocols: ["http"] }
+      }
+    ];
+
+    expect(findAutomationForUrl(automations, url)?.id).toBe(expectedId);
+  });
+
   it("does not return an automation when its protocol is not allowed", () => {
     const automations: SiteBoundAutomation[] = [
       { id: "secure", site: binding }
@@ -132,4 +169,48 @@ describe("site matcher", () => {
       });
     }
   });
+
+  it("ignores disabled presets while resolving the active assignment", () => {
+    const enabled = createPreset("enabled", true);
+    const disabled = createPreset("disabled", false);
+
+    expect(
+      findActiveAutomationForUrl(
+        [disabled, enabled],
+        "https://example.com"
+      )?.id
+    ).toBe("enabled");
+  });
+
+  it("reports two active automations assigned to one hostname", () => {
+    expect(() =>
+      findActiveAutomationForUrl(
+        [createPreset("first", true), createPreset("second", true)],
+        "https://example.com"
+      )
+    ).toThrowError(SiteBindingConflictError);
+  });
 });
+
+function createPreset(id: string, enabled: boolean): PresetV1 {
+  return {
+    schemaVersion: 1,
+    id,
+    name: id,
+    createdAt: "2026-09-28T08:00:00.000Z",
+    updatedAt: "2026-09-28T08:00:00.000Z",
+    site: { hostname: "example.com", protocols: ["https"] },
+    automation: {
+      defaults: {
+        timeoutMs: 1_000,
+        postActionDelayMs: 0,
+        humanInput: { enabled: false, minDelayMs: 40, maxDelayMs: 120 }
+      },
+      steps: []
+    },
+    siteSettings: {
+      enabled,
+      repeat: { enabled: false, intervalMinutes: 1 }
+    }
+  };
+}

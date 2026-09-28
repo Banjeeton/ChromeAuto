@@ -149,10 +149,10 @@ export function PresetEditor({
         </label>
       </fieldset>
 
-      {mode === "duplicate" && (
+      {mode === "duplicate" && fields.site.hostname.length === 0 && (
         <p className="editor-help duplicate-hint">
           Choose a different hostname before saving. One hostname can only have
-          one automation.
+          one active automation.
         </p>
       )}
 

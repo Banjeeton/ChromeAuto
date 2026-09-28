@@ -49,7 +49,7 @@ export class PresetRepositoryWriteError extends PresetRepositoryAccessError {
 export type PresetRepositoryDataErrorCode =
   | "invalid_collection"
   | "duplicate_preset_id"
-  | "duplicate_hostname";
+  | "duplicate_active_hostname";
 
 export class PresetRepositoryDataError extends Error {
   readonly code: PresetRepositoryDataErrorCode;
@@ -73,7 +73,7 @@ export class PresetRepositoryConflictError extends Error {
 
   constructor(hostname: string, presetIds: readonly string[]) {
     super(
-      `Hostname ${hostname} is already assigned to preset ${presetIds.join(", ")}`
+      `Hostname ${hostname} is already assigned to active preset ${presetIds.join(", ")}`
     );
     this.name = "PresetRepositoryConflictError";
     this.hostname = hostname;

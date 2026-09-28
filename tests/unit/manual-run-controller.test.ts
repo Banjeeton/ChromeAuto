@@ -54,6 +54,27 @@ describe("ManualRunController", () => {
     });
   });
 
+  it("selects the enabled preset when an inactive alternative shares hostname", async () => {
+    const disabled = createPreset({
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      name: "Inactive alternative",
+      siteSettings: {
+        enabled: false,
+        repeat: { enabled: false, intervalMinutes: 1 }
+      }
+    });
+    const enabled = createPreset();
+    const { controller } = createController([disabled, enabled]);
+
+    await expect(
+      controller.status(42, "https://example.com")
+    ).resolves.toMatchObject({
+      state: "ready",
+      presetId: PRESET_ID,
+      presetName: "Example automation"
+    });
+  });
+
   it("blocks disabled and empty presets before starting a session", async () => {
     const disabled = createPreset({
       siteSettings: {

@@ -116,7 +116,7 @@ export function duplicateFieldsFromPreset(
     name: `${fields.name} copy`,
     site: {
       ...fields.site,
-      hostname: ""
+      hostname: preset.siteSettings.enabled ? "" : fields.site.hostname
     }
   };
 }

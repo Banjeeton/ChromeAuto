@@ -48,6 +48,8 @@ export class ChromePresetRepository implements PresetRepository {
       const conflicting = presets.filter(
         (item) =>
           item.id !== normalized.id &&
+          normalized.siteSettings.enabled &&
+          item.siteSettings.enabled &&
           item.site.hostname.toLowerCase() === normalized.site.hostname
       );
       if (conflicting.length > 0) {
@@ -133,14 +135,14 @@ function decodePresetCollection(value: unknown): PresetV1[] {
     );
   }
 
-  const hostnames = presets.map((preset) =>
-    preset.site.hostname.toLowerCase()
-  );
-  const duplicateHostnames = findDuplicates(hostnames);
+  const activeHostnames = presets
+    .filter((preset) => preset.siteSettings.enabled)
+    .map((preset) => preset.site.hostname.toLowerCase());
+  const duplicateHostnames = findDuplicates(activeHostnames);
   if (duplicateHostnames.length > 0) {
     throw new PresetRepositoryDataError(
-      "duplicate_hostname",
-      `Stored automation presets contain duplicate hostnames: ${duplicateHostnames.join(", ")}.`,
+      "duplicate_active_hostname",
+      `Stored automation presets contain multiple active assignments for: ${duplicateHostnames.join(", ")}.`,
       duplicateHostnames
     );
   }
@@ -184,6 +186,7 @@ function isPresetV1(value: unknown): value is PresetV1 {
     candidate.automation !== null &&
     Array.isArray(candidate.automation.steps) &&
     typeof candidate.siteSettings === "object" &&
-    candidate.siteSettings !== null
+    candidate.siteSettings !== null &&
+    typeof candidate.siteSettings.enabled === "boolean"
   );
 }

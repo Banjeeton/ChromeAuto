@@ -75,7 +75,7 @@ describe("Chrome storage adapter", () => {
     await expect(repository.list()).resolves.toHaveLength(2);
   });
 
-  it("normalizes hostnames and enforces one preset per hostname", async () => {
+  it("normalizes hostnames and rejects two active presets per hostname", async () => {
     const repository = new ChromePresetRepository(new MemoryChromeStorage());
     await repository.save(createPreset({ site: {
       hostname: "EXAMPLE.COM",
@@ -97,6 +97,58 @@ describe("Chrome storage adapter", () => {
     ]);
   });
 
+  it("allows inactive presets for the same hostname", async () => {
+    const repository = new ChromePresetRepository(new MemoryChromeStorage());
+    await repository.save(createPreset());
+    await repository.save(
+      createPreset({
+        id: SECOND_PRESET_ID,
+        name: "Inactive alternative",
+        siteSettings: {
+          enabled: false,
+          repeat: { enabled: false, intervalMinutes: 1 }
+        }
+      })
+    );
+
+    await expect(repository.list()).resolves.toHaveLength(2);
+    await expect(
+      repository.save(
+        createPreset({
+          id: SECOND_PRESET_ID,
+          name: "Now active",
+          siteSettings: {
+            enabled: true,
+            repeat: { enabled: false, intervalMinutes: 1 }
+          }
+        })
+      )
+    ).rejects.toBeInstanceOf(PresetRepositoryConflictError);
+    await expect(repository.list()).resolves.toEqual([
+      expect.objectContaining({ id: PRESET_ID, name: "Example automation" }),
+      expect.objectContaining({
+        id: SECOND_PRESET_ID,
+        name: "Inactive alternative",
+        siteSettings: expect.objectContaining({ enabled: false })
+      })
+    ]);
+  });
+
+  it("allows active presets for exact but different hostnames", async () => {
+    const repository = new ChromePresetRepository(new MemoryChromeStorage());
+    await Promise.all([
+      repository.save(createPreset()),
+      repository.save(
+        createPreset({
+          id: SECOND_PRESET_ID,
+          site: { hostname: "www.example.com", protocols: ["http"] }
+        })
+      )
+    ]);
+
+    await expect(repository.list()).resolves.toHaveLength(2);
+  });
+
   it("rejects stored collections with duplicate preset ids", async () => {
     const storage = new MemoryChromeStorage();
     storage.values["automation.presets.v1"] = [createPreset(), createPreset()];
@@ -106,6 +158,21 @@ describe("Chrome storage adapter", () => {
       name: "PresetRepositoryDataError",
       code: "duplicate_preset_id",
       values: [PRESET_ID]
+    } satisfies Partial<PresetRepositoryDataError>);
+  });
+
+  it("rejects stored collections with duplicate active hostnames", async () => {
+    const storage = new MemoryChromeStorage();
+    storage.values["automation.presets.v1"] = [
+      createPreset(),
+      createPreset({ id: SECOND_PRESET_ID })
+    ];
+    const repository = new ChromePresetRepository(storage);
+
+    await expect(repository.list()).rejects.toMatchObject({
+      name: "PresetRepositoryDataError",
+      code: "duplicate_active_hostname",
+      values: ["example.com"]
     } satisfies Partial<PresetRepositoryDataError>);
   });
 
