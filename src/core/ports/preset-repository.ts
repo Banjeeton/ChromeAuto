@@ -7,6 +7,66 @@ export interface PresetRepository {
   remove(presetId: string): Promise<boolean>;
 }
 
+export type PresetRepositoryAccessOperation = "read" | "write";
+
+export abstract class PresetRepositoryAccessError extends Error {
+  readonly operation: PresetRepositoryAccessOperation;
+
+  protected constructor(
+    name: string,
+    operation: PresetRepositoryAccessOperation,
+    message: string,
+    cause: unknown
+  ) {
+    super(message, { cause });
+    this.name = name;
+    this.operation = operation;
+  }
+}
+
+export class PresetRepositoryReadError extends PresetRepositoryAccessError {
+  constructor(cause: unknown) {
+    super(
+      "PresetRepositoryReadError",
+      "read",
+      "Unable to read automation presets from storage.",
+      cause
+    );
+  }
+}
+
+export class PresetRepositoryWriteError extends PresetRepositoryAccessError {
+  constructor(cause: unknown) {
+    super(
+      "PresetRepositoryWriteError",
+      "write",
+      "Unable to write automation presets to storage.",
+      cause
+    );
+  }
+}
+
+export type PresetRepositoryDataErrorCode =
+  | "invalid_collection"
+  | "duplicate_preset_id"
+  | "duplicate_hostname";
+
+export class PresetRepositoryDataError extends Error {
+  readonly code: PresetRepositoryDataErrorCode;
+  readonly values: readonly string[];
+
+  constructor(
+    code: PresetRepositoryDataErrorCode,
+    message: string,
+    values: readonly string[] = []
+  ) {
+    super(message);
+    this.name = "PresetRepositoryDataError";
+    this.code = code;
+    this.values = Object.freeze([...values]);
+  }
+}
+
 export class PresetRepositoryConflictError extends Error {
   readonly hostname: string;
   readonly presetIds: readonly string[];

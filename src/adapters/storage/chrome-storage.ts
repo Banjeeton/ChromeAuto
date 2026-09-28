@@ -1,6 +1,9 @@
 import type { PresetV1 } from "../../core/domain/preset";
 import {
   type PresetRepository,
+  PresetRepositoryDataError,
+  PresetRepositoryReadError,
+  PresetRepositoryWriteError,
   PresetRepositoryConflictError
 } from "../../core/ports/preset-repository";
 
@@ -15,6 +18,7 @@ export interface ChromeStorageArea {
 export class ChromePresetRepository implements PresetRepository {
   readonly #storage: ChromeStorageArea;
   readonly #storageKey: string;
+  #pendingMutation: Promise<void> = Promise.resolve();
 
   constructor(
     storage: ChromeStorageArea,
@@ -25,15 +29,8 @@ export class ChromePresetRepository implements PresetRepository {
   }
 
   async list(): Promise<readonly PresetV1[]> {
-    const stored = await this.#storage.get(this.#storageKey);
-    const value = stored[this.#storageKey];
-    if (value === undefined) {
-      return Object.freeze([]);
-    }
-    if (!Array.isArray(value) || !value.every(isPresetV1)) {
-      throw new Error("Stored automation presets are not valid preset v1 objects");
-    }
-    return Object.freeze(structuredClone(value));
+    await this.#pendingMutation;
+    return Object.freeze(structuredClone(await this.#readPresets()));
   }
 
   async getById(presetId: string): Promise<PresetV1 | undefined> {
@@ -42,39 +39,123 @@ export class ChromePresetRepository implements PresetRepository {
   }
 
   async save(preset: PresetV1): Promise<void> {
-    const normalized = structuredClone(preset);
-    normalized.site.hostname = normalized.site.hostname.toLowerCase();
-    const presets = [...(await this.list())];
-    const conflicting = presets.filter(
-      (item) =>
-        item.id !== normalized.id &&
-        item.site.hostname === normalized.site.hostname
-    );
-    if (conflicting.length > 0) {
-      throw new PresetRepositoryConflictError(
-        normalized.site.hostname,
-        conflicting.map((item) => item.id)
+    return this.#enqueueMutation(async () => {
+      const normalized = structuredClone(preset);
+      normalized.site.hostname = normalized.site.hostname.toLowerCase();
+      const presets = await this.#readPresets();
+      const conflicting = presets.filter(
+        (item) =>
+          item.id !== normalized.id &&
+          item.site.hostname.toLowerCase() === normalized.site.hostname
       );
-    }
+      if (conflicting.length > 0) {
+        throw new PresetRepositoryConflictError(
+          normalized.site.hostname,
+          conflicting.map((item) => item.id)
+        );
+      }
 
-    const existingIndex = presets.findIndex((item) => item.id === normalized.id);
-    if (existingIndex === -1) {
-      presets.push(normalized);
-    } else {
-      presets[existingIndex] = normalized;
-    }
-    await this.#storage.set({ [this.#storageKey]: presets });
+      const existingIndex = presets.findIndex(
+        (item) => item.id === normalized.id
+      );
+      if (existingIndex === -1) {
+        presets.push(normalized);
+      } else {
+        presets[existingIndex] = normalized;
+      }
+      await this.#writePresets(presets);
+    });
   }
 
   async remove(presetId: string): Promise<boolean> {
-    const presets = [...(await this.list())];
-    const remaining = presets.filter((preset) => preset.id !== presetId);
-    if (remaining.length === presets.length) {
-      return false;
-    }
-    await this.#storage.set({ [this.#storageKey]: remaining });
-    return true;
+    return this.#enqueueMutation(async () => {
+      const presets = await this.#readPresets();
+      const remaining = presets.filter((preset) => preset.id !== presetId);
+      if (remaining.length === presets.length) {
+        return false;
+      }
+      await this.#writePresets(remaining);
+      return true;
+    });
   }
+
+  async #readPresets(): Promise<PresetV1[]> {
+    let stored: Record<string, unknown>;
+    try {
+      stored = await this.#storage.get(this.#storageKey);
+    } catch (error) {
+      throw new PresetRepositoryReadError(error);
+    }
+
+    return decodePresetCollection(stored[this.#storageKey]);
+  }
+
+  async #writePresets(presets: readonly PresetV1[]): Promise<void> {
+    try {
+      await this.#storage.set({
+        [this.#storageKey]: structuredClone(presets)
+      });
+    } catch (error) {
+      throw new PresetRepositoryWriteError(error);
+    }
+  }
+
+  #enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#pendingMutation.then(operation, operation);
+    this.#pendingMutation = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
+}
+
+function decodePresetCollection(value: unknown): PresetV1[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value) || !value.every(isPresetV1)) {
+    throw new PresetRepositoryDataError(
+      "invalid_collection",
+      "Stored automation presets are not valid preset v1 objects."
+    );
+  }
+
+  const presets = structuredClone(value);
+  const duplicateIds = findDuplicates(presets.map((preset) => preset.id));
+  if (duplicateIds.length > 0) {
+    throw new PresetRepositoryDataError(
+      "duplicate_preset_id",
+      `Stored automation presets contain duplicate ids: ${duplicateIds.join(", ")}.`,
+      duplicateIds
+    );
+  }
+
+  const hostnames = presets.map((preset) =>
+    preset.site.hostname.toLowerCase()
+  );
+  const duplicateHostnames = findDuplicates(hostnames);
+  if (duplicateHostnames.length > 0) {
+    throw new PresetRepositoryDataError(
+      "duplicate_hostname",
+      `Stored automation presets contain duplicate hostnames: ${duplicateHostnames.join(", ")}.`,
+      duplicateHostnames
+    );
+  }
+
+  return presets;
+}
+
+function findDuplicates(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) {
+      duplicates.add(value);
+    }
+    seen.add(value);
+  }
+  return [...duplicates];
 }
 
 function isPresetV1(value: unknown): value is PresetV1 {
@@ -86,10 +167,17 @@ function isPresetV1(value: unknown): value is PresetV1 {
     candidate.schemaVersion === 1 &&
     typeof candidate.id === "string" &&
     typeof candidate.name === "string" &&
+    typeof candidate.createdAt === "string" &&
+    typeof candidate.updatedAt === "string" &&
+    (candidate.description === undefined ||
+      typeof candidate.description === "string") &&
     typeof candidate.site === "object" &&
     candidate.site !== null &&
     typeof candidate.site.hostname === "string" &&
     Array.isArray(candidate.site.protocols) &&
+    candidate.site.protocols.every(
+      (protocol) => protocol === "http" || protocol === "https"
+    ) &&
     typeof candidate.automation === "object" &&
     candidate.automation !== null &&
     Array.isArray(candidate.automation.steps) &&
