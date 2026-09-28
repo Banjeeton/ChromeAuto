@@ -87,13 +87,13 @@ describe("ChromeRecorderSessionRegistry", () => {
     );
 
     expect(closed).toEqual({
+      ...first,
       session: {
         ...first.session,
         state: "stopped",
         stopReason: "tab-closed",
         stoppedAt: "2026-09-28T18:05:00.000Z"
-      },
-      draftSteps: first.draftSteps
+      }
     });
     await expect(registry.getByTabId(8)).resolves.toEqual(second);
     await expect(
@@ -175,6 +175,8 @@ describe("ChromeRecorderSessionRegistry", () => {
     expect(Object.isFrozen(records)).toBe(true);
     expect(Object.isFrozen(records[0])).toBe(true);
     expect(Object.isFrozen(records[0].session.context)).toBe(true);
+    expect(Object.isFrozen(records[0].recordedEvents)).toBe(true);
+    expect(Object.isFrozen(records[0].recordedEvents[0])).toBe(true);
     expect(Object.isFrozen(records[0].draftSteps)).toBe(true);
     expect(Object.isFrozen(records[0].draftSteps[0])).toBe(true);
     expect(Object.isFrozen(record)).toBe(true);
@@ -260,6 +262,24 @@ function recordingRecord(
       recordedEventCount: stepCount,
       state: "recording"
     },
+    documentId: `document-${tabId}`,
+    currentUrl: `https://example.com/form?tab=${tabId}`,
+    recordedEvents: Array.from({ length: stepCount }, (_, index) => ({
+      version: 1 as const,
+      eventId: `event-${tabId}-${index + 1}`,
+      sessionId,
+      tabId,
+      documentId: `document-${tabId}`,
+      occurredAt: `2026-09-28T18:00:0${index}.000Z`,
+      url: `https://example.com/form?tab=${tabId}`,
+      kind: "click" as const,
+      target: {
+        locators: [
+          { type: "css" as const, value: "button[type='submit']" }
+        ]
+      },
+      payload: { button: "left" as const, clickCount: 1, modifiers: [] }
+    })),
     draftSteps: Array.from({ length: stepCount }, (_, index) => ({
       id: `click-${tabId}-${index + 1}`,
       type: "click" as const,

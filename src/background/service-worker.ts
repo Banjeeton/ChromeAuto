@@ -4,10 +4,12 @@ import {
   parseCycleAlarmName
 } from "../adapters/chrome/alarm-scheduler";
 import { ChromeTabUrlProvider } from "../adapters/chrome/tab-url-provider";
+import { ChromeRecorderContentBridge } from "../adapters/chrome/recorder-content-bridge";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { InMemoryRepeatCycleLog } from "../adapters/logging/in-memory-repeat-cycle-log";
 import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
+import { ChromeRecorderSessionRegistry } from "../adapters/storage/chrome-recorder-session-registry";
 import {
   exportPresetJson,
   importPresetJsonSafely
@@ -23,6 +25,8 @@ import {
   PresetEditorController
 } from "../core/application/preset-editor";
 import { AutomationRuntimeController } from "../core/application/automation-runtime-controller";
+import { RecordedStepMapper } from "../core/application/recorded-step-mapper";
+import { RecorderNavigationController } from "../core/application/recorder-navigation-controller";
 import { TabSessionManager } from "../core/application/tab-session-manager";
 import {
   AUTOMATION_RUNTIME_MESSAGE,
@@ -49,6 +53,11 @@ const executionLog = new InMemoryExecutionLog();
 const repeatCycleLog = new InMemoryRepeatCycleLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
 const presetEditorController = new PresetEditorController(presetRepository);
+const recorderNavigationController = new RecorderNavigationController(
+  new ChromeRecorderSessionRegistry(),
+  new RecordedStepMapper(),
+  new ChromeRecorderContentBridge()
+);
 const automationRunner = new AutomationRunner(
   playwrightEngine,
   tabSessionManager,
@@ -125,9 +134,51 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  void stopCycleForRemovedTab(tabId).catch((error: unknown) => {
-    console.error(`Unable to clean up repeat cycle for tab ${tabId}.`, error);
+  void Promise.all([
+    stopCycleForRemovedTab(tabId),
+    recorderNavigationController.handleTabRemoved(tabId)
+  ]).catch((error: unknown) => {
+    console.error(`Unable to clean up tab ${tabId} runtime state.`, error);
   });
+});
+
+chrome.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId !== 0) {
+    return;
+  }
+  void recorderNavigationController
+    .handleNavigationCommitted({
+      tabId: details.tabId,
+      url: details.url,
+      documentId: details.documentId,
+      navigationId: details.documentId,
+      transitionType: details.transitionType
+    })
+    .catch((error: unknown) => {
+      console.error(
+        `Unable to process recorder navigation in tab ${details.tabId}.`,
+        error
+      );
+    });
+});
+
+chrome.webNavigation.onDOMContentLoaded.addListener((details) => {
+  if (details.frameId !== 0) {
+    return;
+  }
+  void recorderNavigationController
+    .handlePageReady({
+      tabId: details.tabId,
+      url: details.url,
+      documentId: details.documentId,
+      navigationId: details.documentId
+    })
+    .catch((error: unknown) => {
+      console.error(
+        `Unable to restore recorder capture in tab ${details.tabId}.`,
+        error
+      );
+    });
 });
 
 // Top-level recovery runs whenever Manifest V3 recreates this service worker.
@@ -179,10 +230,10 @@ chrome.runtime.onMessage.addListener(
   ])
 );
 
-function handleRecorderEventMessage(
+async function handleRecorderEventMessage(
   message: RecorderEventMessage
-): RecorderEventReceivedResult {
-  // A later RecorderController task will validate and persist the event.
+): Promise<RecorderEventReceivedResult> {
+  await recorderNavigationController.record(message.event);
   return {
     kind: "recorder-event-received",
     eventId: message.event.eventId

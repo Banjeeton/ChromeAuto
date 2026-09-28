@@ -1,4 +1,5 @@
 import type { AutomationStep } from "../domain/automation-step";
+import type { RecorderEvent } from "../domain/recorder-event";
 import type {
   RecorderSessionIdentity,
   RecorderSessionState
@@ -6,6 +7,9 @@ import type {
 
 export interface RecorderSessionRecord {
   readonly session: RecorderSessionState;
+  readonly documentId: string;
+  readonly currentUrl: string;
+  readonly recordedEvents: readonly RecorderEvent[];
   readonly draftSteps: readonly AutomationStep[];
 }
 

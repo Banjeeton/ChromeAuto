@@ -1,4 +1,5 @@
 import type { AutomationStep } from "../../core/domain/automation-step";
+import type { RecorderEvent } from "../../core/domain/recorder-event";
 import { RECORDER_ERROR_CODES } from "../../core/domain/recorder-error";
 import type {
   RecorderSessionIdentity,
@@ -12,6 +13,10 @@ import {
   RecorderSessionRegistryAccessError
 } from "../../core/ports/recorder-session-registry";
 import { RECORDER_SESSION_STORAGE_KEY } from "../../shared/constants";
+import {
+  RECORDER_EVENT_MESSAGE,
+  isRecorderEventMessage
+} from "../../shared/types/recorder-runtime";
 
 export interface ChromeRecorderSessionStorageArea {
   get(key: string): Promise<Record<string, unknown>>;
@@ -103,6 +108,9 @@ export class ChromeRecorderSessionRegistry
             stopReason: "tab-closed",
             stoppedAt
           },
+          documentId: current.documentId,
+          currentUrl: current.currentUrl,
+          recordedEvents: current.recordedEvents,
           draftSteps: current.draftSteps
         };
         await this.#write(records);
@@ -225,11 +233,22 @@ function decodeRecorderSessionCollection(
 function isRecorderSessionRecord(
   value: unknown
 ): value is RecorderSessionRecord {
-  if (!hasOnlyKeys(value, ["session", "draftSteps"])) {
+  if (
+    !hasOnlyKeys(value, [
+      "session",
+      "documentId",
+      "currentUrl",
+      "recordedEvents",
+      "draftSteps"
+    ])
+  ) {
     return false;
   }
   return (
     isRecorderSessionState(value.session) &&
+    isNonEmptyString(value.documentId) &&
+    isRecorderUrl(value.currentUrl) &&
+    isRecorderEvents(value.recordedEvents, value.session) &&
     isValidDraftSteps(value.draftSteps)
   );
 }
@@ -353,6 +372,41 @@ function isValidDraftSteps(value: unknown): value is AutomationStep[] {
   );
 }
 
+function isRecorderEvents(
+  value: unknown,
+  session: RecorderSessionState
+): value is RecorderEvent[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  const eventIds = new Set<string>();
+  for (const event of value) {
+    if (
+      !isRecorderEventMessage({ type: RECORDER_EVENT_MESSAGE, event }) ||
+      event.sessionId !== session.sessionId ||
+      event.tabId !== session.tabId ||
+      eventIds.has(event.eventId)
+    ) {
+      return false;
+    }
+    eventIds.add(event.eventId);
+  }
+  return session.recordedEventCount === value.length;
+}
+
+function isRecorderUrl(value: unknown): value is string {
+  if (!isNonEmptyString(value)) {
+    return false;
+  }
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function assertRecorderSessionIdentity(
   identity: RecorderSessionIdentity
 ): void {
@@ -392,6 +446,10 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function isIsoTimestamp(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function recorderSessionIdentityKey(identity: RecorderSessionIdentity): string {

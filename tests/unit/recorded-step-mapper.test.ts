@@ -7,7 +7,8 @@ import type {
 } from "../../src/core/domain/automation-step";
 import type {
   RecorderClickEvent,
-  RecorderInputEvent
+  RecorderInputEvent,
+  RecorderReloadEvent
 } from "../../src/core/domain/recorder-event";
 import { validatePreset } from "../../src/core/domain/preset-validator";
 
@@ -137,24 +138,45 @@ describe("RecordedStepMapper", () => {
     );
   });
 
+  it("converts one navigation reload into one valid reload step", () => {
+    const mapper = mapperWithIds("reload-step");
+
+    const result = mapper.map([
+      reloadEvent(3, "navigation-1"),
+      reloadEvent(4, "navigation-1")
+    ]);
+
+    expect(result.steps).toEqual([
+      {
+        id: "reload-step",
+        type: "reload",
+        enabled: true,
+        waitUntil: "domcontentloaded"
+      }
+    ]);
+    expect(result.skipped).toEqual([
+      {
+        eventId: "event-4",
+        kind: "reload",
+        reason: "duplicate-navigation"
+      }
+    ]);
+    expect(validatePreset(presetWithSteps(result.steps))).toEqual([]);
+  });
+
   it("safely skips unknown, unsupported and malformed events", () => {
     const mapper = mapperWithIds("step");
     const modifiedClick = clickEvent(1);
     const unsupportedEvents: unknown[] = [
       {
         ...eventBase(2),
-        kind: "reload",
-        payload: { navigationId: "nav-1", waitUntil: "domcontentloaded" }
-      },
-      {
-        ...eventBase(3),
         kind: "pageReady",
         payload: { navigationId: "nav-1", state: "load" }
       },
-      { ...eventBase(4), kind: "scroll", payload: { top: 100 } },
+      { ...eventBase(3), kind: "scroll", payload: { top: 100 } },
       { kind: "click" },
       {
-        ...inputEvent(5, "invalid"),
+        ...inputEvent(4, "invalid"),
         target: { locators: [{ type: "css", value: "" }] }
       },
       {
@@ -170,7 +192,6 @@ describe("RecordedStepMapper", () => {
     expect(result.skipped.map((event) => event.reason)).toEqual([
       "unsupported-event-kind",
       "unsupported-event-kind",
-      "unsupported-event-kind",
       "invalid-event",
       "invalid-event",
       "unsupported-click-modifiers"
@@ -180,6 +201,17 @@ describe("RecordedStepMapper", () => {
 
 function mapperWithIds(base: string): RecordedStepMapper {
   return new RecordedStepMapper({ createStepId: () => base });
+}
+
+function reloadEvent(
+  index: number,
+  navigationId: string
+): RecorderReloadEvent {
+  return {
+    ...eventBase(index),
+    kind: "reload",
+    payload: { navigationId, waitUntil: "domcontentloaded" }
+  };
 }
 
 function eventBase(index: number) {

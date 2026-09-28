@@ -4,7 +4,8 @@ import type {
   ElementLocator,
   ElementTarget,
   InputStep,
-  MouseButton
+  MouseButton,
+  ReloadStep
 } from "../domain/automation-step";
 import {
   type PresetValidationIssue,
@@ -15,6 +16,7 @@ export type RecordedEventSkipReason =
   | "invalid-event"
   | "unsupported-event-kind"
   | "unsupported-click-modifiers"
+  | "duplicate-navigation"
   | "invalid-generated-step";
 
 export interface SkippedRecordedEvent {
@@ -34,7 +36,7 @@ export interface RecordedStepMapperOptions {
 
 export interface RecordedStepSourceEvent {
   readonly eventId: string;
-  readonly kind: "click" | "input";
+  readonly kind: "click" | "input" | "reload";
   readonly sessionId: string;
   readonly tabId: number;
   readonly documentId: string;
@@ -77,6 +79,7 @@ export class RecordedStepMapper {
     const steps: AutomationStep[] = [];
     const skipped: SkippedRecordedEvent[] = [];
     const usedStepIds = new Set<string>();
+    const recordedReloads = new Set<string>();
     let previousInput:
       | { readonly key: string; readonly stepIndex: number }
       | undefined;
@@ -89,9 +92,38 @@ export class RecordedStepMapper {
         continue;
       }
 
-      if (value.kind === "reload" || value.kind === "pageReady") {
+      if (value.kind === "pageReady") {
         skipped.push({ ...eventSummary, reason: "unsupported-event-kind" });
         previousInput = undefined;
+        continue;
+      }
+      if (value.kind === "reload") {
+        previousInput = undefined;
+        const reload = mapReloadEvent(value.payload);
+        if (reload === undefined) {
+          skipped.push({ ...eventSummary, reason: "invalid-event" });
+          continue;
+        }
+        const reloadKey = `${value.sessionId}\u0000${reload.navigationId}`;
+        if (recordedReloads.has(reloadKey)) {
+          skipped.push({ ...eventSummary, reason: "duplicate-navigation" });
+          continue;
+        }
+        recordedReloads.add(reloadKey);
+        const step: ReloadStep = {
+          id: this.#uniqueStepId(
+            toStepSourceEvent(value, "reload"),
+            usedStepIds
+          ),
+          type: "reload",
+          enabled: true,
+          waitUntil: reload.waitUntil
+        };
+        if (!isValidStep(step)) {
+          skipped.push({ ...eventSummary, reason: "invalid-generated-step" });
+          continue;
+        }
+        steps.push(step);
         continue;
       }
       if (value.kind !== "click" && value.kind !== "input") {
@@ -230,9 +262,30 @@ function mapInputEvent(
   };
 }
 
+function mapReloadEvent(
+  payload: unknown
+):
+  | {
+      readonly navigationId: string;
+      readonly waitUntil: "domcontentloaded" | "load";
+    }
+  | undefined {
+  if (
+    !isObject(payload) ||
+    !isNonEmptyString(payload.navigationId) ||
+    (payload.waitUntil !== "domcontentloaded" && payload.waitUntil !== "load")
+  ) {
+    return undefined;
+  }
+  return {
+    navigationId: payload.navigationId,
+    waitUntil: payload.waitUntil
+  };
+}
+
 function toStepSourceEvent(
   event: RecorderEventBaseValue,
-  kind: "click" | "input"
+  kind: "click" | "input" | "reload"
 ): RecordedStepSourceEvent {
   return {
     eventId: event.eventId,
