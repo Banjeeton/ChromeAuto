@@ -1,7 +1,6 @@
-export interface CycleTimerIdentity {
-  readonly tabId: number;
-  readonly presetId: string;
-}
+import type { RepeatCycleIdentity } from "../domain/repeat-cycle";
+
+export type CycleTimerIdentity = RepeatCycleIdentity;
 
 export interface ScheduleCycleTimerRequest extends CycleTimerIdentity {
   /** Absolute Unix time in milliseconds at which the one-shot timer fires. */
