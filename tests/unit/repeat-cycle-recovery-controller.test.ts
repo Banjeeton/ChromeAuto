@@ -119,6 +119,88 @@ describe("RepeatCycleRecoveryController", () => {
     expect(harness.scheduler.timers).toEqual([]);
   });
 
+  it.each([
+    ["a closed tab", undefined],
+    ["a different exact hostname", "https://www.example.com/page"],
+    ["a disallowed protocol", "http://example.com/page"],
+    ["an unsupported page", "chrome://settings/"]
+  ])("stops before a repeat when the tab has %s", async (_label, tabUrl) => {
+    const harness = createHarness();
+    harness.registry.states.set(15, waitingState(15, 15_000));
+    harness.scheduler.timers.push(timer(15, 15_000));
+    if (tabUrl !== undefined) {
+      harness.tabs.set(15, tabUrl);
+    }
+
+    await expect(
+      harness.controller.handleAlarm(timer(15, 15_000))
+    ).resolves.toBeUndefined();
+
+    expect(harness.runner.runScheduled).not.toHaveBeenCalled();
+    expect(harness.registry.states.has(15)).toBe(false);
+    expect(harness.scheduler.timers).toEqual([]);
+  });
+
+  it("does not repeat a preset that has become inactive", async () => {
+    const preset = createPreset();
+    preset.siteSettings.enabled = false;
+    const harness = createHarness({ presets: [preset] });
+    harness.tabs.set(16, "https://example.com/page");
+    harness.registry.states.set(16, waitingState(16, 16_000));
+    harness.scheduler.timers.push(timer(16, 16_000));
+
+    await expect(
+      harness.controller.handleAlarm(timer(16, 16_000))
+    ).resolves.toBeUndefined();
+
+    expect(harness.runner.runScheduled).not.toHaveBeenCalled();
+    expect(harness.registry.states.has(16)).toBe(false);
+  });
+
+  it("keeps the cycle when navigation stays on the exact hostname and protocol", async () => {
+    const harness = createHarness();
+    harness.registry.states.set(17, waitingState(17, 17_000));
+    harness.scheduler.timers.push(timer(17, 17_000));
+
+    await expect(
+      harness.controller.handleTabUrlChanged(
+        17,
+        "https://example.com/other-path?query=1"
+      )
+    ).resolves.toBe(false);
+
+    expect(harness.registry.states.get(17)).toEqual(waitingState(17, 17_000));
+    expect(harness.scheduler.timers).toEqual([timer(17, 17_000)]);
+  });
+
+  it("stops only the navigated tab when its hostname changes", async () => {
+    const harness = createHarness();
+    harness.registry.states.set(18, waitingState(18, 18_000));
+    harness.registry.states.set(19, waitingState(19, 19_000));
+    harness.scheduler.timers.push(timer(18, 18_000), timer(19, 19_000));
+
+    await expect(
+      harness.controller.handleTabUrlChanged(18, "https://other.example.com")
+    ).resolves.toBe(true);
+
+    expect(harness.registry.states.has(18)).toBe(false);
+    expect(harness.registry.states.get(19)).toEqual(waitingState(19, 19_000));
+    expect(harness.scheduler.timers).toEqual([timer(19, 19_000)]);
+  });
+
+  it("stops only the cycle belonging to a closed tab", async () => {
+    const harness = createHarness();
+    harness.registry.states.set(20, waitingState(20, 20_000));
+    harness.registry.states.set(21, waitingState(21, 21_000));
+    harness.scheduler.timers.push(timer(20, 20_000), timer(21, 21_000));
+
+    await expect(harness.controller.handleTabRemoved(20)).resolves.toBe(true);
+
+    expect(harness.registry.states.has(20)).toBe(false);
+    expect(harness.registry.states.get(21)).toEqual(waitingState(21, 21_000));
+    expect(harness.scheduler.timers).toEqual([timer(21, 21_000)]);
+  });
+
   it("restores a valid alarm once and ignores duplicate delivery", async () => {
     const harness = createHarness();
     harness.registry.states.set(12, waitingState(12, 12_000));

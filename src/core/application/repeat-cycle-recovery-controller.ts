@@ -95,6 +95,33 @@ export class RepeatCycleRecoveryController {
     );
   }
 
+  /** Cancels only the cycle owned by a tab that no longer exists. */
+  async handleTabRemoved(tabId: number): Promise<boolean> {
+    const state = await this.#registry.getByTabId(tabId);
+    if (state === undefined) {
+      return false;
+    }
+
+    await this.#discard(state);
+    return true;
+  }
+
+  /** Stops a cycle as soon as its tab leaves the preset's exact site binding. */
+  async handleTabUrlChanged(tabId: number, tabUrl: string): Promise<boolean> {
+    const state = await this.#registry.getByTabId(tabId);
+    if (state === undefined) {
+      return false;
+    }
+
+    const preset = await this.#presets.getById(state.presetId);
+    if (preset !== undefined && this.#presetMatchesUrl(preset, tabUrl)) {
+      return false;
+    }
+
+    await this.#discard(state);
+    return true;
+  }
+
   async #reconcile(): Promise<RepeatCycleRecoveryResult> {
     const [states, timers, presets] = await Promise.all([
       this.#registry.list(),
@@ -163,6 +190,11 @@ export class RepeatCycleRecoveryController {
     preset: PresetV1,
     tabId: number
   ): Promise<boolean> {
+    const tabUrl = await this.#tabs.getUrl(tabId);
+    return tabUrl !== undefined && this.#presetMatchesUrl(preset, tabUrl);
+  }
+
+  #presetMatchesUrl(preset: PresetV1, tabUrl: string): boolean {
     if (
       validatePresetForRun(preset).length > 0 ||
       !preset.siteSettings.enabled ||
@@ -171,13 +203,21 @@ export class RepeatCycleRecoveryController {
       return false;
     }
 
-    const tabUrl = await this.#tabs.getUrl(tabId);
-    return tabUrl !== undefined && siteBindingMatchesUrl(preset.site, tabUrl);
+    return siteBindingMatchesUrl(preset.site, tabUrl);
   }
 
   async #discard(identity: RepeatCycleIdentity): Promise<void> {
-    await this.#scheduler.cancel(identity);
+    let schedulerError: unknown;
+    try {
+      await this.#scheduler.cancel(identity);
+    } catch (error) {
+      schedulerError = error;
+    }
+
     await this.#registry.removeByTabId(identity.tabId);
+    if (schedulerError !== undefined) {
+      throw schedulerError;
+    }
   }
 
   #releaseRecovery(recovery: Promise<RepeatCycleRecoveryResult>): void {

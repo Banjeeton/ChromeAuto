@@ -92,6 +92,27 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     });
 });
 
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url === undefined) {
+    return;
+  }
+
+  void stopCycleForChangedTab(tabId, changeInfo.url).catch(
+    (error: unknown) => {
+      console.error(
+        `Unable to validate the repeat cycle after tab ${tabId} navigation.`,
+        error
+      );
+    }
+  );
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void stopCycleForRemovedTab(tabId).catch((error: unknown) => {
+    console.error(`Unable to clean up repeat cycle for tab ${tabId}.`, error);
+  });
+});
+
 // Top-level recovery runs whenever Manifest V3 recreates this service worker.
 void repeatCycleRecoveryController.recover().catch((error: unknown) => {
   console.error(
@@ -294,6 +315,21 @@ async function getTabUrl(tabId: number): Promise<string> {
     throw new Error(`Chrome did not expose the URL for tab ${tabId}.`);
   }
   return tab.url;
+}
+
+async function stopCycleForChangedTab(
+  tabId: number,
+  tabUrl: string
+): Promise<void> {
+  if (await repeatCycleRecoveryController.handleTabUrlChanged(tabId, tabUrl)) {
+    await runtimeController.stopByTabId(tabId);
+  }
+}
+
+async function stopCycleForRemovedTab(tabId: number): Promise<void> {
+  if (await repeatCycleRecoveryController.handleTabRemoved(tabId)) {
+    await runtimeController.stopByTabId(tabId);
+  }
 }
 
 function isPlaywrightSpikeMessage(
