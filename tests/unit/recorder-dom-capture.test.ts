@@ -9,8 +9,10 @@ import {
 import type { RecorderEvent } from "../../src/core/domain/recorder-event";
 import {
   RECORDER_CONTENT_MESSAGE,
+  RECORDER_DIAGNOSTIC_MESSAGE,
   RECORDER_EVENT_MESSAGE,
   isRecorderContentMessage,
+  isRecorderDiagnosticMessage,
   isRecorderEventMessage
 } from "../../src/shared/types/recorder-runtime";
 
@@ -140,6 +142,38 @@ describe("RecorderDomCapture", () => {
     );
     expect(harness.events).toHaveLength(1);
   });
+
+  it("reports capture failures without stopping the session", () => {
+    const errors: unknown[] = [];
+    const harness = createHarness({
+      generateTarget: () => {
+        throw new Error("Locator generation failed");
+      },
+      onError: (error, context) => errors.push({ error, context })
+    });
+    harness.capture.start(captureSession());
+
+    harness.source.dispatch(
+      "click",
+      trustedEvent(new FakeElement("button", { id: "broken" }))
+    );
+
+    expect(harness.events).toEqual([]);
+    expect(harness.capture.status()).toEqual({
+      recording: true,
+      sessionId: "recorder-1"
+    });
+    expect(errors).toMatchObject([
+      {
+        error: { message: "Locator generation failed" },
+        context: {
+          action: "capture-click",
+          tabId: 42,
+          sessionId: "recorder-1"
+        }
+      }
+    ]);
+  });
 });
 
 describe("Recorder content message contract", () => {
@@ -193,9 +227,25 @@ describe("Recorder content message contract", () => {
       false
     );
   });
+
+  it("recognizes typed content-script diagnostics", () => {
+    const diagnostic = {
+      type: RECORDER_DIAGNOSTIC_MESSAGE,
+      tabId: 42,
+      sessionId: "recorder-1",
+      action: "capture-click",
+      message: "Unable to capture click.",
+      details: "Error: locator failed"
+    };
+
+    expect(isRecorderDiagnosticMessage(diagnostic)).toBe(true);
+    expect(isRecorderDiagnosticMessage({ ...diagnostic, tabId: "42" })).toBe(
+      false
+    );
+  });
 });
 
-function createHarness() {
+function createHarness(overrides: Partial<RecorderCaptureOptions> = {}) {
   const source = new FakeDocumentSource();
   const scheduler = new ManualScheduler();
   const events: RecorderEvent[] = [];
@@ -225,7 +275,8 @@ function createHarness() {
           }
         ]
       };
-    }
+    },
+    ...overrides
   };
   const capture = new RecorderDomCapture(
     source,

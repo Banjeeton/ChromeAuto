@@ -8,6 +8,7 @@ import { ChromeRecorderContentBridge } from "../adapters/chrome/recorder-content
 import { ChromeRecorderDocumentProvider } from "../adapters/chrome/recorder-document-provider";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { InMemoryRepeatCycleLog } from "../adapters/logging/in-memory-repeat-cycle-log";
+import { InMemoryRecorderLog } from "../adapters/logging/in-memory-recorder-log";
 import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import { ChromeRecorderSessionRegistry } from "../adapters/storage/chrome-recorder-session-registry";
@@ -47,8 +48,11 @@ import {
 } from "../shared/types/playwright-crx-spike";
 import { createBackgroundMessageListener } from "./message-router";
 import {
+  type RecorderDiagnosticMessage,
+  type RecorderDiagnosticReceivedResult,
   type RecorderEventMessage,
   type RecorderEventReceivedResult,
+  isRecorderDiagnosticMessage,
   isRecorderEventMessage
 } from "../shared/types/recorder-runtime";
 
@@ -56,6 +60,7 @@ const playwrightEngine = new PlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
 const executionLog = new InMemoryExecutionLog();
 const repeatCycleLog = new InMemoryRepeatCycleLog();
+const recorderLog = new InMemoryRecorderLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
 const presetEditorController = new PresetEditorController(presetRepository);
 const recorderSessionRegistry = new ChromeRecorderSessionRegistry();
@@ -63,7 +68,8 @@ const recorderContentBridge = new ChromeRecorderContentBridge();
 const recorderNavigationController = new RecorderNavigationController(
   recorderSessionRegistry,
   new RecordedStepMapper(),
-  recorderContentBridge
+  recorderContentBridge,
+  { log: recorderLog }
 );
 const automationRunner = new AutomationRunner(
   playwrightEngine,
@@ -84,7 +90,8 @@ const automationRecorder = new AutomationRecorder(
       const cycle = await repeatCycleRegistry.getByTabId(tabId);
       return cycle?.state === "running" || cycle?.state === "waiting";
     }
-  }
+  },
+  { log: recorderLog }
 );
 const recorderPanelController = new RecorderPanelController(
   automationRecorder,
@@ -225,6 +232,15 @@ void repeatCycleRecoveryController.recover().catch((error: unknown) => {
 chrome.runtime.onMessage.addListener(
   createBackgroundMessageListener([
     {
+      matches: isRecorderDiagnosticMessage,
+      handle: async (message) =>
+        handleRecorderDiagnosticMessage(message as RecorderDiagnosticMessage),
+      createErrorResponse: (error) => ({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    },
+    {
       matches: isRecorderEventMessage,
       handle: async (message) =>
         handleRecorderEventMessage(message as RecorderEventMessage),
@@ -271,6 +287,40 @@ async function handleRecorderEventMessage(
     kind: "recorder-event-received",
     eventId: message.event.eventId
   };
+}
+
+async function handleRecorderDiagnosticMessage(
+  message: RecorderDiagnosticMessage
+): Promise<RecorderDiagnosticReceivedResult> {
+  const details = message.details === undefined
+    ? {
+        name: "RecorderContentError",
+        message: message.message
+      }
+    : {
+        name: "RecorderContentError",
+        message: message.message,
+        stack: message.details
+      };
+  await recorderLog.append({
+    id: crypto.randomUUID(),
+    recordedAt: new Date().toISOString(),
+    tabId: message.tabId,
+    ...(message.sessionId === undefined
+      ? {}
+      : { sessionId: message.sessionId }),
+    event: "failed",
+    action: message.action.replaceAll("-", " "),
+    message: message.message,
+    ...(message.eventId === undefined
+      ? {}
+      : { recorderEventId: message.eventId }),
+    ...(message.eventKind === undefined
+      ? {}
+      : { recorderEventKind: message.eventKind }),
+    details
+  });
+  return { kind: "recorder-diagnostic-received" };
 }
 
 function isAutomationRuntimeMessage(
@@ -515,12 +565,14 @@ async function handleAutomationRuntimeMessage(
       return {
         kind: "logs",
         entries: await executionLog.list({ tabId: message.tabId }),
-        cycleEntries: await repeatCycleLog.list()
+        cycleEntries: await repeatCycleLog.list(),
+        recorderEntries: await recorderLog.list()
       };
     case "clear-logs":
       await Promise.all([
         executionLog.clear({ tabId: message.tabId }),
-        repeatCycleLog.clear()
+        repeatCycleLog.clear(),
+        recorderLog.clear()
       ]);
       return { kind: "clear-logs" };
   }

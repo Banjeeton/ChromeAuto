@@ -11,6 +11,7 @@ import type { PresetV1 } from "../core/domain/preset";
 import type { RunSession } from "../core/domain/run-session";
 import type { StepLogEntry } from "../core/domain/step-log-entry";
 import type { RepeatCycleLogEntry } from "../core/domain/repeat-cycle-log-entry";
+import type { RecorderLogEntry } from "../core/domain/recorder-log-entry";
 import type { RepeatCycleStatusView } from "../core/application/repeat-cycle-status-controller";
 import type { RecorderPanelStatus } from "../core/application/recorder-panel-controller";
 import type { RecorderDraftView } from "../core/application/recorder-draft-controller";
@@ -84,6 +85,8 @@ function App() {
   const [stepLogs, setStepLogs] = useState<readonly StepLogEntry[]>([]);
   const [cycleLogs, setCycleLogs] =
     useState<readonly RepeatCycleLogEntry[]>([]);
+  const [recorderLogs, setRecorderLogs] =
+    useState<readonly RecorderLogEntry[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [busyAction, setBusyAction] = useState<string>();
   const [presetListState, setPresetListState] = useState<PresetListState>({
@@ -180,6 +183,7 @@ function App() {
     if (logsResponse.result.kind === "logs") {
       setStepLogs(logsResponse.result.entries);
       setCycleLogs(logsResponse.result.cycleEntries);
+      setRecorderLogs(logsResponse.result.recorderEntries);
     }
   }, []);
 
@@ -362,6 +366,31 @@ function App() {
     recorderStatus?.state,
     recorderStatus?.stepCount
   ]);
+
+  useEffect(() => {
+    const tabId = activeTab?.id;
+    if (tabId === undefined || recorderStatus?.state !== "recording") {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      void sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "logs",
+        tabId
+      })
+        .then((response) => {
+          if (response.ok && response.result.kind === "logs") {
+            setStepLogs(response.result.entries);
+            setCycleLogs(response.result.cycleEntries);
+            setRecorderLogs(response.result.recorderEntries);
+          }
+        })
+        .catch(() => undefined);
+    }, 1_000);
+
+    return () => clearInterval(interval);
+  }, [activeTab?.id, recorderStatus?.state]);
 
   const runAutomation = async () => {
     if (activeTab === undefined) {
@@ -669,6 +698,7 @@ function App() {
       }
       setStepLogs([]);
       setCycleLogs([]);
+      setRecorderLogs([]);
       setNotices([]);
     } catch (error) {
       addNotice(
@@ -1260,8 +1290,9 @@ function App() {
 
           {notices.length === 0 &&
           stepLogs.length === 0 &&
-          cycleLogs.length === 0 ? (
-            <p className="empty-state">Step results will appear here.</p>
+          cycleLogs.length === 0 &&
+          recorderLogs.length === 0 ? (
+            <p className="empty-state">Automation and recorder events will appear here.</p>
           ) : (
             <ol className="log-list">
               {notices.map((notice) => (
@@ -1285,6 +1316,23 @@ function App() {
                 >
                   <span>{entry.event.toUpperCase()}</span>
                   <p>{entry.message}</p>
+                </li>
+              ))}
+              {[...recorderLogs].reverse().map((entry) => (
+                <li
+                  className={`log-entry recorder-${entry.event} ${recorderLogTone(entry)}`}
+                  key={entry.id}
+                >
+                  <span>{recorderLogLabel(entry)}</span>
+                  <div className="log-entry-content">
+                    <p>{entry.message}</p>
+                    {entry.details !== undefined && (
+                      <details className="log-details">
+                        <summary>Technical details</summary>
+                        <pre>{formatRecorderLogDetails(entry)}</pre>
+                      </details>
+                    )}
+                  </div>
                 </li>
               ))}
               {[...stepLogs].reverse().map((entry) => (
@@ -1393,6 +1441,42 @@ function cycleLogTone(entry: RepeatCycleLogEntry): string {
     return "stopped";
   }
   return "succeeded";
+}
+
+function recorderLogTone(entry: RecorderLogEntry): string {
+  return entry.event === "failed" ? "failed" : entry.event === "stopped" ||
+    entry.event === "context-changed" || entry.event === "tab-closed"
+    ? "stopped"
+    : "succeeded";
+}
+
+function recorderLogLabel(entry: RecorderLogEntry): string {
+  if (entry.event === "action-recorded") {
+    return "RECORDED";
+  }
+  if (entry.event === "context-changed" || entry.event === "tab-closed") {
+    return "STOPPED";
+  }
+  return entry.event.toUpperCase();
+}
+
+function formatRecorderLogDetails(entry: RecorderLogEntry): string {
+  const details = entry.details;
+  if (details === undefined) {
+    return "";
+  }
+  return [
+    `Action: ${entry.action}`,
+    `Tab: ${entry.tabId}`,
+    ...(entry.sessionId === undefined ? [] : [`Session: ${entry.sessionId}`]),
+    ...(entry.recorderEventId === undefined
+      ? []
+      : [`Event: ${entry.recorderEventId}`]),
+    ...(details.code === undefined ? [] : [`Code: ${details.code}`]),
+    `${details.name}: ${details.message}`,
+    ...(details.cause === undefined ? [] : [`Cause: ${details.cause}`]),
+    ...(details.stack === undefined ? [] : [details.stack])
+  ].join("\n");
 }
 
 export default App;

@@ -5,6 +5,7 @@ import type { PresetV1 } from "../../core/domain/preset";
 import type { RunSession } from "../../core/domain/run-session";
 import type { StepLogEntry } from "../../core/domain/step-log-entry";
 import type { RepeatCycleLogEntry } from "../../core/domain/repeat-cycle-log-entry";
+import type { RecorderLogEntry } from "../../core/domain/recorder-log-entry";
 import type { RepeatCycleStatusView } from "../../core/application/repeat-cycle-status-controller";
 import type { RecorderPanelStatus } from "../../core/application/recorder-panel-controller";
 import type { RecorderDraftView } from "../../core/application/recorder-draft-controller";
@@ -133,6 +134,7 @@ export type AutomationRuntimeResult =
       readonly kind: "logs";
       readonly entries: readonly StepLogEntry[];
       readonly cycleEntries: readonly RepeatCycleLogEntry[];
+      readonly recorderEntries: readonly RecorderLogEntry[];
     }
   | { readonly kind: "clear-logs" };
 

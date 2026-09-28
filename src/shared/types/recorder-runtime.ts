@@ -2,6 +2,8 @@ import type { RecorderEvent } from "../../core/domain/recorder-event";
 
 export const RECORDER_CONTENT_MESSAGE = "automation/recorder-content" as const;
 export const RECORDER_EVENT_MESSAGE = "automation/recorder-event" as const;
+export const RECORDER_DIAGNOSTIC_MESSAGE =
+  "automation/recorder-diagnostic" as const;
 
 export type RecorderContentMessage =
   | {
@@ -51,6 +53,21 @@ export interface RecorderEventReceivedResult {
 export type RecorderEventResponse =
   | { readonly ok: true; readonly result: RecorderEventReceivedResult }
   | { readonly ok: false; readonly error: string };
+
+export interface RecorderDiagnosticMessage {
+  readonly type: typeof RECORDER_DIAGNOSTIC_MESSAGE;
+  readonly tabId: number;
+  readonly sessionId?: string;
+  readonly action: "capture-click" | "capture-input" | "deliver-event";
+  readonly message: string;
+  readonly details?: string;
+  readonly eventId?: string;
+  readonly eventKind?: RecorderEvent["kind"];
+}
+
+export interface RecorderDiagnosticReceivedResult {
+  readonly kind: "recorder-diagnostic-received";
+}
 
 export function isRecorderContentMessage(
   value: unknown
@@ -105,6 +122,30 @@ export function isRecorderEventMessage(
     isObject(event.payload) &&
     ((event.kind !== "click" && event.kind !== "input") ||
       isObject(event.target))
+  );
+}
+
+export function isRecorderDiagnosticMessage(
+  value: unknown
+): value is RecorderDiagnosticMessage {
+  if (!isObject(value) || value.type !== RECORDER_DIAGNOSTIC_MESSAGE) {
+    return false;
+  }
+  return (
+    Number.isInteger(value.tabId) &&
+    (value.tabId as number) >= 0 &&
+    (value.sessionId === undefined || typeof value.sessionId === "string") &&
+    (value.action === "capture-click" ||
+      value.action === "capture-input" ||
+      value.action === "deliver-event") &&
+    typeof value.message === "string" &&
+    (value.details === undefined || typeof value.details === "string") &&
+    (value.eventId === undefined || typeof value.eventId === "string") &&
+    (value.eventKind === undefined ||
+      value.eventKind === "click" ||
+      value.eventKind === "input" ||
+      value.eventKind === "reload" ||
+      value.eventKind === "pageReady")
   );
 }
 

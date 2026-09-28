@@ -10,6 +10,11 @@ import type {
   RecorderSessionRecord,
   RecorderSessionRegistry
 } from "../ports/recorder-session-registry";
+import type { RecorderLog } from "../ports/recorder-log";
+import {
+  appendRecorderLog,
+  recorderErrorDetails
+} from "./recorder-log-utils";
 
 export interface RecorderNavigationEvent {
   readonly tabId: number;
@@ -26,6 +31,8 @@ export interface RecorderNavigationCommittedEvent
 export interface RecorderNavigationControllerOptions {
   readonly clock?: () => string;
   readonly createEventId?: () => string;
+  readonly createLogId?: () => string;
+  readonly log?: RecorderLog;
 }
 
 export type RecorderEventDisposition = "recorded" | "duplicate" | "ignored";
@@ -38,6 +45,8 @@ export class RecorderNavigationController {
   readonly #pendingByTab = new Map<number, Promise<void>>();
   readonly #clock: () => string;
   readonly #createEventId: () => string;
+  readonly #createLogId: () => string;
+  readonly #log?: RecorderLog;
 
   constructor(
     readonly registry: RecorderSessionRegistry,
@@ -47,19 +56,47 @@ export class RecorderNavigationController {
   ) {
     this.#clock = options.clock ?? (() => new Date().toISOString());
     this.#createEventId = options.createEventId ?? (() => crypto.randomUUID());
+    this.#createLogId = options.createLogId ?? (() => crypto.randomUUID());
+    this.#log = options.log;
   }
 
   async record(event: RecorderEvent): Promise<RecorderEventDisposition> {
     return await this.#exclusive(event.tabId, async () => {
-      const record = await this.registry.getByTabId(event.tabId);
-      if (!acceptsContentEvent(record, event)) {
-        return "ignored";
+      try {
+        const record = await this.registry.getByTabId(event.tabId);
+        if (!acceptsContentEvent(record, event)) {
+          return "ignored";
+        }
+        if (
+          record.recordedEvents.some(({ eventId }) => eventId === event.eventId)
+        ) {
+          return "duplicate";
+        }
+        const updated = await this.#append(record, event);
+        await this.#appendLog({
+          tabId: event.tabId,
+          sessionId: event.sessionId,
+          event: "action-recorded",
+          action: `record ${event.kind}`,
+          message: `${recorderEventLabel(event.kind)} recorded in tab ${event.tabId} as step ${updated.draftSteps.length}.`,
+          recorderEventId: event.eventId,
+          recorderEventKind: event.kind,
+          stepCount: updated.draftSteps.length
+        });
+        return "recorded";
+      } catch (error) {
+        await this.#appendLog({
+          tabId: event.tabId,
+          sessionId: event.sessionId,
+          event: "failed",
+          action: `record ${event.kind}`,
+          message: `Unable to record ${event.kind} action in tab ${event.tabId}: ${errorMessage(error)} The existing draft was preserved.`,
+          recorderEventId: event.eventId,
+          recorderEventKind: event.kind,
+          details: recorderErrorDetails(error)
+        });
+        throw error;
       }
-      if (record.recordedEvents.some(({ eventId }) => eventId === event.eventId)) {
-        return "duplicate";
-      }
-      await this.#append(record, event);
-      return "recorded";
     });
   }
 
@@ -72,7 +109,7 @@ export class RecorderNavigationController {
         return "ignored";
       }
       if (!matchesSourceContext(record, event.url)) {
-        await this.#stopForContextChange(record);
+        await this.#stopForContextChange(record, event.url);
         return "recorded";
       }
 
@@ -108,7 +145,17 @@ export class RecorderNavigationController {
           waitUntil: "domcontentloaded"
         }
       };
-      await this.#append(moved, reload);
+      const updated = await this.#append(moved, reload);
+      await this.#appendLog({
+        tabId: event.tabId,
+        sessionId: record.session.sessionId,
+        event: "action-recorded",
+        action: "record reload",
+        message: `Reload recorded in tab ${event.tabId} as step ${updated.draftSteps.length}.`,
+        recorderEventId: reload.eventId,
+        recorderEventKind: "reload",
+        stepCount: updated.draftSteps.length
+      });
       return "recorded";
     });
   }
@@ -122,7 +169,7 @@ export class RecorderNavigationController {
         return "ignored";
       }
       if (!matchesSourceContext(record, event.url)) {
-        await this.#stopForContextChange(record);
+        await this.#stopForContextChange(record, event.url);
         return "recorded";
       }
 
@@ -153,19 +200,42 @@ export class RecorderNavigationController {
         await this.registry.save(current);
       }
 
-      await this.contentBridge.startCapture({
-        sessionId: current.session.sessionId,
-        tabId: current.session.tabId,
-        documentId: current.documentId,
-        url: current.currentUrl
-      });
+      try {
+        await this.contentBridge.startCapture({
+          sessionId: current.session.sessionId,
+          tabId: current.session.tabId,
+          documentId: current.documentId,
+          url: current.currentUrl
+        });
+      } catch (error) {
+        await this.#appendLog({
+          tabId: current.session.tabId,
+          sessionId: current.session.sessionId,
+          event: "failed",
+          action: "restore content capture",
+          message: `Unable to restore recorder capture after page load in tab ${current.session.tabId}: ${errorMessage(error)}`,
+          details: recorderErrorDetails(error)
+        });
+        throw error;
+      }
       return duplicate ? "duplicate" : "recorded";
     });
   }
 
   async handleTabRemoved(tabId: number): Promise<void> {
     await this.#exclusive(tabId, async () => {
-      await this.registry.markTabClosed(tabId, this.#clock());
+      const stopped = await this.registry.markTabClosed(tabId, this.#clock());
+      if (stopped !== undefined) {
+        await this.#appendLog({
+          tabId,
+          sessionId: stopped.session.sessionId,
+          event: "tab-closed",
+          action: "close recorded tab",
+          message: `Recording stopped because tab ${tabId} was closed. The ${stopped.draftSteps.length}-step draft was preserved.`,
+          stepCount: stopped.draftSteps.length,
+          stopReason: "tab-closed"
+        });
+      }
     });
   }
 
@@ -189,7 +259,10 @@ export class RecorderNavigationController {
     return updated;
   }
 
-  async #stopForContextChange(record: RecorderSessionRecord): Promise<void> {
+  async #stopForContextChange(
+    record: RecorderSessionRecord,
+    destinationUrl: string
+  ): Promise<void> {
     const stopped: RecorderSessionRecord = {
       ...record,
       session: {
@@ -204,6 +277,19 @@ export class RecorderNavigationController {
       }
     };
     await this.registry.save(stopped);
+    await this.#appendLog({
+      tabId: record.session.tabId,
+      sessionId: record.session.sessionId,
+      event: "context-changed",
+      action: "validate recorder hostname",
+      message: `Recording stopped because tab ${record.session.tabId} left ${record.session.context.hostname}. The recorded draft was preserved.`,
+      stepCount: record.draftSteps.length,
+      stopReason: "tab-context-changed",
+      details: {
+        name: "RecorderContextChanged",
+        message: `Expected ${record.session.context.protocol}://${record.session.context.hostname}; received ${destinationUrl}.`
+      }
+    });
     try {
       await this.contentBridge.stopCapture(record.session.tabId);
     } catch {
@@ -243,6 +329,36 @@ export class RecorderNavigationController {
     });
     return result;
   }
+
+  async #appendLog(
+    entry: Parameters<typeof appendRecorderLog>[1]
+  ): Promise<void> {
+    await appendRecorderLog(
+      {
+        log: this.#log,
+        clock: this.#clock,
+        createLogId: this.#createLogId
+      },
+      entry
+    );
+  }
+}
+
+function recorderEventLabel(kind: RecorderEvent["kind"]): string {
+  switch (kind) {
+    case "click":
+      return "Click";
+    case "input":
+      return "Input";
+    case "reload":
+      return "Reload";
+    case "pageReady":
+      return "Page-ready event";
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function acceptsContentEvent(

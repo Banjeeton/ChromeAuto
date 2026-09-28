@@ -41,6 +41,16 @@ export interface RecorderCaptureOptions {
   readonly generateTarget?: (
     element: RecorderCaptureElement
   ) => RecorderTargetCandidate;
+  readonly onError?: (
+    error: unknown,
+    context: RecorderCaptureErrorContext
+  ) => void;
+}
+
+export interface RecorderCaptureErrorContext {
+  readonly action: "capture-click" | "capture-input";
+  readonly tabId: number;
+  readonly sessionId: string;
 }
 
 type RecorderDocumentEvent = Pick<Event, "isTrusted" | "target" | "composedPath">;
@@ -87,76 +97,89 @@ export class RecorderDomCapture {
     RecorderCaptureOptions["cancelScheduled"]
   >;
   readonly #generateTarget: NonNullable<RecorderCaptureOptions["generateTarget"]>;
+  readonly #onError: NonNullable<RecorderCaptureOptions["onError"]>;
   readonly #pendingInputs = new Map<RecorderCaptureElement, PendingInput>();
   #session?: RecorderCaptureSession;
 
   readonly #handleClick = (event: RecorderDocumentEvent): void => {
-    if (!event.isTrusted || this.#session === undefined) {
-      return;
-    }
-    const element = eventElement(event);
-    if (element === undefined) {
-      return;
-    }
-
-    const mouse = event as RecorderDocumentEvent & {
-      readonly button?: number;
-      readonly detail?: number;
-      readonly altKey?: boolean;
-      readonly ctrlKey?: boolean;
-      readonly metaKey?: boolean;
-      readonly shiftKey?: boolean;
-    };
-    const captured: RecorderClickEvent = {
-      ...this.#eventBase("click"),
-      target: this.#generateTarget(element),
-      payload: {
-        button:
-          mouse.button === 1 ? "middle" : mouse.button === 2 ? "right" : "left",
-        clickCount:
-          Number.isInteger(mouse.detail) && (mouse.detail as number) > 0
-            ? (mouse.detail as number)
-            : 1,
-        modifiers: [
-          ...(mouse.altKey ? (["Alt"] as const) : []),
-          ...(mouse.ctrlKey ? (["Control"] as const) : []),
-          ...(mouse.metaKey ? (["Meta"] as const) : []),
-          ...(mouse.shiftKey ? (["Shift"] as const) : [])
-        ]
+    try {
+      if (!event.isTrusted || this.#session === undefined) {
+        return;
       }
-    };
-    this.#emit(captured);
+      const element = eventElement(event);
+      if (element === undefined) {
+        return;
+      }
+
+      const mouse = event as RecorderDocumentEvent & {
+        readonly button?: number;
+        readonly detail?: number;
+        readonly altKey?: boolean;
+        readonly ctrlKey?: boolean;
+        readonly metaKey?: boolean;
+        readonly shiftKey?: boolean;
+      };
+      const captured: RecorderClickEvent = {
+        ...this.#eventBase("click"),
+        target: this.#generateTarget(element),
+        payload: {
+          button:
+            mouse.button === 1
+              ? "middle"
+              : mouse.button === 2
+                ? "right"
+                : "left",
+          clickCount:
+            Number.isInteger(mouse.detail) && (mouse.detail as number) > 0
+              ? (mouse.detail as number)
+              : 1,
+          modifiers: [
+            ...(mouse.altKey ? (["Alt"] as const) : []),
+            ...(mouse.ctrlKey ? (["Control"] as const) : []),
+            ...(mouse.metaKey ? (["Meta"] as const) : []),
+            ...(mouse.shiftKey ? (["Shift"] as const) : [])
+          ]
+        }
+      };
+      this.#emit(captured);
+    } catch (error) {
+      this.#reportError(error, "capture-click");
+    }
   };
 
   readonly #handleInput = (event: RecorderDocumentEvent): void => {
-    if (!event.isTrusted || this.#session === undefined) {
-      return;
-    }
-    const element = eventElement(event);
-    const input = element === undefined ? undefined : readInput(element);
-    if (element === undefined || input === undefined) {
-      return;
-    }
-
-    const previous = this.#pendingInputs.get(element);
-    if (previous !== undefined) {
-      this.#cancelScheduled(previous.handle);
-    }
-
-    const captured: RecorderInputEvent = {
-      ...this.#eventBase("input"),
-      target: this.#generateTarget(element),
-      payload: input
-    };
-    const handle = this.#schedule(() => {
-      const pending = this.#pendingInputs.get(element);
-      if (pending?.handle !== handle) {
+    try {
+      if (!event.isTrusted || this.#session === undefined) {
         return;
       }
-      this.#pendingInputs.delete(element);
-      this.#emit(pending.event);
-    }, this.#inputDebounceMs);
-    this.#pendingInputs.set(element, { element, event: captured, handle });
+      const element = eventElement(event);
+      const input = element === undefined ? undefined : readInput(element);
+      if (element === undefined || input === undefined) {
+        return;
+      }
+
+      const previous = this.#pendingInputs.get(element);
+      if (previous !== undefined) {
+        this.#cancelScheduled(previous.handle);
+      }
+
+      const captured: RecorderInputEvent = {
+        ...this.#eventBase("input"),
+        target: this.#generateTarget(element),
+        payload: input
+      };
+      const handle = this.#schedule(() => {
+        const pending = this.#pendingInputs.get(element);
+        if (pending?.handle !== handle) {
+          return;
+        }
+        this.#pendingInputs.delete(element);
+        this.#emit(pending.event);
+      }, this.#inputDebounceMs);
+      this.#pendingInputs.set(element, { element, event: captured, handle });
+    } catch (error) {
+      this.#reportError(error, "capture-input");
+    }
   };
 
   constructor(
@@ -174,6 +197,7 @@ export class RecorderDomCapture {
     this.#generateTarget =
       options.generateTarget ??
       ((element) => generateDomLocatorTarget(element as unknown as Element));
+    this.#onError = options.onError ?? (() => undefined);
   }
 
   start(session: RecorderCaptureSession): RecorderCaptureStartResult {
@@ -233,6 +257,20 @@ export class RecorderDomCapture {
       url: session.url,
       kind
     };
+  }
+
+  #reportError(
+    error: unknown,
+    action: RecorderCaptureErrorContext["action"]
+  ): void {
+    const session = this.#session;
+    if (session !== undefined) {
+      this.#onError(error, {
+        action,
+        tabId: session.tabId,
+        sessionId: session.sessionId
+      });
+    }
   }
 }
 

@@ -15,6 +15,11 @@ import type {
   RecorderSessionRecord,
   RecorderSessionRegistry
 } from "../ports/recorder-session-registry";
+import type { RecorderLog } from "../ports/recorder-log";
+import {
+  appendRecorderLog,
+  recorderErrorDetails
+} from "./recorder-log-utils";
 
 export interface RecorderExecutionGuard {
   isAutomationActive(tabId: number): Promise<boolean>;
@@ -22,12 +27,16 @@ export interface RecorderExecutionGuard {
 
 export interface AutomationRecorderOptions {
   readonly clock?: () => string;
+  readonly createLogId?: () => string;
+  readonly log?: RecorderLog;
 }
 
 /** Owns the one-recorder-session-per-tab invariant. */
 export class AutomationRecorder implements Recorder {
   readonly #pendingByTab = new Map<number, Promise<void>>();
   readonly #clock: () => string;
+  readonly #createLogId: () => string;
+  readonly #log?: RecorderLog;
 
   constructor(
     readonly registry: RecorderSessionRegistry,
@@ -37,6 +46,8 @@ export class AutomationRecorder implements Recorder {
     options: AutomationRecorderOptions = {}
   ) {
     this.#clock = options.clock ?? (() => new Date().toISOString());
+    this.#createLogId = options.createLogId ?? (() => crypto.randomUUID());
+    this.#log = options.log;
   }
 
   async start(request: StartRecorderRequest): Promise<RecordingRecorderState> {
@@ -127,8 +138,24 @@ export class AutomationRecorder implements Recorder {
             failure: { code: failure.code, message: failure.message }
           }
         });
+        await this.#appendLog({
+          tabId: state.tabId,
+          sessionId: state.sessionId,
+          event: "failed",
+          action: "start recording",
+          message: `Unable to start recording in tab ${state.tabId}: ${failure.message}`,
+          details: recorderErrorDetails(failure)
+        });
         throw failure;
       }
+      await this.#appendLog({
+        tabId: state.tabId,
+        sessionId: state.sessionId,
+        event: "started",
+        action: "start recording",
+        message: `Recording started for ${state.context.hostname} in tab ${state.tabId}.`,
+        stepCount: 0
+      });
       return state;
     });
   }
@@ -161,8 +188,16 @@ export class AutomationRecorder implements Recorder {
       await this.registry.save(stopping);
       try {
         await this.contentBridge.stopCapture(request.tabId);
-      } catch {
+      } catch (error) {
         // The page may disappear while Stop is being delivered.
+        await this.#appendLog({
+          tabId: current.session.tabId,
+          sessionId: current.session.sessionId,
+          event: "failed",
+          action: "stop content capture",
+          message: `Content script could not acknowledge Stop in tab ${request.tabId}; the recorder session will still be stopped.`,
+          details: recorderErrorDetails(error)
+        });
       }
 
       const stopped: RecorderSessionRecord = {
@@ -179,6 +214,15 @@ export class AutomationRecorder implements Recorder {
         }
       };
       await this.registry.save(stopped);
+      await this.#appendLog({
+        tabId: stopped.session.tabId,
+        sessionId: stopped.session.sessionId,
+        event: "stopped",
+        action: "stop recording",
+        message: `Recording stopped by the user with ${stopped.draftSteps.length} recorded ${stopped.draftSteps.length === 1 ? "step" : "steps"}.`,
+        stepCount: stopped.draftSteps.length,
+        stopReason: request.reason
+      });
       return stopped.session;
     });
   }
@@ -204,6 +248,19 @@ export class AutomationRecorder implements Recorder {
       }
     });
     return result;
+  }
+
+  async #appendLog(
+    entry: Parameters<typeof appendRecorderLog>[1]
+  ): Promise<void> {
+    await appendRecorderLog(
+      {
+        log: this.#log,
+        clock: this.#clock,
+        createLogId: this.#createLogId
+      },
+      entry
+    );
   }
 }
 
