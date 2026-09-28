@@ -31,6 +31,11 @@ export type AutomationRuntimeMessage =
       readonly action: "update-preset";
       readonly presetId: string;
       readonly fields: PresetEditableFields;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "delete-preset";
+      readonly presetId: string;
     };
 
 export type AutomationRuntimeResult =
@@ -41,6 +46,7 @@ export type AutomationRuntimeResult =
   | { readonly kind: "sessions"; readonly sessions: readonly RunSession[] }
   | { readonly kind: "presets"; readonly presets: readonly PresetV1[] }
   | { readonly kind: "preset-saved"; readonly preset: PresetV1 }
+  | { readonly kind: "preset-deleted"; readonly presetId: string }
   | { readonly kind: "logs"; readonly entries: readonly StepLogEntry[] }
   | { readonly kind: "clear-logs" };
 

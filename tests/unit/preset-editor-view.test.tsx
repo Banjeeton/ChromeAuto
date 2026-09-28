@@ -54,6 +54,24 @@ describe("PresetEditor", () => {
     expect(html).toContain("Create preset");
     expect(html).toContain("Preset validation failed at /name.");
   });
+
+  it("explains the hostname requirement when duplicating", () => {
+    const fields = createPresetEditorDefaults();
+    fields.name = "Example automation copy";
+    const html = renderToStaticMarkup(
+      <PresetEditor
+        initialFields={fields}
+        mode="duplicate"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+        saving={false}
+      />
+    );
+
+    expect(html).toContain("Duplicate preset");
+    expect(html).toContain("Choose a different hostname");
+    expect(html).toContain("Save duplicate");
+  });
 });
 
 describe("preset step templates", () => {

@@ -53,20 +53,41 @@ describe("PresetList", () => {
     expect(html).toContain("Steps");
     expect(html).toContain("Every 5 min");
     expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("Duplicate");
+    expect(html).toContain("Delete");
+  });
+
+  it("requires explicit confirmation before deletion", () => {
+    const preset = createPreset();
+    const html = render(
+      { status: "ready", presets: [preset] },
+      preset.id,
+      { deleteConfirmationPresetId: preset.id }
+    );
+
+    expect(html).toContain("This cannot be undone.");
+    expect(html).toContain("Cancel");
+    expect(html).toContain("Delete permanently");
   });
 });
 
 function render(
   state: Parameters<typeof PresetList>[0]["state"],
-  selectedPresetId?: string
+  selectedPresetId?: string,
+  overrides: Partial<Parameters<typeof PresetList>[0]> = {}
 ): string {
   return renderToStaticMarkup(
     <PresetList
       onRetry={vi.fn()}
       onEdit={vi.fn()}
+      onDuplicate={vi.fn()}
+      onRequestDelete={vi.fn()}
+      onCancelDelete={vi.fn()}
+      onConfirmDelete={vi.fn()}
       onSelect={vi.fn()}
       selectedPresetId={selectedPresetId}
       state={state}
+      {...overrides}
     />
   );
 }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createPresetEditorDefaults,
+  duplicateFieldsFromPreset,
   PresetEditorController,
   PresetNotFoundError,
   createPresetV1,
@@ -140,12 +141,120 @@ describe("preset editor application helpers", () => {
     ).rejects.toBeInstanceOf(PresetNotFoundError);
     expect(repository.save).not.toHaveBeenCalled();
   });
+
+  it("prepares a detached duplicate with the original steps and settings", () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Example automation";
+    fields.automation.steps = [
+      {
+        id: "wait-ready",
+        type: "wait",
+        enabled: true,
+        condition: { type: "timeout", durationMs: 250 }
+      }
+    ];
+    fields.siteSettings.repeat = { enabled: true, intervalMinutes: 5 };
+    const source = createPresetV1(fields, {
+      createId: () => "550e8400-e29b-41d4-a716-446655440000",
+      now: () => new Date("2026-09-28T08:00:00.000Z")
+    });
+
+    const duplicate = duplicateFieldsFromPreset(source);
+
+    expect(duplicate).toMatchObject({
+      name: "Example automation copy",
+      site: { hostname: "", protocols: ["https"] },
+      automation: source.automation,
+      siteSettings: source.siteSettings
+    });
+    duplicate.automation.steps[0].enabled = false;
+    expect(source.automation.steps[0].enabled).toBe(true);
+  });
+
+  it("saves a duplicate with separate identity and timestamps", async () => {
+    const sourceFields = createPresetEditorDefaults("example.com");
+    sourceFields.name = "Example automation";
+    const source = createPresetV1(sourceFields, {
+      createId: () => "550e8400-e29b-41d4-a716-446655440000",
+      now: () => new Date("2026-09-28T08:00:00.000Z")
+    });
+    let saved: PresetV1 | undefined;
+    const repository = createRepository(
+      () => source,
+      (preset) => {
+        saved = preset;
+      }
+    );
+    const controller = new PresetEditorController(repository, {
+      createId: () => "550e8400-e29b-41d4-a716-446655440001",
+      now: () => new Date("2026-09-28T09:00:00.000Z")
+    });
+    const duplicateFields = duplicateFieldsFromPreset(source);
+    duplicateFields.site.hostname = "copy.example.com";
+
+    const duplicate = await controller.create(duplicateFields);
+
+    expect(duplicate.id).not.toBe(source.id);
+    expect(duplicate.createdAt).not.toBe(source.createdAt);
+    expect(duplicate.updatedAt).not.toBe(source.updatedAt);
+    expect(duplicate.automation).toEqual(source.automation);
+    expect(duplicate.siteSettings).toEqual(source.siteSettings);
+    expect(saved).toEqual(duplicate);
+  });
+
+  it("deletes an existing preset and returns its snapshot", async () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Example automation";
+    let stored: PresetV1 | undefined = createPresetV1(fields, {
+      createId: () => "550e8400-e29b-41d4-a716-446655440000"
+    });
+    const repository = createRepository(
+      () => stored,
+      () => undefined,
+      () => {
+        stored = undefined;
+        return true;
+      }
+    );
+    const controller = new PresetEditorController(repository);
+
+    const deleted = await controller.remove(
+      "550e8400-e29b-41d4-a716-446655440000"
+    );
+
+    expect(deleted.id).toBe("550e8400-e29b-41d4-a716-446655440000");
+    expect(repository.remove).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the source intact when deletion fails", async () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Example automation";
+    const source = createPresetV1(fields, {
+      createId: () => "550e8400-e29b-41d4-a716-446655440000"
+    });
+    const deleteError = new Error("Storage write failed");
+    const repository = createRepository(
+      () => source,
+      () => undefined,
+      () => {
+        throw deleteError;
+      }
+    );
+    const controller = new PresetEditorController(repository);
+
+    await expect(controller.remove(source.id)).rejects.toBe(deleteError);
+    expect(await repository.getById(source.id)).toEqual(source);
+  });
 });
 
 function createRepository(
   read: () => PresetV1 | undefined,
-  write: (preset: PresetV1) => void
-): PresetRepository & { save: ReturnType<typeof vi.fn> } {
+  write: (preset: PresetV1) => void,
+  remove: (presetId: string) => boolean = () => false
+): PresetRepository & {
+  save: ReturnType<typeof vi.fn>;
+  remove: ReturnType<typeof vi.fn>;
+} {
   return {
     list: vi.fn(async () => {
       const preset = read();
@@ -153,6 +262,6 @@ function createRepository(
     }),
     getById: vi.fn(async () => read()),
     save: vi.fn(async (preset: PresetV1) => write(preset)),
-    remove: vi.fn(async () => false)
+    remove: vi.fn(async (presetId: string) => remove(presetId))
   };
 }

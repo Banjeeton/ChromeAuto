@@ -17,11 +17,17 @@ export type PresetUpdateDependencies = {
 
 export class PresetNotFoundError extends Error {
   readonly presetId: string;
+  readonly operation: "update" | "delete";
 
-  constructor(presetId: string) {
-    super(`Preset ${presetId} no longer exists and cannot be updated.`);
+  constructor(presetId: string, operation: "update" | "delete" = "update") {
+    super(
+      `Preset ${presetId} no longer exists and cannot be ${
+        operation === "update" ? "updated" : "deleted"
+      }.`
+    );
     this.name = "PresetNotFoundError";
     this.presetId = presetId;
+    this.operation = operation;
   }
 }
 
@@ -55,6 +61,15 @@ export class PresetEditorController {
     const preset = updatePresetV1(existing, fields, this.#dependencies);
     await this.#repository.save(preset);
     return structuredClone(preset);
+  }
+
+  async remove(presetId: string): Promise<PresetV1> {
+    const existing = await this.#repository.getById(presetId);
+    if (existing === undefined || !(await this.#repository.remove(presetId))) {
+      throw new PresetNotFoundError(presetId, "delete");
+    }
+
+    return structuredClone(existing);
   }
 }
 
@@ -90,6 +105,20 @@ export function editableFieldsFromPreset(
   preset: PresetV1
 ): PresetEditableFields {
   return cloneEditableFields(preset);
+}
+
+export function duplicateFieldsFromPreset(
+  preset: PresetV1
+): PresetEditableFields {
+  const fields = cloneEditableFields(preset);
+  return {
+    ...fields,
+    name: `${fields.name} copy`,
+    site: {
+      ...fields.site,
+      hostname: ""
+    }
+  };
 }
 
 export function createPresetEditorDefaults(

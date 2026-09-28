@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ManualRunStatus } from "../core/application/manual-run-controller";
 import {
   createPresetEditorDefaults,
+  duplicateFieldsFromPreset,
   editableFieldsFromPreset,
   type PresetEditableFields
 } from "../core/application/preset-editor";
@@ -34,7 +35,7 @@ type Notice = {
 };
 
 type PresetEditorState = {
-  readonly mode: "create" | "edit";
+  readonly mode: "create" | "edit" | "duplicate";
   readonly presetId?: string;
   readonly fields: PresetEditableFields;
 };
@@ -52,6 +53,10 @@ function App() {
   const [selectedPresetId, setSelectedPresetId] = useState<string>();
   const [presetEditor, setPresetEditor] = useState<PresetEditorState>();
   const [presetSaveError, setPresetSaveError] = useState<string>();
+  const [deleteConfirmationPresetId, setDeleteConfirmationPresetId] =
+    useState<string>();
+  const [deletingPresetId, setDeletingPresetId] = useState<string>();
+  const [presetOperationError, setPresetOperationError] = useState<string>();
   const presetRequestId = useRef(0);
 
   const addNotice = useCallback(
@@ -327,6 +332,8 @@ function App() {
   const openNewPreset = () => {
     const site = defaultSiteFromUrl(activeTab?.url);
     setPresetSaveError(undefined);
+    setPresetOperationError(undefined);
+    setDeleteConfirmationPresetId(undefined);
     setPresetEditor({
       mode: "create",
       fields: createPresetEditorDefaults(site.hostname, site.protocol)
@@ -335,10 +342,23 @@ function App() {
 
   const openPresetEditor = (preset: PresetV1) => {
     setPresetSaveError(undefined);
+    setPresetOperationError(undefined);
+    setDeleteConfirmationPresetId(undefined);
     setPresetEditor({
       mode: "edit",
       presetId: preset.id,
       fields: editableFieldsFromPreset(preset)
+    });
+  };
+
+  const openDuplicateEditor = (preset: PresetV1) => {
+    setPresetSaveError(undefined);
+    setPresetOperationError(undefined);
+    setDeleteConfirmationPresetId(undefined);
+    setPresetEditor({
+      mode: "duplicate",
+      presetId: preset.id,
+      fields: duplicateFieldsFromPreset(preset)
     });
   };
 
@@ -351,7 +371,7 @@ function App() {
     setPresetSaveError(undefined);
     try {
       const message: AutomationRuntimeMessage =
-        presetEditor.mode === "create"
+        presetEditor.mode !== "edit"
           ? {
               type: AUTOMATION_RUNTIME_MESSAGE,
               action: "create-preset",
@@ -375,9 +395,11 @@ function App() {
       setPresetEditor(undefined);
       addNotice(
         "success",
-        presetEditor.mode === "create"
-          ? `Preset “${response.result.preset.name}” was created.`
-          : `Preset “${response.result.preset.name}” was updated.`
+        presetEditor.mode === "edit"
+          ? `Preset “${response.result.preset.name}” was updated.`
+          : presetEditor.mode === "duplicate"
+            ? `Preset “${response.result.preset.name}” was duplicated.`
+            : `Preset “${response.result.preset.name}” was created.`
       );
       await refreshPresets();
       if (activeTab !== undefined) {
@@ -391,6 +413,44 @@ function App() {
       );
     } finally {
       setBusyAction(undefined);
+    }
+  };
+
+  const deletePreset = async (preset: PresetV1) => {
+    setDeletingPresetId(preset.id);
+    setPresetOperationError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "delete-preset",
+        presetId: preset.id
+      });
+      if (!response.ok) {
+        throw new Error(response.error);
+      }
+      if (response.result.kind !== "preset-deleted") {
+        throw new Error("The extension returned an unexpected delete response.");
+      }
+
+      setDeleteConfirmationPresetId(undefined);
+      setPresetEditor((current) =>
+        current?.mode === "edit" && current.presetId === preset.id
+          ? undefined
+          : current
+      );
+      addNotice("success", `Preset “${preset.name}” was deleted.`);
+      await refreshPresets();
+      if (activeTab !== undefined) {
+        await refreshWorkspace(activeTab.id);
+      }
+    } catch (error) {
+      setPresetOperationError(
+        `Unable to delete preset: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } finally {
+      setDeletingPresetId(undefined);
     }
   };
 
@@ -486,9 +546,23 @@ function App() {
           </div>
 
           <PresetList
+            deleteConfirmationPresetId={deleteConfirmationPresetId}
+            deletingPresetId={deletingPresetId}
             onEdit={openPresetEditor}
+            onDuplicate={openDuplicateEditor}
+            onRequestDelete={(presetId) => {
+              setPresetOperationError(undefined);
+              setDeleteConfirmationPresetId(presetId);
+            }}
+            onCancelDelete={() => setDeleteConfirmationPresetId(undefined)}
+            onConfirmDelete={(preset) => void deletePreset(preset)}
             onRetry={() => void refreshPresets(true)}
-            onSelect={setSelectedPresetId}
+            onSelect={(presetId) => {
+              setSelectedPresetId(presetId);
+              setDeleteConfirmationPresetId(undefined);
+              setPresetOperationError(undefined);
+            }}
+            operationError={presetOperationError}
             selectedPresetId={selectedPresetId}
             state={presetListState}
           />

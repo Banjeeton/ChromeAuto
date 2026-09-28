@@ -305,6 +305,12 @@ button:disabled {
   background: #193039;
 }
 
+.inline-button.destructive {
+  border-color: #693d42;
+  color: #ffc1c5;
+  background: #3a2225;
+}
+
 .header-actions {
   display: flex;
   align-items: center;
@@ -442,6 +448,47 @@ button:disabled {
 .preset-edit-button {
   width: 100%;
   margin-top: 11px;
+}
+
+.preset-management-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.delete-confirmation {
+  margin-top: 11px;
+  padding: 10px;
+  border: 1px solid #633b3f;
+  border-radius: 8px;
+  background: #29191b;
+}
+
+.delete-confirmation p {
+  margin: 0;
+  color: #e6b9bc;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.delete-confirmation > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.preset-operation-error {
+  margin-top: 10px;
+}
+
+.duplicate-hint {
+  padding: 9px 10px;
+  border: 1px solid #5a4d2e;
+  border-radius: 8px;
+  color: #dec98f;
+  background: #262215;
 }
 
 .preset-editor {
@@ -758,7 +805,8 @@ button:disabled {
   }
 
   .editor-number-grid,
-  .editor-actions {
+  .editor-actions,
+  .preset-management-actions {
     grid-template-columns: 1fr;
   }
 }

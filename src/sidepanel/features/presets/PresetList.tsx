@@ -8,16 +8,30 @@ export type PresetListState =
 type PresetListProps = {
   readonly state: PresetListState;
   readonly selectedPresetId?: string;
+  readonly deleteConfirmationPresetId?: string;
+  readonly deletingPresetId?: string;
+  readonly operationError?: string;
   readonly onSelect: (presetId: string) => void;
   readonly onEdit: (preset: PresetV1) => void;
+  readonly onDuplicate: (preset: PresetV1) => void;
+  readonly onRequestDelete: (presetId: string) => void;
+  readonly onCancelDelete: () => void;
+  readonly onConfirmDelete: (preset: PresetV1) => void;
   readonly onRetry: () => void;
 };
 
 export function PresetList({
   state,
   selectedPresetId,
+  deleteConfirmationPresetId,
+  deletingPresetId,
+  operationError,
   onSelect,
   onEdit,
+  onDuplicate,
+  onRequestDelete,
+  onCancelDelete,
+  onConfirmDelete,
   onRetry
 }: PresetListProps) {
   if (state.status === "loading") {
@@ -83,7 +97,21 @@ export function PresetList({
       </div>
 
       {selectedPreset !== undefined && (
-        <SelectedPresetDetails onEdit={onEdit} preset={selectedPreset} />
+        <SelectedPresetDetails
+          confirmingDelete={deleteConfirmationPresetId === selectedPreset.id}
+          deleting={deletingPresetId === selectedPreset.id}
+          onCancelDelete={onCancelDelete}
+          onConfirmDelete={onConfirmDelete}
+          onDuplicate={onDuplicate}
+          onEdit={onEdit}
+          onRequestDelete={onRequestDelete}
+          preset={selectedPreset}
+        />
+      )}
+      {operationError !== undefined && (
+        <p className="editor-error preset-operation-error" role="alert">
+          {operationError}
+        </p>
       )}
     </>
   );
@@ -91,10 +119,22 @@ export function PresetList({
 
 function SelectedPresetDetails({
   preset,
-  onEdit
+  confirmingDelete,
+  deleting,
+  onEdit,
+  onDuplicate,
+  onRequestDelete,
+  onCancelDelete,
+  onConfirmDelete
 }: {
   readonly preset: PresetV1;
+  readonly confirmingDelete: boolean;
+  readonly deleting: boolean;
   readonly onEdit: (preset: PresetV1) => void;
+  readonly onDuplicate: (preset: PresetV1) => void;
+  readonly onRequestDelete: (presetId: string) => void;
+  readonly onCancelDelete: () => void;
+  readonly onConfirmDelete: (preset: PresetV1) => void;
 }) {
   const repeat = preset.siteSettings.repeat;
 
@@ -122,13 +162,55 @@ function SelectedPresetDetails({
           </dd>
         </div>
       </dl>
-      <button
-        className="inline-button neutral preset-edit-button"
-        onClick={() => onEdit(preset)}
-        type="button"
-      >
-        Edit preset
-      </button>
+      {confirmingDelete ? (
+        <div className="delete-confirmation" role="alert">
+          <p>
+            Delete <strong>“{preset.name}”</strong>? This cannot be undone.
+          </p>
+          <div>
+            <button
+              className="inline-button neutral"
+              disabled={deleting}
+              onClick={onCancelDelete}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="inline-button destructive"
+              disabled={deleting}
+              onClick={() => onConfirmDelete(preset)}
+              type="button"
+            >
+              {deleting ? "Deleting…" : "Delete permanently"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="preset-management-actions">
+          <button
+            className="inline-button neutral"
+            onClick={() => onEdit(preset)}
+            type="button"
+          >
+            Edit
+          </button>
+          <button
+            className="inline-button neutral"
+            onClick={() => onDuplicate(preset)}
+            type="button"
+          >
+            Duplicate
+          </button>
+          <button
+            className="inline-button destructive"
+            onClick={() => onRequestDelete(preset.id)}
+            type="button"
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }

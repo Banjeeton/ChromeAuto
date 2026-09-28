@@ -125,6 +125,12 @@ function isAutomationRuntimeMessage(
     );
   }
 
+  if (candidate.action === "delete-preset") {
+    return (
+      "presetId" in candidate && typeof candidate.presetId === "string"
+    );
+  }
+
   return (
     (candidate.action === "manual-status" ||
       candidate.action === "run" ||
@@ -175,6 +181,10 @@ async function handleAutomationRuntimeMessage(
         message.fields
       );
       return { kind: "preset-saved", preset };
+    }
+    case "delete-preset": {
+      await presetEditorController.remove(message.presetId);
+      return { kind: "preset-deleted", presetId: message.presetId };
     }
     case "logs":
       return {

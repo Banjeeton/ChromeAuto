@@ -7,7 +7,7 @@ import { createStepTemplate, STEP_TYPES } from "./step-template";
 
 type PresetEditorProps = {
   readonly initialFields: PresetEditableFields;
-  readonly mode: "create" | "edit";
+  readonly mode: "create" | "edit" | "duplicate";
   readonly saving: boolean;
   readonly saveError?: string;
   readonly onCancel: () => void;
@@ -97,7 +97,11 @@ export function PresetEditor({
       <div className="editor-heading">
         <div>
           <p className="section-label">
-            {mode === "create" ? "New automation" : "Editing preset"}
+            {mode === "create"
+              ? "New automation"
+              : mode === "duplicate"
+                ? "Duplicate preset"
+                : "Editing preset"}
           </p>
           <h3>{mode === "create" ? "Create preset" : fields.name}</h3>
         </div>
@@ -144,6 +148,13 @@ export function PresetEditor({
           />
         </label>
       </fieldset>
+
+      {mode === "duplicate" && (
+        <p className="editor-help duplicate-hint">
+          Choose a different hostname before saving. One hostname can only have
+          one automation.
+        </p>
+      )}
 
       <fieldset className="editor-section">
         <legend>Site settings</legend>
@@ -418,7 +429,13 @@ export function PresetEditor({
           Cancel
         </button>
         <button className="action-button" disabled={saving} type="submit">
-          {saving ? "Saving…" : mode === "create" ? "Create preset" : "Save changes"}
+          {saving
+            ? "Saving…"
+            : mode === "create"
+              ? "Create preset"
+              : mode === "duplicate"
+                ? "Save duplicate"
+                : "Save changes"}
         </button>
       </div>
     </form>
