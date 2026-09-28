@@ -34,6 +34,11 @@ npm run verify
 
 Individual checks are available through `npm run typecheck` and `npm test`.
 
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Portable preset v1 format](docs/preset-format.md)
+
 ## Technical spikes
 
 - [Playwright CRX](docs/playwright-crx-spike.md)
@@ -41,22 +46,3 @@ Individual checks are available through `npm run typecheck` and `npm test`.
 ## Quality assurance
 
 - [Preset Management MVP manual regression checklist](docs/preset-management-regression.md)
-
-## Local manual-test preset
-
-The portable preset
-[`examples/presets/local-manual-test.preset.json`](examples/presets/local-manual-test.preset.json)
-is ready to import from the side panel. It targets
-`http://localhost:4173/playwright-crx-fixture.html` and verifies click, human
-input, element waits, custom JavaScript, the in-page HTML modal, reload and log
-output.
-
-Run `npm run build`, reload the unpacked `dist` extension, start
-`npm run preview`, open the fixture URL and import the preset manually.
-
-For the independent-tabs regression case, import
-[`examples/presets/local-independent-tabs-test.preset.json`](examples/presets/local-independent-tabs-test.preset.json).
-It contains one five-second wait step. Open the fixture URL in two tabs, start
-the preset manually in both tabs, and inspect `Running tabs` and the run logs.
-Disable or remove any other active `localhost` preset before importing because
-only one automation can be assigned to an exact hostname.
