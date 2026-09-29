@@ -158,11 +158,13 @@ describe("AutomationRunner", () => {
         stepIndex: 1,
         stepNumber: 2,
         status: "failed",
-        error: {
+        error: expect.objectContaining({
           code: "step-timeout",
           message: "Submit button timed out",
-          name: "AutomationEngineError"
-        }
+          name: "AutomationEngineError",
+          action: "reload",
+          reason: "Submit button timed out"
+        })
       })
     ]);
   });
@@ -194,6 +196,169 @@ describe("AutomationRunner", () => {
         error: expect.objectContaining({ code: "step-failed" })
       })
     ]);
+  });
+
+  it("logs the number, name and reason of a failed select step", async () => {
+    const engine = createEngine();
+    const failure = new AutomationEngineError(
+      "step-failed",
+      'Automation step select-country failed: Option "ca" was not found',
+      {
+        context: {
+          sessionId: "session-1",
+          tabId: 42,
+          stepId: "select-country",
+          stepIndex: 0
+        }
+      }
+    );
+    vi.mocked(engine.executeStep).mockRejectedValueOnce(failure);
+    const { log, runner } = createRunner(engine);
+    const automation: AutomationDefinition = {
+      defaults,
+      steps: [
+        {
+          id: "select-country",
+          name: "Select country",
+          type: "select",
+          enabled: true,
+          target: {
+            primary: { type: "css", value: "#country" },
+            fallbacks: []
+          },
+          option: { by: "value", value: "ca" }
+        }
+      ]
+    };
+
+    await expect(
+      runner.run({ presetId: "preset-1", tabId: 42, automation })
+    ).rejects.toBe(failure);
+
+    expect(await log.list()).toEqual([
+      expect.objectContaining({
+        stepId: "select-country",
+        stepIndex: 0,
+        stepNumber: 1,
+        stepName: "Select country",
+        status: "failed",
+        error: expect.objectContaining({
+          code: "step-failed",
+          action: "select",
+          target: {
+            primary: { type: "css", value: "#country" },
+            fallbacks: []
+          },
+          selectOption: { by: "value", value: "ca" },
+          message:
+            'Automation step select-country failed: Option "ca" was not found',
+          reason:
+            'Automation step select-country failed: Option "ca" was not found',
+          technicalDetails: expect.stringContaining("Action: select")
+        })
+      })
+    ]);
+  });
+
+  it("writes a pressKey execution error to the step log", async () => {
+    const engine = createEngine();
+    const failure = new AutomationEngineError(
+      "step-failed",
+      "Automation step submit-form failed: Target page was closed",
+      {
+        context: {
+          sessionId: "session-1",
+          tabId: 42,
+          stepId: "submit-form",
+          stepIndex: 0,
+          stepNumber: 1,
+          stepType: "pressKey"
+        }
+      }
+    );
+    vi.mocked(engine.executeStep).mockRejectedValueOnce(failure);
+    const { log, runner } = createRunner(engine);
+
+    await expect(
+      runner.run({
+        presetId: "preset-1",
+        tabId: 42,
+        automation: {
+          defaults,
+          steps: [
+            {
+              id: "submit-form",
+              name: "Submit form",
+              type: "pressKey",
+              enabled: true,
+              key: "Control+Enter"
+            }
+          ]
+        }
+      })
+    ).rejects.toBe(failure);
+
+    expect(await log.list()).toEqual([
+      expect.objectContaining({
+        stepId: "submit-form",
+        stepNumber: 1,
+        stepType: "pressKey",
+        stepName: "Submit form",
+        status: "failed",
+        error: expect.objectContaining({
+          code: "step-failed",
+          action: "pressKey",
+          key: "Control+Enter",
+          message: "Automation step submit-form failed: Target page was closed",
+          reason: "Automation step submit-form failed: Target page was closed",
+          technicalDetails: expect.stringContaining("Action: pressKey")
+        })
+      })
+    ]);
+  });
+
+  it("redacts input values from thrown errors and every log diagnostic", async () => {
+    const secret = "correct-horse-battery-staple";
+    const engine = createEngine();
+    vi.mocked(engine.executeStep).mockRejectedValueOnce(
+      new AutomationEngineError(
+        "step-failed",
+        `Unable to fill password with ${secret}`,
+        { cause: new Error(`Browser rejected ${secret}`) }
+      )
+    );
+    const { log, runner } = createRunner(engine);
+
+    const execution = runner.run({
+      presetId: "preset-1",
+      tabId: 42,
+      automation: {
+        defaults,
+        steps: [
+          {
+            id: "enter-password",
+            name: "Enter password",
+            type: "input",
+            enabled: true,
+            target: {
+              primary: { type: "css", value: 'input[type="password"]' },
+              fallbacks: []
+            },
+            value: secret,
+            clearFirst: true,
+            inputMode: "instant"
+          }
+        ]
+      }
+    });
+
+    await expect(execution).rejects.toMatchObject({
+      message: "Unable to fill password with [REDACTED]"
+    });
+    const serializedLog = JSON.stringify(await log.list());
+    expect(serializedLog).not.toContain(secret);
+    expect(serializedLog).toContain("[REDACTED]");
+    expect(serializedLog).toContain('input[type=\\\"password\\\"]');
   });
 
   it("distinguishes a requested stop from a failed step", async () => {

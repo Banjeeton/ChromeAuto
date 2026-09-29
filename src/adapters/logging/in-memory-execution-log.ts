@@ -53,10 +53,15 @@ function matchesQuery(entry: StepLogEntry, query: StepLogQuery): boolean {
 }
 
 function freezeEntry(entry: StepLogEntry): StepLogEntry {
-  return Object.freeze({
-    ...entry,
-    ...(entry.error === undefined
-      ? {}
-      : { error: Object.freeze({ ...entry.error }) })
-  });
+  return deepFreeze(structuredClone(entry));
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const nested of Object.values(value)) {
+    deepFreeze(nested);
+  }
+  return Object.freeze(value);
 }

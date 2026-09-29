@@ -58,7 +58,12 @@ export interface RecorderDiagnosticMessage {
   readonly type: typeof RECORDER_DIAGNOSTIC_MESSAGE;
   readonly tabId: number;
   readonly sessionId?: string;
-  readonly action: "capture-click" | "capture-input" | "deliver-event";
+  readonly action:
+    | "capture-click"
+    | "capture-input"
+    | "capture-change"
+    | "capture-keydown"
+    | "deliver-event";
   readonly message: string;
   readonly details?: string;
   readonly eventId?: string;
@@ -117,10 +122,14 @@ export function isRecorderEventMessage(
     typeof event.url === "string" &&
     (event.kind === "click" ||
       event.kind === "input" ||
+      event.kind === "select" ||
+      event.kind === "check" ||
+      event.kind === "uncheck" ||
+      event.kind === "pressKey" ||
       event.kind === "reload" ||
       event.kind === "pageReady") &&
     isObject(event.payload) &&
-    ((event.kind !== "click" && event.kind !== "input") ||
+    ((event.kind === "reload" || event.kind === "pageReady") ||
       isObject(event.target))
   );
 }
@@ -137,6 +146,8 @@ export function isRecorderDiagnosticMessage(
     (value.sessionId === undefined || typeof value.sessionId === "string") &&
     (value.action === "capture-click" ||
       value.action === "capture-input" ||
+      value.action === "capture-change" ||
+      value.action === "capture-keydown" ||
       value.action === "deliver-event") &&
     typeof value.message === "string" &&
     (value.details === undefined || typeof value.details === "string") &&
@@ -144,6 +155,10 @@ export function isRecorderDiagnosticMessage(
     (value.eventKind === undefined ||
       value.eventKind === "click" ||
       value.eventKind === "input" ||
+      value.eventKind === "select" ||
+      value.eventKind === "check" ||
+      value.eventKind === "uncheck" ||
+      value.eventKind === "pressKey" ||
       value.eventKind === "reload" ||
       value.eventKind === "pageReady")
   );

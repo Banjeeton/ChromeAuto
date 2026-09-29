@@ -75,6 +75,262 @@ describe("Playwright step executor", () => {
     expect(input.pressSequentially).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["value", "ca", { value: "ca" }],
+    ["label", "Canada", { label: "Canada" }],
+    ["index", 2, { index: 2 }]
+  ] as const)("selects an option by %s", async (by, value, expected) => {
+    const select = createLocator(1);
+    const page = createPage({ getByLabel: vi.fn(() => select) });
+    const step: AutomationStep = {
+      id: `select-country-${by}`,
+      name: "Select country",
+      type: "select",
+      enabled: true,
+      target: {
+        primary: { type: "label", value: "Country", exact: true },
+        fallbacks: []
+      },
+      option: { by, value }
+    } as AutomationStep;
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(select.selectOption).toHaveBeenCalledWith(expected, {
+      timeout: 5_000
+    });
+  });
+
+  it("selects through a fallback locator with timing overrides", async () => {
+    const primary = createLocator(0);
+    const fallback = createLocator(1);
+    const page = createPage({
+      locator: vi.fn((selector: string) =>
+        selector === "#country" ? primary : fallback
+      )
+    });
+    const step: AutomationStep = {
+      id: "select-country",
+      type: "select",
+      enabled: true,
+      timeoutMs: 1_750,
+      postActionDelayMs: 40,
+      target: {
+        primary: { type: "css", value: "#country" },
+        fallbacks: [{ type: "css", value: "select[name=country]" }]
+      },
+      option: { by: "value", value: "ca" }
+    };
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(fallback.selectOption).toHaveBeenCalledWith(
+      { value: "ca" },
+      { timeout: 1_750 }
+    );
+    expect(primary.selectOption).not.toHaveBeenCalled();
+    expect(page.waitForTimeout).toHaveBeenCalledWith(40);
+  });
+
+  it("checks an element through a fallback locator with timing overrides", async () => {
+    const primary = createLocator(0);
+    const fallback = createLocator(1);
+    const page = createPage({
+      locator: vi.fn((selector: string) =>
+        selector === "#terms" ? primary : fallback
+      )
+    });
+    const step: AutomationStep = {
+      id: "accept-terms",
+      type: "check",
+      enabled: true,
+      timeoutMs: 1_200,
+      postActionDelayMs: 35,
+      target: {
+        primary: { type: "css", value: "#terms" },
+        fallbacks: [{ type: "css", value: "input[name=terms]" }]
+      }
+    };
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(fallback.check).toHaveBeenCalledWith({ timeout: 1_200 });
+    expect(primary.check).not.toHaveBeenCalled();
+    expect(page.waitForTimeout).toHaveBeenCalledWith(35);
+  });
+
+  it("unchecks an element using the default timeout and delay", async () => {
+    const checkbox = createLocator(1);
+    const page = createPage({ getByLabel: vi.fn(() => checkbox) });
+    const step: AutomationStep = {
+      id: "disable-newsletter",
+      type: "uncheck",
+      enabled: true,
+      target: {
+        primary: { type: "label", value: "Newsletter", exact: true },
+        fallbacks: []
+      }
+    };
+    const request: ExecuteAutomationStepRequest = {
+      ...createRequest(step),
+      defaults: { ...defaults, postActionDelayMs: 20 }
+    };
+
+    await executePlaywrightStep(page, request);
+
+    expect(checkbox.uncheck).toHaveBeenCalledWith({ timeout: 5_000 });
+    expect(page.waitForTimeout).toHaveBeenCalledWith(20);
+  });
+
+  it.each(["check", "uncheck"] as const)(
+    "safely repeats an already satisfied %s action",
+    async (type) => {
+      const checkbox = createLocator(1);
+      const page = createPage({ locator: vi.fn(() => checkbox) });
+      const step: AutomationStep = {
+        id: `repeat-${type}`,
+        type,
+        enabled: true,
+        target: {
+          primary: { type: "css", value: "#preconfigured" },
+          fallbacks: []
+        }
+      };
+
+      await expect(
+        executePlaywrightStep(page, createRequest(step))
+      ).resolves.toBeUndefined();
+      await expect(
+        executePlaywrightStep(page, createRequest(step))
+      ).resolves.toBeUndefined();
+
+      expect(checkbox[type]).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it.each([
+    "Enter",
+    "Escape",
+    "Tab",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "F1",
+    "F12",
+    "Control+Enter",
+    "Alt+Escape",
+    "Shift+Tab",
+    "Meta+ArrowLeft",
+    "Control+Alt+Shift+F5"
+  ])("presses the supported key %s on a target element", async (key) => {
+    const target = createLocator(1);
+    const page = createPage({ getByTestId: vi.fn(() => target) });
+    const step: AutomationStep = {
+      id: `press-${key}`,
+      type: "pressKey",
+      enabled: true,
+      target: {
+        primary: { type: "testId", value: "keyboard-target" },
+        fallbacks: []
+      },
+      key
+    };
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(target.press).toHaveBeenCalledWith(key, { timeout: 5_000 });
+  });
+
+  it("presses a key on a fallback element with timing overrides", async () => {
+    const primary = createLocator(0);
+    const fallback = createLocator(1);
+    const page = createPage({
+      locator: vi.fn((selector: string) =>
+        selector === "#search" ? primary : fallback
+      )
+    });
+    const step: AutomationStep = {
+      id: "submit-search",
+      type: "pressKey",
+      enabled: true,
+      timeoutMs: 1_400,
+      postActionDelayMs: 30,
+      target: {
+        primary: { type: "css", value: "#search" },
+        fallbacks: [{ type: "css", value: "input[name=search]" }]
+      },
+      key: "Enter"
+    };
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(fallback.press).toHaveBeenCalledWith("Enter", { timeout: 1_400 });
+    expect(primary.press).not.toHaveBeenCalled();
+    expect(page.waitForTimeout).toHaveBeenCalledWith(30);
+  });
+
+  it("presses a shortcut at page level when target is omitted", async () => {
+    const keyboardPress = vi.fn(async () => undefined);
+    const page = createPage({ keyboard: { press: keyboardPress } });
+    const step: AutomationStep = {
+      id: "global-shortcut",
+      type: "pressKey",
+      enabled: true,
+      postActionDelayMs: 25,
+      key: "Control+Shift+F2"
+    };
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(keyboardPress).toHaveBeenCalledWith("Control+Shift+F2");
+    expect(page.waitForTimeout).toHaveBeenCalledWith(25);
+  });
+
+  it("applies the step timeout to a page-level key press", async () => {
+    vi.useFakeTimers();
+    try {
+      const keyboardPress = vi.fn(() => new Promise<void>(() => undefined));
+      const page = createPage({ keyboard: { press: keyboardPress } });
+      const step: AutomationStep = {
+        id: "stalled-shortcut",
+        type: "pressKey",
+        enabled: true,
+        timeoutMs: 1_100,
+        key: "Escape"
+      };
+
+      const execution = executePlaywrightStep(page, createRequest(step));
+      const rejection = expect(execution).rejects.toMatchObject({
+        name: "TimeoutError",
+        message: 'Page pressKey "Escape" timed out after 1100 ms'
+      });
+      await vi.advanceTimersByTimeAsync(1_100);
+
+      await rejection;
+      expect(page.waitForTimeout).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects an unsupported key before touching the page", async () => {
+    const page = createPage();
+    const step: AutomationStep = {
+      id: "invalid-key",
+      type: "pressKey",
+      enabled: true,
+      key: "Ctrl++DefinitelyNotAKey"
+    };
+
+    await expect(
+      executePlaywrightStep(page, createRequest(step))
+    ).rejects.toThrow(
+      'Unsupported pressKey value: "Ctrl++DefinitelyNotAKey"'
+    );
+    expect(page.keyboard.press).not.toHaveBeenCalled();
+  });
+
   it("appends input without clearing the current value", async () => {
     const input = createLocator(1);
     const page = createPage({ locator: vi.fn(() => input) });
@@ -285,11 +541,15 @@ function createRequest(step: AutomationStep): ExecuteAutomationStepRequest {
 
 function createLocator(count = 1): Locator {
   const locator = {
+    check: vi.fn(async () => undefined),
     click: vi.fn(async () => undefined),
     count: vi.fn(async () => count),
     fill: vi.fn(async () => undefined),
     first: vi.fn(),
+    press: vi.fn(async () => undefined),
     pressSequentially: vi.fn(async () => undefined),
+    selectOption: vi.fn(async () => []),
+    uncheck: vi.fn(async () => undefined),
     waitFor: vi.fn(async () => undefined)
   };
   locator.first.mockReturnValue(locator);
@@ -304,6 +564,7 @@ function createPage(overrides: Record<string, unknown> = {}): Page {
     getByRole: vi.fn(() => defaultLocator),
     getByTestId: vi.fn(() => defaultLocator),
     getByText: vi.fn(() => defaultLocator),
+    keyboard: { press: vi.fn(async () => undefined) },
     locator: vi.fn(() => defaultLocator),
     reload: vi.fn(async () => null),
     waitForLoadState: vi.fn(async () => undefined),

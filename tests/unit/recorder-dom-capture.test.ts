@@ -78,6 +78,182 @@ describe("RecorderDomCapture", () => {
     });
   });
 
+  it("captures a select change without recording its click", () => {
+    const harness = createHarness();
+    const select = new FakeElement("select", { id: "country" });
+    select.selectedIndex = 1;
+    select.options = [
+      { value: "", label: "Choose a country" },
+      { value: "ca", label: "Canada" }
+    ];
+    harness.capture.start(captureSession());
+
+    harness.source.dispatch("click", trustedEvent(select));
+    harness.source.dispatch("change", trustedEvent(select));
+
+    expect(harness.events).toEqual([
+      expect.objectContaining({
+        version: 1,
+        eventId: "event-1",
+        sessionId: "recorder-1",
+        tabId: 42,
+        documentId: "document-1",
+        occurredAt: "2026-09-28T18:00:00.000Z",
+        url: "https://example.com/form",
+        kind: "select",
+        target: { locators: [{ type: "css", value: "#country" }] },
+        payload: { option: { by: "value", value: "ca" } }
+      })
+    ]);
+  });
+
+  it("captures checkbox state changes without duplicate clicks", () => {
+    const harness = createHarness();
+    const checkbox = new FakeElement("input", {
+      id: "terms",
+      type: "checkbox"
+    });
+    harness.capture.start(captureSession());
+
+    checkbox.checked = true;
+    harness.source.dispatch("click", trustedEvent(checkbox));
+    harness.source.dispatch("input", trustedEvent(checkbox));
+    harness.source.dispatch("change", trustedEvent(checkbox));
+    checkbox.checked = false;
+    harness.source.dispatch("change", trustedEvent(checkbox));
+
+    expect(harness.events).toEqual([
+      expect.objectContaining({
+        kind: "check",
+        target: { locators: [{ type: "css", value: "#terms" }] },
+        payload: { control: "checkbox", checked: true }
+      }),
+      expect.objectContaining({
+        kind: "uncheck",
+        target: { locators: [{ type: "css", value: "#terms" }] },
+        payload: { control: "checkbox", checked: false }
+      })
+    ]);
+    expect(harness.scheduler.size).toBe(0);
+  });
+
+  it("captures only the checked state of a radio control", () => {
+    const harness = createHarness();
+    const radio = new FakeElement("input", {
+      name: "plan",
+      type: "radio"
+    });
+    harness.capture.start(captureSession());
+
+    radio.checked = false;
+    harness.source.dispatch("change", trustedEvent(radio));
+    radio.checked = true;
+    harness.source.dispatch("change", trustedEvent(radio));
+
+    expect(harness.events).toEqual([
+      expect.objectContaining({
+        kind: "check",
+        target: {
+          locators: [{ type: "css", value: 'input[name="plan"]' }]
+        },
+        payload: { control: "radio", checked: true }
+      })
+    ]);
+  });
+
+  it.each([
+    ["Enter", {}, "Enter"],
+    ["Escape", {}, "Escape"],
+    ["Tab", { shiftKey: true }, "Shift+Tab"],
+    ["ArrowDown", { altKey: true }, "Alt+ArrowDown"],
+    ["F12", { ctrlKey: true, metaKey: true }, "Control+Meta+F12"]
+  ] as const)("captures the special key %s", (key, details, expected) => {
+    const harness = createHarness();
+    const button = new FakeElement("button", { id: "key-target" });
+    harness.capture.start(captureSession());
+
+    harness.source.dispatch("keydown", trustedEvent(button, { key, ...details }));
+
+    expect(harness.events).toEqual([
+      expect.objectContaining({
+        kind: "pressKey",
+        sessionId: "recorder-1",
+        tabId: 42,
+        url: "https://example.com/form",
+        occurredAt: "2026-09-28T18:00:00.000Z",
+        target: { locators: [{ type: "css", value: "#key-target" }] },
+        payload: { key: expected }
+      })
+    ]);
+  });
+
+  it("keeps ordinary characters and editing keys inside one input event", () => {
+    const harness = createHarness();
+    const input = new FakeElement("input", { id: "query", type: "text" });
+    harness.capture.start(captureSession());
+
+    harness.source.dispatch("keydown", trustedEvent(input, { key: "a" }));
+    input.value = "a";
+    harness.source.dispatch("input", trustedEvent(input));
+    harness.source.dispatch("keydown", trustedEvent(input, { key: " " }));
+    input.value = "a ";
+    harness.source.dispatch("input", trustedEvent(input));
+    harness.source.dispatch("keydown", trustedEvent(input, { key: "Backspace" }));
+    input.value = "a";
+    harness.source.dispatch("input", trustedEvent(input));
+    harness.scheduler.flushAll();
+
+    expect(harness.events).toEqual([
+      expect.objectContaining({
+        kind: "input",
+        payload: { value: "a", inputType: "text" }
+      })
+    ]);
+  });
+
+  it("flushes text input before recording a special key on the field", () => {
+    const harness = createHarness();
+    const input = new FakeElement("input", { id: "query", type: "search" });
+    harness.capture.start(captureSession());
+
+    input.value = "automation";
+    harness.source.dispatch("input", trustedEvent(input));
+    harness.source.dispatch("keydown", trustedEvent(input, { key: "Enter" }));
+
+    expect(harness.scheduler.size).toBe(0);
+    expect(harness.events).toEqual([
+      expect.objectContaining({
+        kind: "input",
+        payload: { value: "automation", inputType: "search" }
+      }),
+      expect.objectContaining({
+        kind: "pressKey",
+        target: { locators: [{ type: "css", value: "#query" }] },
+        payload: { key: "Enter" }
+      })
+    ]);
+  });
+
+  it("ignores untrusted select, check and key events", () => {
+    const harness = createHarness();
+    const select = new FakeElement("select", { id: "country" });
+    select.selectedIndex = 0;
+    select.options = [{ value: "ca", label: "Canada" }];
+    const checkbox = new FakeElement("input", { type: "checkbox" });
+    checkbox.checked = true;
+    const button = new FakeElement("button");
+    harness.capture.start(captureSession());
+
+    harness.source.dispatch("change", untrustedEvent(select));
+    harness.source.dispatch("change", untrustedEvent(checkbox));
+    harness.source.dispatch(
+      "keydown",
+      untrustedEvent(button, { key: "Enter" })
+    );
+
+    expect(harness.events).toEqual([]);
+  });
+
   it("calls timer hooks without an illegal receiver", () => {
     const source = new FakeDocumentSource();
     const events: RecorderEvent[] = [];
@@ -168,6 +344,8 @@ describe("RecorderDomCapture", () => {
     });
     expect(harness.source.listenerCount("click")).toBe(0);
     expect(harness.source.listenerCount("input")).toBe(0);
+    expect(harness.source.listenerCount("change")).toBe(0);
+    expect(harness.source.listenerCount("keydown")).toBe(0);
 
     harness.source.dispatch("click", trustedEvent(textarea));
     expect(harness.events).toHaveLength(1);
@@ -191,6 +369,8 @@ describe("RecorderDomCapture", () => {
     });
     expect(harness.source.listenerCount("click")).toBe(1);
     expect(harness.source.listenerCount("input")).toBe(1);
+    expect(harness.source.listenerCount("change")).toBe(1);
+    expect(harness.source.listenerCount("keydown")).toBe(1);
 
     harness.source.dispatch(
       "click",
@@ -284,6 +464,31 @@ describe("Recorder content message contract", () => {
     );
   });
 
+  it("recognizes an extended recorder-event envelope", () => {
+    const event: RecorderEvent = {
+      version: 1,
+      eventId: "event-select",
+      sessionId: "recorder-1",
+      tabId: 42,
+      documentId: "document-1",
+      occurredAt: "2026-09-28T18:00:00.000Z",
+      url: "https://example.com/form",
+      kind: "select",
+      target: { locators: [{ type: "testId", value: "country" }] },
+      payload: { option: { by: "value", value: "ca" } }
+    };
+
+    expect(
+      isRecorderEventMessage({ type: RECORDER_EVENT_MESSAGE, event })
+    ).toBe(true);
+    expect(
+      isRecorderEventMessage({
+        type: RECORDER_EVENT_MESSAGE,
+        event: { ...event, target: undefined }
+      })
+    ).toBe(false);
+  });
+
   it("recognizes typed content-script diagnostics", () => {
     const diagnostic = {
       type: RECORDER_DIAGNOSTIC_MESSAGE,
@@ -354,12 +559,15 @@ function captureSession() {
 type DocumentListener = Parameters<
   RecorderDocumentEventSource["addEventListener"]
 >[1];
+type DocumentEventType = Parameters<
+  RecorderDocumentEventSource["addEventListener"]
+>[0];
 
 class FakeDocumentSource implements RecorderDocumentEventSource {
-  readonly #listeners = new Map<"click" | "input", Set<DocumentListener>>();
+  readonly #listeners = new Map<DocumentEventType, Set<DocumentListener>>();
 
   addEventListener(
-    type: "click" | "input",
+    type: DocumentEventType,
     listener: DocumentListener
   ): void {
     const listeners = this.#listeners.get(type) ?? new Set<DocumentListener>();
@@ -368,19 +576,19 @@ class FakeDocumentSource implements RecorderDocumentEventSource {
   }
 
   removeEventListener(
-    type: "click" | "input",
+    type: DocumentEventType,
     listener: DocumentListener
   ): void {
     this.#listeners.get(type)?.delete(listener);
   }
 
-  dispatch(type: "click" | "input", event: ReturnType<typeof trustedEvent>) {
+  dispatch(type: DocumentEventType, event: ReturnType<typeof trustedEvent>) {
     for (const listener of this.#listeners.get(type) ?? []) {
       listener(event);
     }
   }
 
-  listenerCount(type: "click" | "input"): number {
+  listenerCount(type: DocumentEventType): number {
     return this.#listeners.get(type)?.size ?? 0;
   }
 }
@@ -388,6 +596,9 @@ class FakeDocumentSource implements RecorderDocumentEventSource {
 class FakeElement {
   readonly tagName: string;
   readonly #attributes: Readonly<Record<string, string>>;
+  checked = false;
+  options: Array<{ value: string; label?: string; textContent?: string }> = [];
+  selectedIndex = -1;
   value = "";
   textContent = "";
   isContentEditable = false;
@@ -414,8 +625,11 @@ function trustedEvent(
   };
 }
 
-function untrustedEvent(target: FakeElement) {
-  return { ...trustedEvent(target), isTrusted: false };
+function untrustedEvent(
+  target: FakeElement,
+  details: Record<string, unknown> = {}
+) {
+  return { ...trustedEvent(target, details), isTrusted: false };
 }
 
 class ManualScheduler {

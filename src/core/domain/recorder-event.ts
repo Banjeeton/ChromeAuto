@@ -1,11 +1,16 @@
 import type {
   ElementLocator,
-  MouseButton
+  MouseButton,
+  SelectOption
 } from "./automation-step";
 
 export const RECORDER_EVENT_KINDS = [
   "click",
   "input",
+  "select",
+  "check",
+  "uncheck",
+  "pressKey",
   "reload",
   "pageReady"
 ] as const;
@@ -65,6 +70,40 @@ export interface RecorderInputEvent extends RecorderEventBase {
   };
 }
 
+export interface RecorderSelectEvent extends RecorderEventBase {
+  readonly kind: "select";
+  readonly target: RecorderTargetCandidate;
+  readonly payload: {
+    readonly option: SelectOption;
+  };
+}
+
+export interface RecorderCheckEvent extends RecorderEventBase {
+  readonly kind: "check";
+  readonly target: RecorderTargetCandidate;
+  readonly payload: {
+    readonly control: "checkbox" | "radio";
+    readonly checked: true;
+  };
+}
+
+export interface RecorderUncheckEvent extends RecorderEventBase {
+  readonly kind: "uncheck";
+  readonly target: RecorderTargetCandidate;
+  readonly payload: {
+    readonly control: "checkbox";
+    readonly checked: false;
+  };
+}
+
+export interface RecorderPressKeyEvent extends RecorderEventBase {
+  readonly kind: "pressKey";
+  readonly target: RecorderTargetCandidate;
+  readonly payload: {
+    readonly key: string;
+  };
+}
+
 export interface RecorderReloadEvent extends RecorderEventBase {
   readonly kind: "reload";
   readonly payload: {
@@ -85,5 +124,9 @@ export interface RecorderPageReadyEvent extends RecorderEventBase {
 export type RecorderEvent =
   | RecorderClickEvent
   | RecorderInputEvent
+  | RecorderSelectEvent
+  | RecorderCheckEvent
+  | RecorderUncheckEvent
+  | RecorderPressKeyEvent
   | RecorderReloadEvent
   | RecorderPageReadyEvent;

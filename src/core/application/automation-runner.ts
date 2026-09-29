@@ -187,11 +187,7 @@ export class AutomationRunner {
       ...(input.error === undefined
         ? {}
         : {
-            error: {
-              code: input.error.code,
-              message: input.error.message,
-              name: input.error.name
-            }
+            error: createStepLogError(input.error, input.step)
           })
     };
     await this.#log.append(entry);
@@ -210,14 +206,24 @@ export class AutomationRunner {
       return stoppedError;
     }
     if (isAutomationEngineError(error)) {
-      return error;
+      return sanitizeEngineError(error, step);
     }
     return new AutomationEngineError(
       "step-failed",
-      error instanceof Error ? error.message : String(error),
+      redactStepValue(error instanceof Error ? error.message : String(error), step),
       {
-        cause: error,
-        context: { sessionId, tabId, stepId: step.id, stepIndex }
+        cause: sanitizeCause(error, step),
+        context: {
+          sessionId,
+          tabId,
+          stepId: step.id,
+          stepIndex,
+          stepNumber: stepIndex + 1,
+          stepType: step.type,
+          ...(step.name === undefined ? {} : { stepName: step.name }),
+          action: step.type,
+          ...stepDiagnosticContext(step)
+        }
       }
     );
   }
@@ -280,4 +286,101 @@ export class AutomationRunner {
     }
     return undefined;
   }
+}
+
+function createStepLogError(
+  error: AutomationEngineError,
+  step: AutomationStep
+) {
+  const reason = stepErrorReason(error, step);
+  return {
+    code: error.code,
+    name: error.name,
+    message: redactStepValue(error.message, step),
+    action: step.type,
+    reason,
+    technicalDetails: formatStepTechnicalDetails(error, step),
+    ...stepDiagnosticContext(step)
+  };
+}
+
+function stepDiagnosticContext(step: AutomationStep) {
+  const target =
+    "target" in step && step.target !== undefined
+      ? step.target
+      : step.type === "wait" && step.condition.type === "element"
+        ? step.condition.target
+        : undefined;
+  return {
+    ...(target === undefined ? {} : { target: structuredClone(target) }),
+    ...(step.type === "select"
+      ? { selectOption: structuredClone(step.option) }
+      : {}),
+    ...(step.type === "pressKey" ? { key: step.key } : {})
+  };
+}
+
+function stepErrorReason(
+  error: AutomationEngineError,
+  step: AutomationStep
+): string {
+  const cause = error.cause;
+  const reason =
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === "string"
+        ? cause
+        : error.message;
+  return redactStepValue(reason, step);
+}
+
+function formatStepTechnicalDetails(
+  error: AutomationEngineError,
+  step: AutomationStep
+): string {
+  const lines = [
+    `Action: ${step.type}`,
+    `Error: ${error.name} [${error.code}]: ${redactStepValue(error.message, step)}`,
+    `Reason: ${stepErrorReason(error, step)}`
+  ];
+  if (error.stack !== undefined) {
+    lines.push(`Stack:\n${redactStepValue(error.stack, step).slice(0, 8_000)}`);
+  }
+  return lines.join("\n");
+}
+
+function sanitizeEngineError(
+  error: AutomationEngineError,
+  step: AutomationStep
+): AutomationEngineError {
+  const message = redactStepValue(error.message, step);
+  const cause = sanitizeCause(error.cause, step);
+  if (message === error.message && cause === error.cause) {
+    return error;
+  }
+  return new AutomationEngineError(error.code, message, {
+    context: error.context,
+    cause
+  });
+}
+
+function sanitizeCause(error: unknown, step: AutomationStep): unknown {
+  if (step.type !== "input" || step.value.length === 0) {
+    return error;
+  }
+  if (error instanceof Error) {
+    const sanitized = new Error(redactStepValue(error.message, step));
+    sanitized.name = error.name;
+    if (error.stack !== undefined) {
+      sanitized.stack = redactStepValue(error.stack, step);
+    }
+    return sanitized;
+  }
+  return typeof error === "string" ? redactStepValue(error, step) : error;
+}
+
+function redactStepValue(value: string, step: AutomationStep): string {
+  return step.type === "input" && step.value.length > 0
+    ? value.replaceAll(step.value, "[REDACTED]")
+    : value;
 }

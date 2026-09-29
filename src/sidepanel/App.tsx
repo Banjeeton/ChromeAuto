@@ -33,6 +33,7 @@ import {
   PresetList,
   type PresetListState
 } from "./features/presets";
+import { StepLogEntryView } from "./features/logs/StepLogEntryView";
 import {
   RecordedStepsEditor,
   type RecordedPresetFields
@@ -1333,13 +1334,7 @@ function App() {
                 </li>
               ))}
               {[...stepLogs].reverse().map((entry) => (
-                <li className={`log-entry ${entry.status}`} key={entry.id}>
-                  <span>{entry.status.toUpperCase()}</span>
-                  <p>
-                    Step {entry.stepNumber}: {entry.stepName ?? entry.stepType}
-                    {entry.error === undefined ? "" : ` — ${entry.error.message}`}
-                  </p>
-                </li>
+                <StepLogEntryView entry={entry} key={entry.id} />
               ))}
             </ol>
           )}

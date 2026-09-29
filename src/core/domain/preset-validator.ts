@@ -1,5 +1,6 @@
 import type { ErrorObject } from "ajv";
 import generatedValidateSchema from "../../generated/preset-v1-validator";
+import { isSupportedAutomationKey } from "./automation-key";
 import type { PresetV1 } from "./preset";
 
 type GeneratedSchemaValidator = ((value: unknown) => boolean) & {
@@ -11,6 +12,8 @@ const validateSchema = generatedValidateSchema as GeneratedSchemaValidator;
 export type PresetSemanticIssueCode =
   | "duplicate_step_id"
   | "invalid_human_input_range"
+  | "invalid_url_regex"
+  | "invalid_press_key"
   | "empty_automation";
 
 export type PresetValidationIssueCode =
@@ -92,9 +95,40 @@ export function validatePresetSemantics(
         message: "maxDelayMs must be greater than or equal to minDelayMs."
       });
     }
+
+    if (
+      step.type === "wait" &&
+      step.condition.type === "url" &&
+      step.condition.match === "regex" &&
+      !isValidRegularExpression(step.condition.value)
+    ) {
+      issues.push({
+        code: "invalid_url_regex",
+        path: `/automation/steps/${index}/condition/value`,
+        message: "value must be a valid JavaScript regular expression."
+      });
+    }
+
+    if (step.type === "pressKey" && !isSupportedAutomationKey(step.key)) {
+      issues.push({
+        code: "invalid_press_key",
+        path: `/automation/steps/${index}/key`,
+        message:
+          "key must be a supported key or a combination using Control, Alt, Shift or Meta."
+      });
+    }
   });
 
   return issues;
+}
+
+function isValidRegularExpression(value: string): boolean {
+  try {
+    new RegExp(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Applies JSON Schema first and semantic validation only to a valid shape. */

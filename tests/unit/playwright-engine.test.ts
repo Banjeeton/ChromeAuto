@@ -211,6 +211,28 @@ describe("PlaywrightEngine", () => {
     expect(application.attach).toHaveBeenCalledTimes(2);
   });
 
+  it("explains attach failures caused by protected frames from another extension", async () => {
+    const page = createPage();
+    const attachFailure = new Error(
+      "crxApplication.attach: Cannot access a chrome-extension:// URL of different extension"
+    );
+    const application = createApplication(page);
+    vi.mocked(application.attach).mockRejectedValueOnce(attachFailure);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await expect(
+      engine.start({ sessionId: "session-protected-frame", target: { tabId: 42 } })
+    ).rejects.toMatchObject({
+      code: "engine-unavailable",
+      message:
+        "Could not attach automation session to tab 42. Another extension injected a protected frame into this page. Close its popup or disable it for this site, reload the tab, and try again.",
+      context: { sessionId: "session-protected-frame", tabId: 42 },
+      cause: attachFailure
+    });
+  });
+
   it("keeps two automation sessions isolated by tab", async () => {
     const firstPage = createPage();
     const secondPage = createPage();
@@ -383,6 +405,170 @@ describe("PlaywrightEngine", () => {
       cause: failure
     });
   });
+
+  it("reports a missing select option as a contextual domain error", async () => {
+    const failure = new Error('Option with label "Canada" was not found');
+    const select = {
+      count: vi.fn(async () => 1),
+      first: vi.fn(),
+      selectOption: vi.fn(async () => {
+        throw failure;
+      })
+    };
+    select.first.mockReturnValue(select);
+    const page = createPage({ getByLabel: vi.fn(() => select) });
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => createApplication(page))
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    await expect(
+      engine.executeStep({
+        sessionId: "session-1",
+        stepIndex: 2,
+        defaults,
+        step: {
+          id: "select-country",
+          name: "Select country",
+          type: "select",
+          enabled: true,
+          target: {
+            primary: { type: "label", value: "Country", exact: true },
+            fallbacks: []
+          },
+          option: { by: "label", value: "Canada" }
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "step-failed",
+      message:
+        'Automation step select-country failed: Option with label "Canada" was not found',
+      context: {
+        sessionId: "session-1",
+        tabId: 42,
+        stepId: "select-country",
+        stepIndex: 2,
+        stepNumber: 3,
+        stepType: "select",
+        stepName: "Select country",
+        action: "select",
+        target: {
+          primary: { type: "label", value: "Country", exact: true },
+          fallbacks: []
+        },
+        selectOption: { by: "label", value: "Canada" }
+      },
+      cause: failure
+    });
+  });
+
+  it("reports a missing select element as a contextual timeout", async () => {
+    const timeout = new Error("Select element was not found within 5000ms");
+    timeout.name = "TimeoutError";
+    const missingSelect = {
+      count: vi.fn(async () => 0),
+      first: vi.fn(),
+      selectOption: vi.fn(async () => {
+        throw timeout;
+      })
+    };
+    missingSelect.first.mockReturnValue(missingSelect);
+    const page = createPage({ locator: vi.fn(() => missingSelect) });
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => createApplication(page))
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    await expect(
+      engine.executeStep({
+        sessionId: "session-1",
+        stepIndex: 1,
+        defaults,
+        step: {
+          id: "select-missing-country",
+          type: "select",
+          enabled: true,
+          target: {
+            primary: { type: "css", value: "#missing-country" },
+            fallbacks: []
+          },
+          option: { by: "value", value: "ca" }
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "step-timeout",
+      message:
+        "Automation step select-missing-country failed: Select element was not found within 5000ms",
+      context: {
+        sessionId: "session-1",
+        tabId: 42,
+        stepId: "select-missing-country",
+        stepIndex: 1
+      },
+      cause: timeout
+    });
+  });
+
+  it.each(["check", "uncheck"] as const)(
+    "reports an incompatible element for %s with complete step context",
+    async (type) => {
+      const failure = new Error(
+        `Element does not support the ${type} action: expected a checkbox or radio`
+      );
+      const control = {
+        check: vi.fn(async () => {
+          throw failure;
+        }),
+        count: vi.fn(async () => 1),
+        first: vi.fn(),
+        uncheck: vi.fn(async () => {
+          throw failure;
+        })
+      };
+      control.first.mockReturnValue(control);
+      const page = createPage({ locator: vi.fn(() => control) });
+      const engine = new PlaywrightEngine({
+        start: vi.fn(async () => createApplication(page))
+      });
+      await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+      await expect(
+        engine.executeStep({
+          sessionId: "session-1",
+          stepIndex: 3,
+          defaults,
+          step: {
+            id: `${type}-terms`,
+            name: `${type} terms`,
+            type,
+            enabled: true,
+            target: {
+              primary: { type: "css", value: "#terms" },
+              fallbacks: []
+            }
+          }
+        })
+      ).rejects.toMatchObject({
+        code: "step-failed",
+        message: `Automation step ${type}-terms failed: Element does not support the ${type} action: expected a checkbox or radio`,
+        context: {
+          sessionId: "session-1",
+          tabId: 42,
+          stepId: `${type}-terms`,
+          stepIndex: 3,
+          stepNumber: 4,
+          stepType: type,
+          stepName: `${type} terms`,
+          action: type,
+          target: {
+            primary: { type: "css", value: "#terms" },
+            fallbacks: []
+          }
+        },
+        cause: failure
+      });
+    }
+  );
 
   it("attaches a tab once and returns its page snapshot", async () => {
     const page = createPage();

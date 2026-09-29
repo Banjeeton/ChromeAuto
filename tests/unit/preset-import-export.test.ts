@@ -148,6 +148,103 @@ describe("preset JSON import and export", () => {
     preset.automation.steps[1].id = preset.automation.steps[0].id;
     expect(() => exportPresetJson(preset)).toThrowError(PresetValidationError);
   });
+
+  it("preserves wait variants and human-input overrides during export and import", async () => {
+    const preset = structuredClone(validPresetJson) as PresetV1;
+    preset.automation.steps = [
+      {
+        id: "wait-timeout",
+        type: "wait",
+        enabled: true,
+        condition: { type: "timeout", durationMs: 750 }
+      },
+      {
+        id: "wait-element",
+        type: "wait",
+        enabled: true,
+        condition: {
+          type: "element",
+          state: "detached",
+          target: {
+            primary: { type: "css", value: ".loading" },
+            fallbacks: []
+          }
+        }
+      },
+      {
+        id: "wait-url",
+        type: "wait",
+        enabled: true,
+        condition: {
+          type: "url",
+          match: "regex",
+          value: "example\\.com/(done|success)"
+        }
+      },
+      {
+        id: "wait-page-load",
+        type: "wait",
+        enabled: true,
+        condition: { type: "pageLoad", state: "networkidle" }
+      },
+      {
+        id: "human-input",
+        type: "input",
+        enabled: true,
+        target: {
+          primary: { type: "label", value: "Search", exact: true },
+          fallbacks: []
+        },
+        value: "Recorded text",
+        clearFirst: true,
+        inputMode: "human",
+        humanInput: { minDelayMs: 65, maxDelayMs: 145 }
+      }
+    ];
+    const source = exportPresetJson(preset);
+    const repository = createRepository();
+
+    await expect(importPresetJson(source, repository)).resolves.toEqual(preset);
+    expect(JSON.parse(source)).toMatchObject({
+      automation: {
+        steps: [
+          { condition: { type: "timeout", durationMs: 750 } },
+          { condition: { type: "element", state: "detached" } },
+          { condition: { type: "url", match: "regex" } },
+          { condition: { type: "pageLoad", state: "networkidle" } },
+          {
+            inputMode: "human",
+            humanInput: { minDelayMs: 65, maxDelayMs: 145 }
+          }
+        ]
+      }
+    });
+    expect(repository.save).toHaveBeenCalledWith(preset);
+  });
+
+  it("rejects an imported preset containing an invalid URL regex", async () => {
+    const preset = structuredClone(validPresetJson) as PresetV1;
+    preset.automation.steps.push({
+      id: "invalid-url-regex",
+      type: "wait",
+      enabled: true,
+      condition: { type: "url", match: "regex", value: "[invalid" }
+    });
+    const repository = createRepository();
+
+    await expect(
+      importPresetJson(JSON.stringify(preset), repository)
+    ).rejects.toMatchObject({
+      name: "PresetValidationError",
+      issues: [
+        expect.objectContaining({
+          code: "invalid_url_regex",
+          path: `/automation/steps/${preset.automation.steps.length - 1}/condition/value`
+        })
+      ]
+    } satisfies Partial<PresetValidationError>);
+    expect(repository.save).not.toHaveBeenCalled();
+  });
 });
 
 function createRepository(existing?: PresetV1): PresetRepository & {

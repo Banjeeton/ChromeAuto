@@ -6,8 +6,13 @@ import {
 
 import {
   AutomationEngineError,
-  isAutomationEngineError
+  isAutomationEngineError,
+  type AutomationEngineErrorContext
 } from "../../core/domain/automation-engine-error";
+import type {
+  AutomationStep,
+  ElementTarget
+} from "../../core/domain/automation-step";
 import type { AutomationSessionId } from "../../core/domain/run-session";
 import type {
   AutomationEngine,
@@ -83,7 +88,7 @@ export class PlaywrightEngine implements AutomationEngine {
       this.#removeSessionForTab(target.tabId);
       throw this.#toEngineError(
         "engine-unavailable",
-        `Could not attach automation session to tab ${target.tabId}`,
+        attachFailureMessage(target.tabId, error),
         error,
         { sessionId, tabId: target.tabId }
       );
@@ -113,16 +118,17 @@ export class PlaywrightEngine implements AutomationEngine {
         output
       };
     } catch (error) {
+      const safeError = sanitizeStepFailure(error, request.step);
       const code =
-        error instanceof CustomJavaScriptStopError
+        safeError instanceof CustomJavaScriptStopError
           ? "session-stopped"
-          : isStepTimeout(error)
+          : isStepTimeout(safeError)
             ? "step-timeout"
             : "step-failed";
       throw this.#toEngineError(
         code,
-        `Automation step ${request.step.id} failed`,
-        error,
+        `Automation step ${request.step.id} failed: ${errorMessage(safeError)}`,
+        safeError,
         this.#stepContext(request, tabId)
       );
     }
@@ -315,11 +321,23 @@ export class PlaywrightEngine implements AutomationEngine {
   }
 
   #stepContext(request: ExecuteAutomationStepRequest, tabId: number) {
+    const target = stepTarget(request.step);
     return {
       sessionId: request.sessionId,
       tabId,
       stepId: request.step.id,
-      stepIndex: request.stepIndex
+      stepIndex: request.stepIndex,
+      stepNumber: request.stepIndex + 1,
+      stepType: request.step.type,
+      ...(request.step.name === undefined
+        ? {}
+        : { stepName: request.step.name }),
+      action: request.step.type,
+      ...(target === undefined ? {} : { target: structuredClone(target) }),
+      ...(request.step.type === "select"
+        ? { selectOption: structuredClone(request.step.option) }
+        : {}),
+      ...(request.step.type === "pressKey" ? { key: request.step.key } : {})
     };
   }
 
@@ -331,12 +349,7 @@ export class PlaywrightEngine implements AutomationEngine {
       | "step-timeout",
     message: string,
     error: unknown,
-    context: {
-      sessionId?: AutomationSessionId;
-      tabId?: number;
-      stepId?: string;
-      stepIndex?: number;
-    } = {}
+    context: AutomationEngineErrorContext = {}
   ): AutomationEngineError {
     if (isAutomationEngineError(error)) {
       return error;
@@ -350,4 +363,56 @@ function isStepTimeout(error: unknown): boolean {
     error instanceof CustomJavaScriptTimeoutError ||
     (error instanceof Error && error.name === "TimeoutError")
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function attachFailureMessage(tabId: number, error: unknown): string {
+  const message = errorMessage(error);
+  if (
+    message.includes("Cannot access a chrome-extension:// URL of different extension")
+  ) {
+    return (
+      `Could not attach automation session to tab ${tabId}. ` +
+      "Another extension injected a protected frame into this page. " +
+      "Close its popup or disable it for this site, reload the tab, and try again."
+    );
+  }
+  return `Could not attach automation session to tab ${tabId}`;
+}
+
+function stepTarget(step: AutomationStep): ElementTarget | undefined {
+  if ("target" in step && step.target !== undefined) {
+    return step.target;
+  }
+  return step.type === "wait" && step.condition.type === "element"
+    ? step.condition.target
+    : undefined;
+}
+
+function sanitizeStepFailure(error: unknown, step: AutomationStep): unknown {
+  if (step.type !== "input" || step.value.length === 0) {
+    return error;
+  }
+
+  const redact = (value: string) => value.replaceAll(step.value, "[REDACTED]");
+  if (!(error instanceof Error)) {
+    return typeof error === "string" ? redact(error) : error;
+  }
+
+  const sanitized = new Error(redact(error.message), {
+    cause:
+      error.cause instanceof Error
+        ? `${error.cause.name}: ${redact(error.cause.message)}`
+        : typeof error.cause === "string"
+          ? redact(error.cause)
+          : error.cause
+  });
+  sanitized.name = error.name;
+  if (error.stack !== undefined) {
+    sanitized.stack = redact(error.stack);
+  }
+  return sanitized;
 }

@@ -1,11 +1,16 @@
 import type {
   AutomationStep,
+  CheckStep,
   ClickStep,
   ElementLocator,
   ElementTarget,
   InputStep,
   MouseButton,
-  ReloadStep
+  PressKeyStep,
+  ReloadStep,
+  SelectOption,
+  SelectStep,
+  UncheckStep
 } from "../domain/automation-step";
 import {
   type PresetValidationIssue,
@@ -16,6 +21,7 @@ export type RecordedEventSkipReason =
   | "invalid-event"
   | "unsupported-event-kind"
   | "unsupported-click-modifiers"
+  | "duplicate-control-click"
   | "duplicate-navigation"
   | "invalid-generated-step";
 
@@ -36,7 +42,14 @@ export interface RecordedStepMapperOptions {
 
 export interface RecordedStepSourceEvent {
   readonly eventId: string;
-  readonly kind: "click" | "input" | "reload";
+  readonly kind:
+    | "click"
+    | "input"
+    | "select"
+    | "check"
+    | "uncheck"
+    | "pressKey"
+    | "reload";
   readonly sessionId: string;
   readonly tabId: number;
   readonly documentId: string;
@@ -83,22 +96,32 @@ export class RecordedStepMapper {
     let previousInput:
       | { readonly key: string; readonly stepIndex: number }
       | undefined;
+    let previousClick:
+      | {
+          readonly stepIndex: number;
+          readonly targetKey: string;
+          readonly event: Omit<SkippedRecordedEvent, "reason">;
+        }
+      | undefined;
 
     for (const value of events) {
       const eventSummary = summarizeEvent(value);
       if (!isRecorderEventBase(value)) {
         skipped.push({ ...eventSummary, reason: "invalid-event" });
         previousInput = undefined;
+        previousClick = undefined;
         continue;
       }
 
       if (value.kind === "pageReady") {
         skipped.push({ ...eventSummary, reason: "unsupported-event-kind" });
         previousInput = undefined;
+        previousClick = undefined;
         continue;
       }
       if (value.kind === "reload") {
         previousInput = undefined;
+        previousClick = undefined;
         const reload = mapReloadEvent(value.payload);
         if (reload === undefined) {
           skipped.push({ ...eventSummary, reason: "invalid-event" });
@@ -126,9 +149,10 @@ export class RecordedStepMapper {
         steps.push(step);
         continue;
       }
-      if (value.kind !== "click" && value.kind !== "input") {
+      if (!isMappableActionKind(value.kind)) {
         skipped.push({ ...eventSummary, reason: "unsupported-event-kind" });
         previousInput = undefined;
+        previousClick = undefined;
         continue;
       }
 
@@ -136,6 +160,7 @@ export class RecordedStepMapper {
       if (target === undefined || !isObject(value.payload)) {
         skipped.push({ ...eventSummary, reason: "invalid-event" });
         previousInput = undefined;
+        previousClick = undefined;
         continue;
       }
 
@@ -147,10 +172,12 @@ export class RecordedStepMapper {
             ...eventSummary,
             reason: "unsupported-click-modifiers"
           });
+          previousClick = undefined;
           continue;
         }
         if (click === undefined) {
           skipped.push({ ...eventSummary, reason: "invalid-event" });
+          previousClick = undefined;
           continue;
         }
         const step: ClickStep = {
@@ -159,11 +186,52 @@ export class RecordedStepMapper {
         };
         if (!isValidStep(step)) {
           skipped.push({ ...eventSummary, reason: "invalid-generated-step" });
+          previousClick = undefined;
+          continue;
+        }
+        steps.push(step);
+        previousClick = {
+          stepIndex: steps.length - 1,
+          targetKey: targetKey(target),
+          event: eventSummary
+        };
+        continue;
+      }
+
+      if (value.kind !== "input") {
+        previousInput = undefined;
+        const mapped = mapAdvancedEvent(value.kind, value.payload, target);
+        if (mapped === undefined) {
+          skipped.push({ ...eventSummary, reason: "invalid-event" });
+          previousClick = undefined;
+          continue;
+        }
+        if (value.kind === "check" || value.kind === "uncheck") {
+          removeDuplicateControlClick(
+            steps,
+            usedStepIds,
+            skipped,
+            previousClick,
+            target
+          );
+        }
+        previousClick = undefined;
+        const step: AutomationStep = {
+          ...mapped,
+          id: this.#uniqueStepId(
+            toStepSourceEvent(value, value.kind),
+            usedStepIds
+          )
+        };
+        if (!isValidStep(step)) {
+          skipped.push({ ...eventSummary, reason: "invalid-generated-step" });
           continue;
         }
         steps.push(step);
         continue;
       }
+
+      previousClick = undefined;
 
       const input = mapInputEvent(value.payload, target);
       if (input === undefined) {
@@ -262,6 +330,59 @@ function mapInputEvent(
   };
 }
 
+function mapAdvancedEvent(
+  kind: "select" | "check" | "uncheck" | "pressKey",
+  payload: Record<string, unknown>,
+  target: ElementTarget
+):
+  | Omit<SelectStep, "id">
+  | Omit<CheckStep, "id">
+  | Omit<UncheckStep, "id">
+  | Omit<PressKeyStep, "id">
+  | undefined {
+  switch (kind) {
+    case "select": {
+      const option = normalizeSelectOption(payload.option);
+      return option === undefined
+        ? undefined
+        : { type: "select", enabled: true, target, option };
+    }
+    case "check":
+      return (payload.control === "checkbox" || payload.control === "radio") &&
+        payload.checked === true
+        ? { type: "check", enabled: true, target }
+        : undefined;
+    case "uncheck":
+      return payload.control === "checkbox" && payload.checked === false
+        ? { type: "uncheck", enabled: true, target }
+        : undefined;
+    case "pressKey":
+      return isNonEmptyString(payload.key)
+        ? { type: "pressKey", enabled: true, target, key: payload.key }
+        : undefined;
+  }
+}
+
+function normalizeSelectOption(value: unknown): SelectOption | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+  if (
+    (value.by === "value" || value.by === "label") &&
+    typeof value.value === "string"
+  ) {
+    return { by: value.by, value: value.value };
+  }
+  if (
+    value.by === "index" &&
+    Number.isInteger(value.value) &&
+    (value.value as number) >= 0
+  ) {
+    return { by: "index", value: value.value as number };
+  }
+  return undefined;
+}
+
 function mapReloadEvent(
   payload: unknown
 ):
@@ -285,7 +406,7 @@ function mapReloadEvent(
 
 function toStepSourceEvent(
   event: RecorderEventBaseValue,
-  kind: "click" | "input" | "reload"
+  kind: RecordedStepSourceEvent["kind"]
 ): RecordedStepSourceEvent {
   return {
     eventId: event.eventId,
@@ -296,6 +417,53 @@ function toStepSourceEvent(
     occurredAt: event.occurredAt,
     url: event.url
   };
+}
+
+function isMappableActionKind(
+  kind: string
+): kind is Exclude<RecordedStepSourceEvent["kind"], "reload"> {
+  return (
+    kind === "click" ||
+    kind === "input" ||
+    kind === "select" ||
+    kind === "check" ||
+    kind === "uncheck" ||
+    kind === "pressKey"
+  );
+}
+
+function removeDuplicateControlClick(
+  steps: AutomationStep[],
+  usedStepIds: Set<string>,
+  skipped: SkippedRecordedEvent[],
+  previousClick: {
+    readonly stepIndex: number;
+    readonly targetKey: string;
+    readonly event: Omit<SkippedRecordedEvent, "reason">;
+  } | undefined,
+  target: ElementTarget
+): void {
+  if (
+    previousClick === undefined ||
+    previousClick.stepIndex !== steps.length - 1 ||
+    previousClick.targetKey !== targetKey(target)
+  ) {
+    return;
+  }
+  const duplicate = steps[previousClick.stepIndex];
+  if (duplicate?.type !== "click") {
+    return;
+  }
+  steps.splice(previousClick.stepIndex, 1);
+  usedStepIds.delete(duplicate.id);
+  skipped.push({
+    ...previousClick.event,
+    reason: "duplicate-control-click"
+  });
+}
+
+function targetKey(target: ElementTarget): string {
+  return JSON.stringify(target);
 }
 
 function normalizeTarget(value: unknown): ElementTarget | undefined {

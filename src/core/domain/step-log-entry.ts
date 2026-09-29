@@ -1,5 +1,9 @@
 import type { AutomationEngineErrorCode } from "./automation-engine-error";
-import type { AutomationStep } from "./automation-step";
+import type {
+  AutomationStep,
+  ElementTarget,
+  SelectOption
+} from "./automation-step";
 import type { AutomationSessionId } from "./run-session";
 
 export type StepLogStatus = "succeeded" | "skipped" | "failed" | "stopped";
@@ -8,6 +12,12 @@ export interface StepLogError {
   readonly code: AutomationEngineErrorCode;
   readonly message: string;
   readonly name: string;
+  readonly action: AutomationStep["type"];
+  readonly reason: string;
+  readonly technicalDetails?: string;
+  readonly target?: ElementTarget;
+  readonly selectOption?: SelectOption;
+  readonly key?: string;
 }
 
 export interface StepLogEntry {

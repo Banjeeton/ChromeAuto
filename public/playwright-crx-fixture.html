@@ -22,7 +22,11 @@
       .modal { width: min(100%, 420px); padding: 26px; border-radius: 18px; background: white; box-shadow: 0 25px 90px rgb(0 0 0 / 28%); }
       .modal h2 { margin-top: 0; }
       label { display: grid; gap: 7px; margin: 20px 0; color: #43515e; font-size: 13px; font-weight: 700; }
-      input { width: 100%; padding: 11px 12px; border: 1px solid #b8c6d1; border-radius: 9px; font: inherit; }
+      input, select { width: 100%; padding: 11px 12px; border: 1px solid #b8c6d1; border-radius: 9px; font: inherit; }
+      .control-row { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 18px 0; }
+      .control-row label { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+      .control-row input { width: auto; }
+      .advanced-status { padding: 12px; border-radius: 10px; background: #f4f7f9; font: 12px/1.5 ui-monospace, monospace; }
     </style>
   </head>
   <body>
@@ -53,6 +57,37 @@
       </p>
       <button data-recorder-action type="button">Record test action</button>
       <button data-spike-open-modal type="button">Open HTML modal</button>
+
+      <h2>Advanced actions</h2>
+      <label>
+        Country
+        <select data-advanced-country name="country">
+          <option value="us">United States</option>
+          <option value="ca">Canada</option>
+          <option value="de">Germany</option>
+        </select>
+      </label>
+      <div class="control-row">
+        <label>
+          <input data-advanced-terms type="checkbox" />
+          Accept terms
+        </label>
+        <label>
+          <input data-advanced-newsletter type="checkbox" checked />
+          Receive newsletter
+        </label>
+        <label>
+          <input data-advanced-plan name="plan" type="radio" value="pro" />
+          Pro plan
+        </label>
+      </div>
+      <label>
+        Shortcut target
+        <input data-advanced-shortcut autocomplete="off" placeholder="Press Enter or a shortcut" />
+      </label>
+      <p class="advanced-status" data-advanced-status>
+        country=us; terms=false; newsletter=true; plan=none; key=none
+      </p>
     </main>
 
     <div class="overlay" data-spike-modal hidden>
@@ -86,6 +121,39 @@
       });
       document.querySelector("[data-spike-close-modal]").addEventListener("click", () => {
         modal.hidden = true;
+      });
+
+      const country = document.querySelector("[data-advanced-country]");
+      const terms = document.querySelector("[data-advanced-terms]");
+      const newsletter = document.querySelector("[data-advanced-newsletter]");
+      const plan = document.querySelector("[data-advanced-plan]");
+      const shortcut = document.querySelector("[data-advanced-shortcut]");
+      const advancedStatus = document.querySelector("[data-advanced-status]");
+      let lastKey = "none";
+      const updateAdvancedStatus = () => {
+        advancedStatus.textContent = [
+          `country=${country.value}`,
+          `terms=${terms.checked}`,
+          `newsletter=${newsletter.checked}`,
+          `plan=${plan.checked ? plan.value : "none"}`,
+          `key=${lastKey}`
+        ].join("; ");
+      };
+      country.addEventListener("change", updateAdvancedStatus);
+      terms.addEventListener("change", updateAdvancedStatus);
+      newsletter.addEventListener("change", updateAdvancedStatus);
+      plan.addEventListener("change", updateAdvancedStatus);
+      shortcut.addEventListener("keydown", (event) => {
+        if (["Enter", "Escape", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key) || /^F(?:[1-9]|1[0-2])$/.test(event.key)) {
+          lastKey = [
+            event.ctrlKey ? "Control" : "",
+            event.altKey ? "Alt" : "",
+            event.shiftKey ? "Shift" : "",
+            event.metaKey ? "Meta" : "",
+            event.key
+          ].filter(Boolean).join("+");
+          updateAdvancedStatus();
+        }
       });
     </script>
   </body>

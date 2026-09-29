@@ -7,10 +7,14 @@ import {
 } from "../../src/core/domain/recorder-error";
 import {
   RECORDER_EVENT_KINDS,
+  type RecorderCheckEvent,
   type RecorderClickEvent,
   type RecorderEvent,
   type RecorderInputEvent,
   type RecorderPageReadyEvent,
+  type RecorderPressKeyEvent,
+  type RecorderSelectEvent,
+  type RecorderUncheckEvent,
   type RecorderReloadEvent
 } from "../../src/core/domain/recorder-event";
 import {
@@ -91,7 +95,7 @@ describe("Recorder events", () => {
     ]
   };
 
-  it("models click, input, reload and pageReady as a discriminated union", () => {
+  it("models every recorder event as a discriminated union", () => {
     const events: readonly RecorderEvent[] = [
       {
         ...common,
@@ -113,6 +117,34 @@ describe("Recorder events", () => {
       {
         ...common,
         eventId: "event-3",
+        kind: "select",
+        target,
+        payload: { option: { by: "label", value: "Canada" } }
+      } satisfies RecorderSelectEvent,
+      {
+        ...common,
+        eventId: "event-4",
+        kind: "check",
+        target,
+        payload: { control: "checkbox", checked: true }
+      } satisfies RecorderCheckEvent,
+      {
+        ...common,
+        eventId: "event-5",
+        kind: "uncheck",
+        target,
+        payload: { control: "checkbox", checked: false }
+      } satisfies RecorderUncheckEvent,
+      {
+        ...common,
+        eventId: "event-6",
+        kind: "pressKey",
+        target,
+        payload: { key: "Control+Enter" }
+      } satisfies RecorderPressKeyEvent,
+      {
+        ...common,
+        eventId: "event-7",
         kind: "reload",
         payload: {
           navigationId: "navigation-1",
@@ -121,7 +153,7 @@ describe("Recorder events", () => {
       } satisfies RecorderReloadEvent,
       {
         ...common,
-        eventId: "event-4",
+        eventId: "event-8",
         kind: "pageReady",
         payload: { navigationId: "navigation-1", state: "load" }
       } satisfies RecorderPageReadyEvent

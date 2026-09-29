@@ -93,6 +93,98 @@ describe("RecorderDraftController", () => {
     await expect(registry.getByTabId(7)).resolves.toEqual(original);
   });
 
+  it("persists advanced edits only in the runtime draft", async () => {
+    const registry = new ChromeRecorderSessionRegistry(
+      new MemorySessionStorage()
+    );
+    const controller = new RecorderDraftController(registry);
+    const original = stoppedRecord();
+    await registry.save(original);
+    const advancedSteps: AutomationStep[] = [
+      {
+        id: "select-country",
+        type: "select",
+        enabled: true,
+        target: {
+          primary: { type: "testId", value: "country" },
+          fallbacks: []
+        },
+        option: { by: "value", value: "ca" }
+      },
+      {
+        id: "check-terms",
+        type: "check",
+        enabled: false,
+        target: {
+          primary: { type: "testId", value: "terms" },
+          fallbacks: []
+        }
+      },
+      {
+        id: "uncheck-newsletter",
+        type: "uncheck",
+        enabled: true,
+        target: {
+          primary: { type: "testId", value: "newsletter" },
+          fallbacks: []
+        }
+      },
+      {
+        id: "submit-shortcut",
+        name: "Submit with keyboard",
+        type: "pressKey",
+        enabled: true,
+        key: "Control+Enter"
+      }
+    ];
+
+    const saved = await controller.save({
+      tabId: 7,
+      sessionId: "recorder-7",
+      steps: advancedSteps
+    });
+
+    expect(saved.steps).toEqual(advancedSteps);
+    expect(original.draftSteps).toEqual(stoppedRecord().draftSteps);
+    await expect(registry.getByTabId(7)).resolves.toMatchObject({
+      draftSteps: advancedSteps,
+      recordedEvents: original.recordedEvents
+    });
+  });
+
+  it("reports the path of an invalid advanced field without changing the draft", async () => {
+    const registry = new ChromeRecorderSessionRegistry(
+      new MemorySessionStorage()
+    );
+    const controller = new RecorderDraftController(registry);
+    const original = stoppedRecord();
+    await registry.save(original);
+
+    await expect(
+      controller.save({
+        tabId: 7,
+        sessionId: "recorder-7",
+        steps: [
+          {
+            id: "invalid-shortcut",
+            type: "pressKey",
+            enabled: true,
+            key: "Control++Invalid"
+          }
+        ]
+      })
+    ).rejects.toMatchObject({
+      name: "PresetValidationError",
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: "invalid_press_key",
+          path: "/automation/steps/0/key"
+        })
+      ])
+    });
+    await expect(registry.getByTabId(7)).resolves.toEqual(original);
+  });
+
   it("requires Stop and discards only the matching draft", async () => {
     const registry = new ChromeRecorderSessionRegistry(
       new MemorySessionStorage()
