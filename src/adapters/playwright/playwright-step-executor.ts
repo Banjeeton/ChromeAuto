@@ -58,6 +58,18 @@ export async function executePlaywrightStep(
       break;
     }
 
+    case "check": {
+      const locator = await resolveTarget(page, step.target);
+      await locator.check({ timeout });
+      break;
+    }
+
+    case "uncheck": {
+      const locator = await resolveTarget(page, step.target);
+      await locator.uncheck({ timeout });
+      break;
+    }
+
     case "wait":
       await executeWaitStep(page, step, timeout);
       break;

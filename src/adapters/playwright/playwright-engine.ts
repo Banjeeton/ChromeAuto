@@ -6,7 +6,8 @@ import {
 
 import {
   AutomationEngineError,
-  isAutomationEngineError
+  isAutomationEngineError,
+  type AutomationEngineErrorContext
 } from "../../core/domain/automation-engine-error";
 import type { AutomationSessionId } from "../../core/domain/run-session";
 import type {
@@ -319,7 +320,9 @@ export class PlaywrightEngine implements AutomationEngine {
       sessionId: request.sessionId,
       tabId,
       stepId: request.step.id,
-      stepIndex: request.stepIndex
+      stepIndex: request.stepIndex,
+      stepNumber: request.stepIndex + 1,
+      stepType: request.step.type
     };
   }
 
@@ -331,12 +334,7 @@ export class PlaywrightEngine implements AutomationEngine {
       | "step-timeout",
     message: string,
     error: unknown,
-    context: {
-      sessionId?: AutomationSessionId;
-      tabId?: number;
-      stepId?: string;
-      stepIndex?: number;
-    } = {}
+    context: AutomationEngineErrorContext = {}
   ): AutomationEngineError {
     if (isAutomationEngineError(error)) {
       return error;

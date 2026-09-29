@@ -132,6 +132,82 @@ describe("Playwright step executor", () => {
     expect(page.waitForTimeout).toHaveBeenCalledWith(40);
   });
 
+  it("checks an element through a fallback locator with timing overrides", async () => {
+    const primary = createLocator(0);
+    const fallback = createLocator(1);
+    const page = createPage({
+      locator: vi.fn((selector: string) =>
+        selector === "#terms" ? primary : fallback
+      )
+    });
+    const step: AutomationStep = {
+      id: "accept-terms",
+      type: "check",
+      enabled: true,
+      timeoutMs: 1_200,
+      postActionDelayMs: 35,
+      target: {
+        primary: { type: "css", value: "#terms" },
+        fallbacks: [{ type: "css", value: "input[name=terms]" }]
+      }
+    };
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(fallback.check).toHaveBeenCalledWith({ timeout: 1_200 });
+    expect(primary.check).not.toHaveBeenCalled();
+    expect(page.waitForTimeout).toHaveBeenCalledWith(35);
+  });
+
+  it("unchecks an element using the default timeout and delay", async () => {
+    const checkbox = createLocator(1);
+    const page = createPage({ getByLabel: vi.fn(() => checkbox) });
+    const step: AutomationStep = {
+      id: "disable-newsletter",
+      type: "uncheck",
+      enabled: true,
+      target: {
+        primary: { type: "label", value: "Newsletter", exact: true },
+        fallbacks: []
+      }
+    };
+    const request: ExecuteAutomationStepRequest = {
+      ...createRequest(step),
+      defaults: { ...defaults, postActionDelayMs: 20 }
+    };
+
+    await executePlaywrightStep(page, request);
+
+    expect(checkbox.uncheck).toHaveBeenCalledWith({ timeout: 5_000 });
+    expect(page.waitForTimeout).toHaveBeenCalledWith(20);
+  });
+
+  it.each(["check", "uncheck"] as const)(
+    "safely repeats an already satisfied %s action",
+    async (type) => {
+      const checkbox = createLocator(1);
+      const page = createPage({ locator: vi.fn(() => checkbox) });
+      const step: AutomationStep = {
+        id: `repeat-${type}`,
+        type,
+        enabled: true,
+        target: {
+          primary: { type: "css", value: "#preconfigured" },
+          fallbacks: []
+        }
+      };
+
+      await expect(
+        executePlaywrightStep(page, createRequest(step))
+      ).resolves.toBeUndefined();
+      await expect(
+        executePlaywrightStep(page, createRequest(step))
+      ).resolves.toBeUndefined();
+
+      expect(checkbox[type]).toHaveBeenCalledTimes(2);
+    }
+  );
+
   it("appends input without clearing the current value", async () => {
     const input = createLocator(1);
     const page = createPage({ locator: vi.fn(() => input) });
@@ -342,12 +418,14 @@ function createRequest(step: AutomationStep): ExecuteAutomationStepRequest {
 
 function createLocator(count = 1): Locator {
   const locator = {
+    check: vi.fn(async () => undefined),
     click: vi.fn(async () => undefined),
     count: vi.fn(async () => count),
     fill: vi.fn(async () => undefined),
     first: vi.fn(),
     pressSequentially: vi.fn(async () => undefined),
     selectOption: vi.fn(async () => []),
+    uncheck: vi.fn(async () => undefined),
     waitFor: vi.fn(async () => undefined)
   };
   locator.first.mockReturnValue(locator);

@@ -478,6 +478,61 @@ describe("PlaywrightEngine", () => {
     });
   });
 
+  it.each(["check", "uncheck"] as const)(
+    "reports an incompatible element for %s with complete step context",
+    async (type) => {
+      const failure = new Error(
+        `Element does not support the ${type} action: expected a checkbox or radio`
+      );
+      const control = {
+        check: vi.fn(async () => {
+          throw failure;
+        }),
+        count: vi.fn(async () => 1),
+        first: vi.fn(),
+        uncheck: vi.fn(async () => {
+          throw failure;
+        })
+      };
+      control.first.mockReturnValue(control);
+      const page = createPage({ locator: vi.fn(() => control) });
+      const engine = new PlaywrightEngine({
+        start: vi.fn(async () => createApplication(page))
+      });
+      await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+      await expect(
+        engine.executeStep({
+          sessionId: "session-1",
+          stepIndex: 3,
+          defaults,
+          step: {
+            id: `${type}-terms`,
+            name: `${type} terms`,
+            type,
+            enabled: true,
+            target: {
+              primary: { type: "css", value: "#terms" },
+              fallbacks: []
+            }
+          }
+        })
+      ).rejects.toMatchObject({
+        code: "step-failed",
+        message: `Automation step ${type}-terms failed: Element does not support the ${type} action: expected a checkbox or radio`,
+        context: {
+          sessionId: "session-1",
+          tabId: 42,
+          stepId: `${type}-terms`,
+          stepIndex: 3,
+          stepNumber: 4,
+          stepType: type
+        },
+        cause: failure
+      });
+    }
+  );
+
   it("attaches a tab once and returns its page snapshot", async () => {
     const page = createPage();
     const application = createApplication(page);

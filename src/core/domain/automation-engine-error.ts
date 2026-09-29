@@ -1,3 +1,4 @@
+import type { AutomationStep } from "./automation-step";
 import type { AutomationSessionId } from "./run-session";
 
 export const AUTOMATION_ENGINE_ERROR_CODES = [
@@ -18,6 +19,8 @@ export interface AutomationEngineErrorContext {
   tabId?: number;
   stepId?: string;
   stepIndex?: number;
+  stepNumber?: number;
+  stepType?: AutomationStep["type"];
 }
 
 export interface AutomationEngineErrorOptions {
