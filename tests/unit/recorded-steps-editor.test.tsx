@@ -47,7 +47,97 @@ describe("RecordedStepsEditor", () => {
 
     expect(html).toContain("/automation/steps/0/target");
   });
+
+  it("renders editors and add controls for every advanced action", () => {
+    const html = renderToStaticMarkup(
+      <RecordedStepsEditor
+        busy={false}
+        draft={advancedDraftView()}
+        onCreatePreset={vi.fn()}
+        onDiscard={vi.fn()}
+        onSave={vi.fn()}
+      />
+    );
+
+    expect(html).toContain("4 steps");
+    expect(html).toContain('value="select"');
+    expect(html).toContain('value="check"');
+    expect(html).toContain('value="uncheck"');
+    expect(html).toContain('value="pressKey"');
+    expect(html).toContain("Selection method");
+    expect(html).toContain("Option label");
+    expect(html).toContain("Key or shortcut");
+    expect(html).toContain("Control+Enter");
+    expect(html).toContain("Target a specific element");
+    expect(html).toContain("Locators JSON");
+    expect(html).toContain("Enabled");
+    expect(html).toContain("Delete");
+    expect(html).toContain("Move step 4 up");
+  });
+
+  it("renders an advanced-field validation path returned by background", () => {
+    const html = renderToStaticMarkup(
+      <RecordedStepsEditor
+        busy={false}
+        draft={advancedDraftView()}
+        onCreatePreset={vi.fn()}
+        onDiscard={vi.fn()}
+        onSave={vi.fn()}
+        saveError="/automation/steps/3/key: unsupported shortcut"
+      />
+    );
+
+    expect(html).toContain("/automation/steps/3/key");
+    expect(html).toContain("unsupported shortcut");
+  });
 });
+
+function advancedDraftView(): RecorderDraftView {
+  return {
+    tabId: 8,
+    sessionId: "recorder-8",
+    state: "stopped",
+    hostname: "example.com",
+    protocol: "https",
+    steps: [
+      {
+        id: "select-country",
+        name: "Choose country",
+        type: "select",
+        enabled: true,
+        target: {
+          primary: { type: "testId", value: "country" },
+          fallbacks: []
+        },
+        option: { by: "label", value: "Canada" }
+      },
+      {
+        id: "check-terms",
+        type: "check",
+        enabled: true,
+        target: {
+          primary: { type: "testId", value: "terms" },
+          fallbacks: []
+        }
+      },
+      {
+        id: "uncheck-newsletter",
+        type: "uncheck",
+        enabled: false,
+        target: {
+          primary: { type: "testId", value: "newsletter" },
+          fallbacks: []
+        }
+      },
+      {
+        id: "submit-shortcut",
+        type: "pressKey",
+        enabled: true,
+        key: "Control+Enter"
+      }
+    ]
+  };
+}
 
 function draftView(): RecorderDraftView {
   return {

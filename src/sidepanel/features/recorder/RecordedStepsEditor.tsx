@@ -7,9 +7,19 @@ import {
 import type {
   AutomationStep,
   ElementTarget,
-  InputStep
+  InputStep,
+  PressKeyStep,
+  SelectStep
 } from "../../../core/domain/automation-step";
 import { createStepTemplate } from "../presets/step-template";
+
+type ManualRecordedStepType =
+  | "select"
+  | "check"
+  | "uncheck"
+  | "pressKey"
+  | "wait"
+  | "customCode";
 
 export interface RecordedStepsEditorProps {
   readonly draft: RecorderDraftView;
@@ -40,7 +50,7 @@ export function RecordedStepsEditor({
     [...structuredClone(draft.steps)]
   );
   const [newStepType, setNewStepType] =
-    useState<"wait" | "customCode">("wait");
+    useState<ManualRecordedStepType>("select");
   const [targetSources, setTargetSources] = useState<Record<string, string>>(
     () => targetJsonSources(draft.steps)
   );
@@ -132,6 +142,41 @@ export function RecordedStepsEditor({
   const addStep = () => {
     const step = createStepTemplate(newStepType);
     setSteps((current) => [...current, step]);
+    if (hasTarget(step)) {
+      setTargetSources((current) => ({
+        ...current,
+        [step.id]: JSON.stringify(step.target, null, 2)
+      }));
+    }
+  };
+
+  const updatePressKeyTarget = (
+    index: number,
+    stepId: string,
+    enabled: boolean
+  ) => {
+    if (enabled) {
+      const target = defaultTarget();
+      setTargetSources((current) => ({
+        ...current,
+        [stepId]: JSON.stringify(target, null, 2)
+      }));
+      setTargetErrors(({ [stepId]: _removed, ...remaining }) => remaining);
+      updateStep(index, (step) =>
+        step.type === "pressKey" ? { ...step, target } : step
+      );
+      return;
+    }
+
+    setTargetSources(({ [stepId]: _removed, ...remaining }) => remaining);
+    setTargetErrors(({ [stepId]: _removed, ...remaining }) => remaining);
+    updateStep(index, (step) => {
+      if (step.type !== "pressKey") {
+        return step;
+      }
+      const { target: _removed, ...withoutTarget } = step;
+      return withoutTarget;
+    });
   };
 
   const updateTarget = (index: number, stepId: string, source: string) => {
@@ -200,10 +245,14 @@ export function RecordedStepsEditor({
         <select
           aria-label="New recorded step type"
           onChange={(event) =>
-            setNewStepType(event.target.value as "wait" | "customCode")
+            setNewStepType(event.target.value as ManualRecordedStepType)
           }
           value={newStepType}
         >
+          <option value="select">select</option>
+          <option value="check">check</option>
+          <option value="uncheck">uncheck</option>
+          <option value="pressKey">pressKey</option>
           <option value="wait">wait</option>
           <option value="customCode">customCode</option>
         </select>
@@ -260,6 +309,16 @@ export function RecordedStepsEditor({
                 />
               </label>
 
+              {step.type === "pressKey" && (
+                <PressKeyFields
+                  onChange={(updated) => updateStep(index, () => updated)}
+                  onTargetChange={(enabled) =>
+                    updatePressKeyTarget(index, step.id, enabled)
+                  }
+                  step={step}
+                />
+              )}
+
               {hasTarget(step) && (
                 <label className="editor-field">
                   <span>Locators JSON</span>
@@ -287,6 +346,13 @@ export function RecordedStepsEditor({
                   onChange={(updated) =>
                     updateStep(index, () => updated)
                   }
+                  step={step}
+                />
+              )}
+
+              {step.type === "select" && (
+                <SelectFields
+                  onChange={(updated) => updateStep(index, () => updated)}
                   step={step}
                 />
               )}
@@ -427,6 +493,110 @@ export function RecordedStepsEditor({
   );
 }
 
+function SelectFields({
+  step,
+  onChange
+}: {
+  readonly step: SelectStep;
+  readonly onChange: (step: SelectStep) => void;
+}) {
+  return (
+    <div className="editor-check-row recorded-select-fields">
+      <label>
+        Selection method
+        <select
+          aria-label="Selection method"
+          onChange={(event) => {
+            const by = event.target.value as SelectStep["option"]["by"];
+            onChange({
+              ...step,
+              option:
+                by === "index"
+                  ? {
+                      by,
+                      value:
+                        step.option.by === "index" ? step.option.value : 0
+                    }
+                  : {
+                      by,
+                      value:
+                        step.option.by === "index"
+                          ? ""
+                          : step.option.value
+                    }
+            });
+          }}
+          value={step.option.by}
+        >
+          <option value="value">value</option>
+          <option value="label">label</option>
+          <option value="index">index</option>
+        </select>
+      </label>
+      <label>
+        {step.option.by === "index"
+          ? "Option index"
+          : step.option.by === "label"
+            ? "Option label"
+            : "Option value"}
+        <input
+          aria-label={
+            step.option.by === "index"
+              ? "Option index"
+              : step.option.by === "label"
+                ? "Option label"
+                : "Option value"
+          }
+          min={step.option.by === "index" ? 0 : undefined}
+          onChange={(event) =>
+            onChange({
+              ...step,
+              option:
+                step.option.by === "index"
+                  ? { by: "index", value: Number(event.target.value) }
+                  : { ...step.option, value: event.target.value }
+            })
+          }
+          type={step.option.by === "index" ? "number" : "text"}
+          value={step.option.value}
+        />
+      </label>
+    </div>
+  );
+}
+
+function PressKeyFields({
+  step,
+  onChange,
+  onTargetChange
+}: {
+  readonly step: PressKeyStep;
+  readonly onChange: (step: PressKeyStep) => void;
+  readonly onTargetChange: (enabled: boolean) => void;
+}) {
+  return (
+    <div className="editor-check-row recorded-press-key-fields">
+      <label>
+        Key or shortcut
+        <input
+          aria-label="Key or shortcut"
+          onChange={(event) => onChange({ ...step, key: event.target.value })}
+          placeholder="Enter or Control+Enter"
+          value={step.key}
+        />
+      </label>
+      <label>
+        <input
+          checked={step.target !== undefined}
+          onChange={(event) => onTargetChange(event.target.checked)}
+          type="checkbox"
+        />
+        Target a specific element
+      </label>
+    </div>
+  );
+}
+
 function InputFields({
   step,
   onChange
@@ -488,8 +658,15 @@ function targetJsonSources(
 
 function hasTarget(
   step: AutomationStep
-): step is Extract<AutomationStep, { target: ElementTarget }> {
-  return "target" in step;
+): step is AutomationStep & { target: ElementTarget } {
+  return "target" in step && step.target !== undefined;
+}
+
+function defaultTarget(): ElementTarget {
+  return {
+    primary: { type: "css", value: "body" },
+    fallbacks: []
+  };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
