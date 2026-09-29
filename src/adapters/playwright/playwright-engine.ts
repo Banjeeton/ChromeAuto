@@ -9,6 +9,10 @@ import {
   isAutomationEngineError,
   type AutomationEngineErrorContext
 } from "../../core/domain/automation-engine-error";
+import type {
+  AutomationStep,
+  ElementTarget
+} from "../../core/domain/automation-step";
 import type { AutomationSessionId } from "../../core/domain/run-session";
 import type {
   AutomationEngine,
@@ -114,16 +118,17 @@ export class PlaywrightEngine implements AutomationEngine {
         output
       };
     } catch (error) {
+      const safeError = sanitizeStepFailure(error, request.step);
       const code =
-        error instanceof CustomJavaScriptStopError
+        safeError instanceof CustomJavaScriptStopError
           ? "session-stopped"
-          : isStepTimeout(error)
+          : isStepTimeout(safeError)
             ? "step-timeout"
             : "step-failed";
       throw this.#toEngineError(
         code,
-        `Automation step ${request.step.id} failed: ${errorMessage(error)}`,
-        error,
+        `Automation step ${request.step.id} failed: ${errorMessage(safeError)}`,
+        safeError,
         this.#stepContext(request, tabId)
       );
     }
@@ -316,13 +321,23 @@ export class PlaywrightEngine implements AutomationEngine {
   }
 
   #stepContext(request: ExecuteAutomationStepRequest, tabId: number) {
+    const target = stepTarget(request.step);
     return {
       sessionId: request.sessionId,
       tabId,
       stepId: request.step.id,
       stepIndex: request.stepIndex,
       stepNumber: request.stepIndex + 1,
-      stepType: request.step.type
+      stepType: request.step.type,
+      ...(request.step.name === undefined
+        ? {}
+        : { stepName: request.step.name }),
+      action: request.step.type,
+      ...(target === undefined ? {} : { target: structuredClone(target) }),
+      ...(request.step.type === "select"
+        ? { selectOption: structuredClone(request.step.option) }
+        : {}),
+      ...(request.step.type === "pressKey" ? { key: request.step.key } : {})
     };
   }
 
@@ -352,4 +367,38 @@ function isStepTimeout(error: unknown): boolean {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function stepTarget(step: AutomationStep): ElementTarget | undefined {
+  if ("target" in step && step.target !== undefined) {
+    return step.target;
+  }
+  return step.type === "wait" && step.condition.type === "element"
+    ? step.condition.target
+    : undefined;
+}
+
+function sanitizeStepFailure(error: unknown, step: AutomationStep): unknown {
+  if (step.type !== "input" || step.value.length === 0) {
+    return error;
+  }
+
+  const redact = (value: string) => value.replaceAll(step.value, "[REDACTED]");
+  if (!(error instanceof Error)) {
+    return typeof error === "string" ? redact(error) : error;
+  }
+
+  const sanitized = new Error(redact(error.message), {
+    cause:
+      error.cause instanceof Error
+        ? `${error.cause.name}: ${redact(error.cause.message)}`
+        : typeof error.cause === "string"
+          ? redact(error.cause)
+          : error.cause
+  });
+  sanitized.name = error.name;
+  if (error.stack !== undefined) {
+    sanitized.stack = redact(error.stack);
+  }
+  return sanitized;
 }

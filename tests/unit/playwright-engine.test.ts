@@ -425,7 +425,16 @@ describe("PlaywrightEngine", () => {
         sessionId: "session-1",
         tabId: 42,
         stepId: "select-country",
-        stepIndex: 2
+        stepIndex: 2,
+        stepNumber: 3,
+        stepType: "select",
+        stepName: "Select country",
+        action: "select",
+        target: {
+          primary: { type: "label", value: "Country", exact: true },
+          fallbacks: []
+        },
+        selectOption: { by: "label", value: "Canada" }
       },
       cause: failure
     });
@@ -526,7 +535,13 @@ describe("PlaywrightEngine", () => {
           stepId: `${type}-terms`,
           stepIndex: 3,
           stepNumber: 4,
-          stepType: type
+          stepType: type,
+          stepName: `${type} terms`,
+          action: type,
+          target: {
+            primary: { type: "css", value: "#terms" },
+            fallbacks: []
+          }
         },
         cause: failure
       });

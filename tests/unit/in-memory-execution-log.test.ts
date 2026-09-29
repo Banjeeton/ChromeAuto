@@ -41,7 +41,13 @@ describe("InMemoryExecutionLog", () => {
         error: {
           code: "step-failed",
           name: "AutomationEngineError",
-          message: "Failed"
+          message: "Failed",
+          action: "reload",
+          reason: "Failed",
+          target: {
+            primary: { type: "css", value: "body" },
+            fallbacks: []
+          }
         }
       })
     );
@@ -50,6 +56,8 @@ describe("InMemoryExecutionLog", () => {
     expect(Object.isFrozen(entries)).toBe(true);
     expect(Object.isFrozen(entries[0])).toBe(true);
     expect(Object.isFrozen(entries[0].error)).toBe(true);
+    expect(Object.isFrozen(entries[0].error?.target)).toBe(true);
+    expect(Object.isFrozen(entries[0].error?.target?.primary)).toBe(true);
   });
 
   it("rejects an invalid capacity", () => {

@@ -1,4 +1,8 @@
-import type { AutomationStep } from "./automation-step";
+import type {
+  AutomationStep,
+  ElementTarget,
+  SelectOption
+} from "./automation-step";
 import type { AutomationSessionId } from "./run-session";
 
 export const AUTOMATION_ENGINE_ERROR_CODES = [
@@ -21,6 +25,11 @@ export interface AutomationEngineErrorContext {
   stepIndex?: number;
   stepNumber?: number;
   stepType?: AutomationStep["type"];
+  stepName?: string;
+  action?: AutomationStep["type"];
+  target?: ElementTarget;
+  selectOption?: SelectOption;
+  key?: string;
 }
 
 export interface AutomationEngineErrorOptions {

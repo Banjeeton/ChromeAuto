@@ -158,11 +158,13 @@ describe("AutomationRunner", () => {
         stepIndex: 1,
         stepNumber: 2,
         status: "failed",
-        error: {
+        error: expect.objectContaining({
           code: "step-timeout",
           message: "Submit button timed out",
-          name: "AutomationEngineError"
-        }
+          name: "AutomationEngineError",
+          action: "reload",
+          reason: "Submit button timed out"
+        })
       })
     ]);
   });
@@ -242,8 +244,17 @@ describe("AutomationRunner", () => {
         status: "failed",
         error: expect.objectContaining({
           code: "step-failed",
+          action: "select",
+          target: {
+            primary: { type: "css", value: "#country" },
+            fallbacks: []
+          },
+          selectOption: { by: "value", value: "ca" },
           message:
-            'Automation step select-country failed: Option "ca" was not found'
+            'Automation step select-country failed: Option "ca" was not found',
+          reason:
+            'Automation step select-country failed: Option "ca" was not found',
+          technicalDetails: expect.stringContaining("Action: select")
         })
       })
     ]);
@@ -296,10 +307,58 @@ describe("AutomationRunner", () => {
         status: "failed",
         error: expect.objectContaining({
           code: "step-failed",
-          message: "Automation step submit-form failed: Target page was closed"
+          action: "pressKey",
+          key: "Control+Enter",
+          message: "Automation step submit-form failed: Target page was closed",
+          reason: "Automation step submit-form failed: Target page was closed",
+          technicalDetails: expect.stringContaining("Action: pressKey")
         })
       })
     ]);
+  });
+
+  it("redacts input values from thrown errors and every log diagnostic", async () => {
+    const secret = "correct-horse-battery-staple";
+    const engine = createEngine();
+    vi.mocked(engine.executeStep).mockRejectedValueOnce(
+      new AutomationEngineError(
+        "step-failed",
+        `Unable to fill password with ${secret}`,
+        { cause: new Error(`Browser rejected ${secret}`) }
+      )
+    );
+    const { log, runner } = createRunner(engine);
+
+    const execution = runner.run({
+      presetId: "preset-1",
+      tabId: 42,
+      automation: {
+        defaults,
+        steps: [
+          {
+            id: "enter-password",
+            name: "Enter password",
+            type: "input",
+            enabled: true,
+            target: {
+              primary: { type: "css", value: 'input[type="password"]' },
+              fallbacks: []
+            },
+            value: secret,
+            clearFirst: true,
+            inputMode: "instant"
+          }
+        ]
+      }
+    });
+
+    await expect(execution).rejects.toMatchObject({
+      message: "Unable to fill password with [REDACTED]"
+    });
+    const serializedLog = JSON.stringify(await log.list());
+    expect(serializedLog).not.toContain(secret);
+    expect(serializedLog).toContain("[REDACTED]");
+    expect(serializedLog).toContain('input[type=\\\"password\\\"]');
   });
 
   it("distinguishes a requested stop from a failed step", async () => {

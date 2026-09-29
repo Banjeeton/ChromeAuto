@@ -117,7 +117,13 @@ describe("Automation Scheduling MVP integration", () => {
     const harness = createHarness(shared);
     await harness.presets.save(createPreset());
     await harness.manualRun.run(3, "https://example.com/error");
-    const timer = (await harness.scheduler.list())[0];
+    await harness.manualRun.run(2, "https://example.com/two");
+    const timer = (await harness.scheduler.list()).find(
+      (candidate) => candidate.tabId === 3
+    );
+    if (timer === undefined) {
+      throw new Error("Expected the failing tab timer.");
+    }
     harness.engineFailure.value = new Error("Fixture step failed");
 
     await expect(harness.recovery.handleAlarm(timer)).rejects.toMatchObject({
@@ -128,7 +134,12 @@ describe("Automation Scheduling MVP integration", () => {
     await expect(harness.registry.getByTabId(3)).resolves.toMatchObject({
       state: "failed"
     });
-    expect(await harness.scheduler.list()).toEqual([]);
+    expect(await harness.scheduler.list()).toEqual([
+      expect.objectContaining({ tabId: 2, presetId: PRESET_ID })
+    ]);
+    await expect(harness.registry.getByTabId(2)).resolves.toMatchObject({
+      state: "waiting"
+    });
     await expect(harness.cycleLog.list({ tabId: 3 })).resolves.toContainEqual(
       expect.objectContaining({
         event: "failed",
