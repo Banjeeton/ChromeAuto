@@ -1,6 +1,7 @@
 import type { RecorderPanelStatus } from "../../../core/application/recorder-panel-controller";
 import type { AutomationStep } from "../../../core/domain/automation-step";
 import type { RecorderDraftView } from "../../../core/application/recorder-draft-controller";
+import { Alert, Card, Confirmation } from "../../components";
 import {
   RecordedStepsEditor,
   type RecordedPresetFields
@@ -40,7 +41,7 @@ export function RecordedDraftPanel({
   }
 
   return (
-    <section className="card" aria-labelledby="recorded-draft-title">
+    <Card className="card" aria-labelledby="recorded-draft-title">
       <div className="section-heading recorded-draft-heading">
         <div>
           <p className="section-label">Recorder</p>
@@ -54,9 +55,9 @@ export function RecordedDraftPanel({
           <p>Loading recorded steps…</p>
         </div>
       ) : draft === undefined ? (
-        <p className="editor-error" role="alert">
+        <Alert className="editor-error" tone="error">
           {error ?? "The recorded draft is unavailable."}
-        </p>
+        </Alert>
       ) : (
         <RecordedStepsEditor
           busy={
@@ -75,40 +76,23 @@ export function RecordedDraftPanel({
       )}
 
       {conflict !== undefined && (
-        <div className="delete-confirmation recorder-preset-conflict">
-          <p>
-            {conflict.hostname} is already assigned to{" "}
-            {conflict.activePresets
-              .map(({ name }) => `“${name}”`)
-              .join(", ")}
-            . Replace the active assignment? The existing preset will be kept
-            but disabled.
-          </p>
-          <div>
-            <button
-              className="inline-button neutral"
-              disabled={busyAction !== undefined}
-              onClick={onCancelConflict}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="inline-button destructive"
-              disabled={busyAction !== undefined}
-              onClick={() =>
-                onCreatePreset(
-                  conflict.fields,
-                  conflict.activePresets.map(({ id }) => id)
-                )
-              }
-              type="button"
-            >
-              Replace assignment
-            </button>
-          </div>
-        </div>
+        <Confirmation
+          busy={busyAction !== undefined}
+          className="delete-confirmation recorder-preset-conflict"
+          confirmLabel="Replace assignment"
+          onCancel={onCancelConflict}
+          onConfirm={() =>
+            onCreatePreset(
+              conflict.fields,
+              conflict.activePresets.map(({ id }) => id)
+            )
+          }
+        >
+          {conflict.hostname} is already assigned to{" "}
+          {conflict.activePresets.map(({ name }) => `“${name}”`).join(", ")}. Replace
+          the active assignment? The existing preset will be kept but disabled.
+        </Confirmation>
       )}
-    </section>
+    </Card>
   );
 }

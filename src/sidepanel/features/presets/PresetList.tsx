@@ -1,4 +1,5 @@
 import type { PresetV1 } from "../../../core/domain/preset";
+import { Badge, Button, Confirmation } from "../../components";
 
 export type PresetListState =
   | { readonly status: "loading" }
@@ -49,9 +50,9 @@ export function PresetList({
     return (
       <div className="preset-list-state preset-list-error" role="alert">
         <p>{state.message}</p>
-        <button className="inline-button" type="button" onClick={onRetry}>
+        <Button className="inline-button" onClick={onRetry} size="small" variant="danger">
           Try again
-        </button>
+        </Button>
       </div>
     );
   }
@@ -86,13 +87,14 @@ export function PresetList({
                 <strong>{preset.name}</strong>
                 <small>{preset.site.hostname}</small>
               </span>
-              <span
+              <Badge
                 className={`preset-state ${
                   preset.siteSettings.enabled ? "enabled" : "disabled"
                 }`}
+                tone={preset.siteSettings.enabled ? "success" : "neutral"}
               >
                 {preset.siteSettings.enabled ? "Enabled" : "Disabled"}
-              </span>
+              </Badge>
             </button>
           );
         })}
@@ -166,29 +168,15 @@ function SelectedPresetDetails({
         </div>
       </dl>
       {confirmingDelete ? (
-        <div className="delete-confirmation" role="alert">
-          <p>
-            Delete <strong>“{preset.name}”</strong>? This cannot be undone.
-          </p>
-          <div>
-            <button
-              className="inline-button neutral"
-              disabled={deleting}
-              onClick={onCancelDelete}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="inline-button destructive"
-              disabled={deleting}
-              onClick={() => onConfirmDelete(preset)}
-              type="button"
-            >
-              {deleting ? "Deleting…" : "Delete permanently"}
-            </button>
-          </div>
-        </div>
+        <Confirmation
+          busy={deleting}
+          className="delete-confirmation"
+          confirmLabel={deleting ? "Deleting…" : "Delete permanently"}
+          onCancel={onCancelDelete}
+          onConfirm={() => onConfirmDelete(preset)}
+        >
+          Delete <strong>“{preset.name}”</strong>? This cannot be undone.
+        </Confirmation>
       ) : (
         <div className="preset-management-actions">
           <button

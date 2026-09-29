@@ -9,6 +9,7 @@ import {
   type PresetValidationIssue
 } from "../../../core/domain/preset-validator";
 import type { SiteProtocol } from "../../../core/domain/site-binding";
+import { Alert, Button, Checkbox, Input, Textarea } from "../../components";
 import { StructuredStepsEditor } from "./StructuredStepsEditor";
 
 type PresetEditorProps = {
@@ -67,21 +68,22 @@ export function PresetEditor({
           </p>
           <h3>{mode === "create" ? "Create preset" : fields.name}</h3>
         </div>
-        <button
+        <Button
           className="icon-button"
           disabled={saving}
           onClick={onCancel}
-          type="button"
+          size="small"
+          variant="secondary"
         >
           Close
-        </button>
+        </Button>
       </div>
 
       <fieldset className="editor-section">
         <legend>Metadata</legend>
         <label className="editor-field">
           <span>Name</span>
-          <input
+          <Input
             autoFocus
             maxLength={120}
             onChange={(event) =>
@@ -97,7 +99,7 @@ export function PresetEditor({
         </label>
         <label className="editor-field">
           <span>Description</span>
-          <textarea
+          <Textarea
             onChange={(event) =>
               setFields((current) => ({
                 ...current,
@@ -122,7 +124,7 @@ export function PresetEditor({
         <legend>Site settings</legend>
         <label className="editor-field">
           <span>Hostname</span>
-          <input
+          <Input
             autoCapitalize="none"
             onChange={(event) =>
               setFields((current) => ({
@@ -139,60 +141,50 @@ export function PresetEditor({
 
         <div className="editor-check-row" aria-label="Allowed protocols">
           {(["https", "http"] as const).map((protocol) => (
-            <label key={protocol}>
-              <input
-                checked={fields.site.protocols.includes(protocol)}
-                onChange={(event) =>
-                  toggleProtocol(protocol, event.target.checked)
-                }
-                type="checkbox"
-              />
-              {protocol.toUpperCase()}
-            </label>
+            <Checkbox
+              checked={fields.site.protocols.includes(protocol)}
+              key={protocol}
+              label={protocol.toUpperCase()}
+              onChange={(event) => toggleProtocol(protocol, event.target.checked)}
+            />
           ))}
         </div>
 
         <div className="editor-check-row">
-          <label>
-            <input
-              checked={fields.siteSettings.enabled}
-              onChange={(event) =>
-                setFields((current) => ({
-                  ...current,
-                  siteSettings: {
-                    ...current.siteSettings,
+          <Checkbox
+            checked={fields.siteSettings.enabled}
+            label="Preset enabled"
+            onChange={(event) =>
+              setFields((current) => ({
+                ...current,
+                siteSettings: {
+                  ...current.siteSettings,
+                  enabled: event.target.checked
+                }
+              }))
+            }
+          />
+          <Checkbox
+            checked={fields.siteSettings.repeat.enabled}
+            label="Repeat after completion"
+            onChange={(event) =>
+              setFields((current) => ({
+                ...current,
+                siteSettings: {
+                  ...current.siteSettings,
+                  repeat: {
+                    ...current.siteSettings.repeat,
                     enabled: event.target.checked
                   }
-                }))
-              }
-              type="checkbox"
-            />
-            Preset enabled
-          </label>
-          <label>
-            <input
-              checked={fields.siteSettings.repeat.enabled}
-              onChange={(event) =>
-                setFields((current) => ({
-                  ...current,
-                  siteSettings: {
-                    ...current.siteSettings,
-                    repeat: {
-                      ...current.siteSettings.repeat,
-                      enabled: event.target.checked
-                    }
-                  }
-                }))
-              }
-              type="checkbox"
-            />
-            Repeat after completion
-          </label>
+                }
+              }))
+            }
+          />
         </div>
 
         <label className="editor-field compact-field">
           <span>Repeat interval, minutes</span>
-          <input
+          <Input
             min={1}
             onChange={(event) =>
               setFields((current) => ({
@@ -261,28 +253,25 @@ export function PresetEditor({
           />
         </div>
         <div className="editor-check-row">
-          <label>
-            <input
-              checked={fields.automation.defaults.humanInput.enabled}
-              onChange={(event) =>
-                setFields((current) => ({
-                  ...current,
-                  automation: {
-                    ...current.automation,
-                    defaults: {
-                      ...current.automation.defaults,
-                      humanInput: {
-                        ...current.automation.defaults.humanInput,
-                        enabled: event.target.checked
-                      }
+          <Checkbox
+            checked={fields.automation.defaults.humanInput.enabled}
+            label="Human input by default"
+            onChange={(event) =>
+              setFields((current) => ({
+                ...current,
+                automation: {
+                  ...current.automation,
+                  defaults: {
+                    ...current.automation.defaults,
+                    humanInput: {
+                      ...current.automation.defaults.humanInput,
+                      enabled: event.target.checked
                     }
                   }
-                }))
-              }
-              type="checkbox"
-            />
-            Human input by default
-          </label>
+                }
+              }))
+            }
+          />
         </div>
       </fieldset>
 
@@ -304,7 +293,7 @@ export function PresetEditor({
         {validationIssues.some(
           (issue) => !issue.path.startsWith("/automation/steps/")
         ) && (
-          <div className="editor-error" role="alert">
+          <Alert className="editor-error" tone="error">
             {validationIssues
               .filter((issue) => !issue.path.startsWith("/automation/steps/"))
               .map((issue, index) => (
@@ -312,24 +301,24 @@ export function PresetEditor({
                   <code>{issue.path}</code>: {issue.message}
                 </p>
               ))}
-          </div>
+          </Alert>
         )}
       </fieldset>
 
       {saveError !== undefined && (
-        <p className="editor-error" role="alert">{saveError}</p>
+        <Alert className="editor-error" tone="error">{saveError}</Alert>
       )}
 
       <div className="editor-actions">
-        <button
+        <Button
           className="action-button secondary"
           disabled={saving}
           onClick={onCancel}
-          type="button"
+          variant="secondary"
         >
           Cancel
-        </button>
-        <button className="action-button" disabled={saving} type="submit">
+        </Button>
+        <Button className="action-button" disabled={saving} type="submit">
           {saving
             ? "Saving…"
             : mode === "create"
@@ -337,7 +326,7 @@ export function PresetEditor({
               : mode === "duplicate"
                 ? "Save duplicate"
                 : "Save changes"}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -354,7 +343,7 @@ function NumberField({ label, min, value, onChange }: NumberFieldProps) {
   return (
     <label className="editor-field compact-field">
       <span>{label}</span>
-      <input
+      <Input
         min={min}
         onChange={(event) => onChange(event.target.valueAsNumber)}
         required

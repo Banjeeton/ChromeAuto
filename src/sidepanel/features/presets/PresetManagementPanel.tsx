@@ -2,6 +2,7 @@ import { useRef } from "react";
 
 import type { PresetEditableFields } from "../../../core/application/preset-editor";
 import type { PresetV1 } from "../../../core/domain/preset";
+import { Alert, Button, Card, Confirmation, Input } from "../../components";
 import { PresetEditor } from "./PresetEditor";
 import { PresetList, type PresetListState } from "./PresetList";
 import type {
@@ -37,25 +38,26 @@ export interface PresetManagementPanelProps {
 export function PresetManagementPanel(props: PresetManagementPanelProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
   return (
-    <section className="card" aria-labelledby="presets-title">
+    <Card className="card" aria-labelledby="presets-title">
       <div className="section-heading">
         <div>
           <p className="section-label">Automation library</p>
           <h2 id="presets-title">Saved presets</h2>
         </div>
         <div className="header-actions">
-          <button className="icon-button" onClick={props.onRefresh} type="button">
+          <Button className="icon-button" onClick={props.onRefresh} size="small" variant="secondary">
             Refresh
-          </button>
-          <button
+          </Button>
+          <Button
             className="inline-button neutral"
             disabled={props.busyAction !== undefined}
             onClick={() => importInputRef.current?.click()}
-            type="button"
+            size="small"
+            variant="secondary"
           >
             {props.busyAction === "import-preset" ? "Importing…" : "Import JSON"}
-          </button>
-          <input
+          </Button>
+          <Input
             accept="application/json,.json"
             hidden
             onChange={(event) => {
@@ -66,14 +68,15 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
             ref={importInputRef}
             type="file"
           />
-          <button
+          <Button
             className="inline-button neutral"
             disabled={props.busyAction !== undefined}
             onClick={props.onNew}
-            type="button"
+            size="small"
+            variant="secondary"
           >
             New preset
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -111,9 +114,9 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
       )}
 
       {props.operationError !== undefined && (
-        <p className="editor-error preset-operation-error" role="alert">
+        <Alert className="editor-error preset-operation-error" tone="error">
           {props.operationError}
-        </p>
+        </Alert>
       )}
 
       {props.editor !== undefined && (
@@ -127,7 +130,7 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
           saving={props.busyAction === "save-preset"}
         />
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -147,30 +150,16 @@ export function PresetOverwriteConfirmation({
   onConfirm
 }: PresetOverwriteConfirmationProps) {
   return (
-    <div className="delete-confirmation overwrite-confirmation" role="alert">
-      <p>
-        Replace saved preset <strong>“{existingPresetName}”</strong> with imported
-        preset <strong>“{incomingPresetName}”</strong>? The saved preset with this
-        ID will be overwritten.
-      </p>
-      <div>
-        <button
-          className="inline-button neutral"
-          disabled={busy}
-          onClick={onCancel}
-          type="button"
-        >
-          Cancel
-        </button>
-        <button
-          className="inline-button destructive"
-          disabled={busy}
-          onClick={onConfirm}
-          type="button"
-        >
-          {busy ? "Replacing…" : "Replace preset"}
-        </button>
-      </div>
-    </div>
+    <Confirmation
+      busy={busy}
+      className="delete-confirmation overwrite-confirmation"
+      confirmLabel={busy ? "Replacing…" : "Replace preset"}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
+      Replace saved preset <strong>“{existingPresetName}”</strong> with imported
+      preset <strong>“{incomingPresetName}”</strong>? The saved preset with this
+      ID will be overwritten.
+    </Confirmation>
   );
 }

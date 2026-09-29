@@ -11,6 +11,7 @@ import type {
   WaitStep
 } from "../../../core/domain/automation-step";
 import type { PresetValidationIssue } from "../../../core/domain/preset-validator";
+import { Button, Select } from "../../components";
 import { createStepTemplate, STEP_TYPES } from "./step-template";
 
 export interface StructuredStepsEditorProps {
@@ -59,7 +60,7 @@ export function StructuredStepsEditor({
   return (
     <div className="structured-steps-editor">
       <div className="step-toolbar">
-        <select
+        <Select
           aria-label="New step type"
           disabled={disabled}
           onChange={(event) =>
@@ -70,15 +71,16 @@ export function StructuredStepsEditor({
           {STEP_TYPES.map((type) => (
             <option key={type} value={type}>{stepTypeLabel(type)}</option>
           ))}
-        </select>
-        <button
+        </Select>
+        <Button
           className="inline-button neutral"
           disabled={disabled}
           onClick={() => onChange([...structuredClone(steps), createStepTemplate(newStepType)])}
-          type="button"
+          size="small"
+          variant="secondary"
         >
           Add step
-        </button>
+        </Button>
       </div>
 
       {steps.length === 0 ? (

@@ -1,5 +1,6 @@
 import type { RepeatCycleStatusView } from "../../../core/application/repeat-cycle-status-controller";
 import type { RunSession } from "../../../core/domain/run-session";
+import { Button, Card } from "../../components";
 
 export interface AutomationSessionsPanelProps {
   readonly busyAction?: string;
@@ -15,19 +16,21 @@ export function AutomationSessionsPanel({
   onStopAll
 }: AutomationSessionsPanelProps) {
   return (
-    <section className="card" aria-labelledby="sessions-title">
+    <Card className="card" aria-labelledby="sessions-title">
       <div className="section-heading">
         <div>
           <p className="section-label">Independent tabs</p>
           <h2 id="sessions-title">Automation status</h2>
         </div>
-        <button
+        <Button
           className="icon-button danger-text"
           disabled={busyAction === "stop-all"}
           onClick={onStopAll}
+          size="small"
+          variant="danger"
         >
           Stop All
-        </button>
+        </Button>
       </div>
 
       {sessions.length === 0 && repeatCycles.length === 0 ? (
@@ -60,7 +63,7 @@ export function AutomationSessionsPanel({
           ))}
         </div>
       )}
-    </section>
+    </Card>
   );
 }
 

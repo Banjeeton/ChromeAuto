@@ -1,6 +1,7 @@
 import type { ManualRunStatus } from "../../../core/application/manual-run-controller";
 import type { RecorderPanelStatus } from "../../../core/application/recorder-panel-controller";
 import type { ActiveTab } from "../../types";
+import { Alert, Button, Card, type StatusTone } from "../../components";
 import { RecorderControls } from "../recorder/RecorderControls";
 
 export interface AutomationStatusPanelProps {
@@ -34,10 +35,13 @@ export function AutomationStatusPanel({
 }: AutomationStatusPanelProps) {
   return (
     <>
-      <div className={`notice ${statusTone(manualStatus)}`}>
+      <Alert
+        className={`notice ${legacyStatusTone(manualStatus)}`}
+        tone={statusTone(manualStatus)}
+      >
         {statusMessage(manualStatus)}
-      </div>
-      <section className="card" aria-labelledby="active-tab-title">
+      </Alert>
+      <Card className="card" aria-labelledby="active-tab-title">
         <div className="section-heading">
           <div className="target-heading">
             <p className="section-label">Current site</p>
@@ -64,16 +68,17 @@ export function AutomationStatusPanel({
         )}
 
         <div className="button-grid primary-actions">
-          <button className="action-button" disabled={!canRun} onClick={onRun}>
+          <Button className="action-button" disabled={!canRun} onClick={onRun}>
             {busyAction === "run" ? "Running…" : "Run automation"}
-          </button>
-          <button
+          </Button>
+          <Button
             className="action-button secondary"
             disabled={!currentTabHasActiveCycle || busyAction === "stop"}
             onClick={onStop}
+            variant="secondary"
           >
             {busyAction === "stop" ? "Stopping…" : "Stop"}
-          </button>
+          </Button>
         </div>
 
         <RecorderControls
@@ -83,7 +88,7 @@ export function AutomationStatusPanel({
           onStopRecording={onStopRecording}
           status={recorderStatus}
         />
-      </section>
+      </Card>
     </>
   );
 }
@@ -102,7 +107,15 @@ function statusMessage(status?: ManualRunStatus): string {
   return status.message;
 }
 
-function statusTone(status?: ManualRunStatus): string {
+function statusTone(status?: ManualRunStatus): StatusTone {
+  if (status?.state === "ready") return "success";
+  if (status?.state === "running" || status?.state === "waiting") {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function legacyStatusTone(status?: ManualRunStatus): string {
   if (status?.state === "ready") return "ready";
   if (status?.state === "running" || status?.state === "waiting") {
     return "running";

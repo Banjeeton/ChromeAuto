@@ -1,6 +1,7 @@
 import type { RecorderLogEntry } from "../../../core/domain/recorder-log-entry";
 import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
 import type { StepLogEntry } from "../../../core/domain/step-log-entry";
+import { Button, Card } from "../../components";
 import type { Notice } from "../../types";
 import { StepLogEntryView } from "../logs/StepLogEntryView";
 
@@ -26,13 +27,15 @@ export function RunLogPanel({
     recorderLogs.length === 0;
 
   return (
-    <section className="card log-card" aria-labelledby="log-title">
+    <Card className="card log-card" aria-labelledby="log-title">
       <div className="section-heading">
         <div>
           <p className="section-label">Current tab</p>
           <h2 id="log-title">Run log</h2>
         </div>
-        <button className="icon-button" onClick={onClear}>Clear</button>
+        <Button className="icon-button" onClick={onClear} size="small" variant="secondary">
+          Clear
+        </Button>
       </div>
 
       {empty ? (
@@ -84,7 +87,7 @@ export function RunLogPanel({
           ))}
         </ol>
       )}
-    </section>
+    </Card>
   );
 }
 
