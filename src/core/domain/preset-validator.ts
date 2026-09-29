@@ -1,5 +1,6 @@
 import type { ErrorObject } from "ajv";
 import generatedValidateSchema from "../../generated/preset-v1-validator";
+import { isSupportedAutomationKey } from "./automation-key";
 import type { PresetV1 } from "./preset";
 
 type GeneratedSchemaValidator = ((value: unknown) => boolean) & {
@@ -11,6 +12,7 @@ const validateSchema = generatedValidateSchema as GeneratedSchemaValidator;
 export type PresetSemanticIssueCode =
   | "duplicate_step_id"
   | "invalid_human_input_range"
+  | "invalid_press_key"
   | "empty_automation";
 
 export type PresetValidationIssueCode =
@@ -90,6 +92,15 @@ export function validatePresetSemantics(
         code: "invalid_human_input_range",
         path: `/automation/steps/${index}/humanInput/maxDelayMs`,
         message: "maxDelayMs must be greater than or equal to minDelayMs."
+      });
+    }
+
+    if (step.type === "pressKey" && !isSupportedAutomationKey(step.key)) {
+      issues.push({
+        code: "invalid_press_key",
+        path: `/automation/steps/${index}/key`,
+        message:
+          "key must be a supported key or a combination using Control, Alt, Shift or Meta."
       });
     }
   });

@@ -138,6 +138,24 @@ describe("preset v1 JSON Schema", () => {
     expect(validateSchema(preset)).toBe(false);
   });
 
+  it("rejects an empty pressKey value with its JSON path", () => {
+    const preset = cloneValidPreset();
+    const stepIndex = preset.automation.steps.findIndex(
+      (step) => step.type === "pressKey"
+    );
+    const step = preset.automation.steps[stepIndex];
+    if (step?.type !== "pressKey") {
+      throw new Error("PressKey fixture step is missing.");
+    }
+    step.key = "";
+
+    expect(validatePresetStructure(preset)).toContainEqual({
+      code: "schema_minLength",
+      path: `/automation/steps/${stepIndex}/key`,
+      message: "Value must NOT have fewer than 1 characters."
+    });
+  });
+
   it.each([
     { type: "timeout", durationMs: 250 },
     { type: "url", match: "contains", value: "/success" },
@@ -202,6 +220,60 @@ describe("preset v1 semantic validation", () => {
       path: "/automation/steps/1/humanInput/maxDelayMs",
       message: "maxDelayMs must be greater than or equal to minDelayMs."
     });
+  });
+
+  it.each([
+    " ",
+    "F13",
+    "Ctrl+Enter",
+    "Enter+Control",
+    "Control+Control+A",
+    "Control++Enter",
+    "DefinitelyNotAKey"
+  ])("reports an invalid pressKey value %j", (key) => {
+    const preset = cloneValidPreset();
+    const stepIndex = preset.automation.steps.findIndex(
+      (step) => step.type === "pressKey"
+    );
+    const step = preset.automation.steps[stepIndex];
+    if (step?.type !== "pressKey") {
+      throw new Error("PressKey fixture step is missing.");
+    }
+    step.key = key;
+
+    expect(validatePresetSemantics(preset)).toContainEqual({
+      code: "invalid_press_key",
+      path: `/automation/steps/${stepIndex}/key`,
+      message:
+        "key must be a supported key or a combination using Control, Alt, Shift or Meta."
+    });
+  });
+
+  it.each([
+    "Enter",
+    "Escape",
+    "Tab",
+    "ArrowUp",
+    "F1",
+    "F12",
+    "Control+A",
+    "Alt+Escape",
+    "Shift+Tab",
+    "Meta+ArrowRight",
+    "Control+Alt+Shift+F5"
+  ])("accepts the supported pressKey value %s", (key) => {
+    const preset = cloneValidPreset();
+    const step = preset.automation.steps.find(
+      (candidate) => candidate.type === "pressKey"
+    );
+    if (step?.type !== "pressKey") {
+      throw new Error("PressKey fixture step is missing.");
+    }
+    step.key = key;
+
+    expect(validatePresetSemantics(preset)).not.toContainEqual(
+      expect.objectContaining({ code: "invalid_press_key" })
+    );
   });
 
   it("allows an empty automation to be edited but prevents it from running", () => {

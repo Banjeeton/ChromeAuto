@@ -249,6 +249,59 @@ describe("AutomationRunner", () => {
     ]);
   });
 
+  it("writes a pressKey execution error to the step log", async () => {
+    const engine = createEngine();
+    const failure = new AutomationEngineError(
+      "step-failed",
+      "Automation step submit-form failed: Target page was closed",
+      {
+        context: {
+          sessionId: "session-1",
+          tabId: 42,
+          stepId: "submit-form",
+          stepIndex: 0,
+          stepNumber: 1,
+          stepType: "pressKey"
+        }
+      }
+    );
+    vi.mocked(engine.executeStep).mockRejectedValueOnce(failure);
+    const { log, runner } = createRunner(engine);
+
+    await expect(
+      runner.run({
+        presetId: "preset-1",
+        tabId: 42,
+        automation: {
+          defaults,
+          steps: [
+            {
+              id: "submit-form",
+              name: "Submit form",
+              type: "pressKey",
+              enabled: true,
+              key: "Control+Enter"
+            }
+          ]
+        }
+      })
+    ).rejects.toBe(failure);
+
+    expect(await log.list()).toEqual([
+      expect.objectContaining({
+        stepId: "submit-form",
+        stepNumber: 1,
+        stepType: "pressKey",
+        stepName: "Submit form",
+        status: "failed",
+        error: expect.objectContaining({
+          code: "step-failed",
+          message: "Automation step submit-form failed: Target page was closed"
+        })
+      })
+    ]);
+  });
+
   it("distinguishes a requested stop from a failed step", async () => {
     const engine = createEngine();
     const stopped = new AutomationEngineError(

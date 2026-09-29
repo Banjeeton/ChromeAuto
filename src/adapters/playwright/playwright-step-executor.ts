@@ -4,9 +4,11 @@ import type {
   ElementLocator,
   ElementTarget,
   InputStep,
+  PressKeyStep,
   SelectStep,
   WaitStep
 } from "../../core/domain/automation-step";
+import { isSupportedAutomationKey } from "../../core/domain/automation-key";
 import type { ExecuteAutomationStepRequest } from "../../core/ports/automation-engine";
 import { executeCustomJavaScript } from "./custom-javascript-executor";
 
@@ -70,6 +72,10 @@ export async function executePlaywrightStep(
       break;
     }
 
+    case "pressKey":
+      await executePressKeyStep(page, step, timeout);
+      break;
+
     case "wait":
       await executeWaitStep(page, step, timeout);
       break;
@@ -86,7 +92,7 @@ export async function executePlaywrightStep(
       break;
 
     default:
-      throw new Error(`Step type ${step.type} is not implemented`);
+      throw new Error("Automation step type is not implemented");
   }
 
   const postActionDelay =
@@ -96,6 +102,53 @@ export async function executePlaywrightStep(
   }
 
   return output;
+}
+
+async function executePressKeyStep(
+  page: Page,
+  step: PressKeyStep,
+  timeout: number
+): Promise<void> {
+  if (!isSupportedAutomationKey(step.key)) {
+    throw new Error(`Unsupported pressKey value: ${JSON.stringify(step.key)}`);
+  }
+
+  if (step.target !== undefined) {
+    const locator = await resolveTarget(page, step.target);
+    await locator.press(step.key, { timeout });
+    return;
+  }
+
+  await withTimeout(
+    page.keyboard.press(step.key),
+    timeout,
+    `Page pressKey ${JSON.stringify(step.key)} timed out after ${timeout} ms`
+  );
+}
+
+async function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const timeoutId = globalThis.setTimeout(() => {
+      const error = new Error(message);
+      error.name = "TimeoutError";
+      reject(error);
+    }, timeoutMs);
+
+    operation.then(
+      (value) => {
+        globalThis.clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error: unknown) => {
+        globalThis.clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
 }
 
 async function executeSelectStep(
