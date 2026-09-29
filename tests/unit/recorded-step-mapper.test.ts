@@ -6,8 +6,12 @@ import type {
   ElementLocator
 } from "../../src/core/domain/automation-step";
 import type {
+  RecorderCheckEvent,
   RecorderClickEvent,
   RecorderInputEvent,
+  RecorderPressKeyEvent,
+  RecorderSelectEvent,
+  RecorderUncheckEvent,
   RecorderReloadEvent
 } from "../../src/core/domain/recorder-event";
 import { validatePreset } from "../../src/core/domain/preset-validator";
@@ -59,6 +63,104 @@ describe("RecordedStepMapper", () => {
         value: "Recorded value",
         clearFirst: true,
         inputMode: "default"
+      }
+    ]);
+  });
+
+  it("converts extended recorder events in their actual order", () => {
+    const mapper = mapperWithIds("advanced-step");
+
+    const result = mapper.map([
+      selectEvent(1),
+      checkEvent(2, "checkbox"),
+      checkEvent(3, "radio"),
+      uncheckEvent(4),
+      pressKeyEvent(5)
+    ]);
+
+    expect(result.skipped).toEqual([]);
+    expect(result.steps).toEqual([
+      {
+        id: "advanced-step",
+        type: "select",
+        enabled: true,
+        target: targetFrom([{ type: "testId", value: "country" }]),
+        option: { by: "label", value: "Canada" }
+      },
+      {
+        id: "advanced-step-2",
+        type: "check",
+        enabled: true,
+        target: targetFrom([{ type: "testId", value: "terms" }])
+      },
+      {
+        id: "advanced-step-3",
+        type: "check",
+        enabled: true,
+        target: targetFrom([{ type: "testId", value: "plan-pro" }])
+      },
+      {
+        id: "advanced-step-4",
+        type: "uncheck",
+        enabled: true,
+        target: targetFrom([{ type: "testId", value: "terms" }])
+      },
+      {
+        id: "advanced-step-5",
+        type: "pressKey",
+        enabled: true,
+        target: targetFrom([{ type: "testId", value: "search" }]),
+        key: "Control+Enter"
+      }
+    ]);
+    expect(new Set(result.steps.map((step) => step.id)).size).toBe(5);
+    expect(validatePreset(presetWithSteps(result.steps))).toEqual([]);
+  });
+
+  it("removes a duplicate click immediately followed by a control state event", () => {
+    const mapper = mapperWithIds("control-step");
+    const target = [{ type: "testId", value: "terms" }] as const;
+
+    const result = mapper.map([
+      clickEvent(1, target),
+      checkEvent(2, "checkbox")
+    ]);
+
+    expect(result.steps).toEqual([
+      {
+        id: "control-step",
+        type: "check",
+        enabled: true,
+        target: targetFrom(target)
+      }
+    ]);
+    expect(result.skipped).toEqual([
+      {
+        eventId: "event-1",
+        kind: "click",
+        reason: "duplicate-control-click"
+      }
+    ]);
+  });
+
+  it("keeps a valid click when the following control event is malformed", () => {
+    const mapper = mapperWithIds("control-step");
+    const target = [{ type: "testId", value: "terms" }] as const;
+    const malformedCheck = {
+      ...checkEvent(2, "checkbox"),
+      payload: { control: "checkbox", checked: false }
+    };
+
+    const result = mapper.map([clickEvent(1, target), malformedCheck]);
+
+    expect(result.steps).toEqual([
+      expect.objectContaining({ id: "control-step", type: "click" })
+    ]);
+    expect(result.skipped).toEqual([
+      {
+        eventId: "event-2",
+        kind: "check",
+        reason: "invalid-event"
       }
     ]);
   });
@@ -182,6 +284,14 @@ describe("RecordedStepMapper", () => {
       {
         ...modifiedClick,
         payload: { ...modifiedClick.payload, modifiers: ["Control"] }
+      },
+      {
+        ...selectEvent(5),
+        payload: { option: { by: "index", value: -1 } }
+      },
+      {
+        ...pressKeyEvent(6),
+        payload: { key: "Control++Invalid" }
       }
     ];
 
@@ -194,7 +304,9 @@ describe("RecordedStepMapper", () => {
       "unsupported-event-kind",
       "invalid-event",
       "invalid-event",
-      "unsupported-click-modifiers"
+      "unsupported-click-modifiers",
+      "invalid-event",
+      "invalid-generated-step"
     ]);
   });
 });
@@ -226,23 +338,78 @@ function eventBase(index: number) {
   };
 }
 
-function clickEvent(index: number): RecorderClickEvent {
+function clickEvent(
+  index: number,
+  locators: readonly ElementLocator[] = [
+    {
+      type: "role",
+      role: "button",
+      name: "Submit",
+      exact: true
+    },
+    { type: "css", value: 'button[type="submit"]' }
+  ]
+): RecorderClickEvent {
   return {
     ...eventBase(index),
     kind: "click",
+    target: { locators },
+    payload: { button: "left", clickCount: 1, modifiers: [] }
+  };
+}
+
+function selectEvent(index: number): RecorderSelectEvent {
+  return {
+    ...eventBase(index),
+    kind: "select",
+    target: { locators: [{ type: "testId", value: "country" }] },
+    payload: { option: { by: "label", value: "Canada" } }
+  };
+}
+
+function checkEvent(
+  index: number,
+  control: "checkbox" | "radio"
+): RecorderCheckEvent {
+  return {
+    ...eventBase(index),
+    kind: "check",
     target: {
       locators: [
         {
-          type: "role",
-          role: "button",
-          name: "Submit",
-          exact: true
-        },
-        { type: "css", value: 'button[type="submit"]' }
+          type: "testId",
+          value: control === "checkbox" ? "terms" : "plan-pro"
+        }
       ]
     },
-    payload: { button: "left", clickCount: 1, modifiers: [] }
+    payload: { control, checked: true }
   };
+}
+
+function uncheckEvent(index: number): RecorderUncheckEvent {
+  return {
+    ...eventBase(index),
+    kind: "uncheck",
+    target: { locators: [{ type: "testId", value: "terms" }] },
+    payload: { control: "checkbox", checked: false }
+  };
+}
+
+function pressKeyEvent(index: number): RecorderPressKeyEvent {
+  return {
+    ...eventBase(index),
+    kind: "pressKey",
+    target: { locators: [{ type: "testId", value: "search" }] },
+    payload: { key: "Control+Enter" }
+  };
+}
+
+function targetFrom(locators: readonly ElementLocator[]) {
+  const [primary, ...fallbacks] = locators;
+  if (primary === undefined) {
+    throw new Error("At least one locator is required.");
+  }
+  return { primary, fallbacks };
 }
 
 function inputEvent(
