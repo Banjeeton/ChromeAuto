@@ -12,6 +12,10 @@ export const STEP_TYPES = [
   "customCode"
 ] as const satisfies readonly AutomationStep["type"][];
 
+export function createStepTemplate<T extends AutomationStep["type"]>(
+  type: T,
+  id?: string
+): Extract<AutomationStep, { type: T }>;
 export function createStepTemplate(
   type: AutomationStep["type"],
   id = `step-${crypto.randomUUID()}`

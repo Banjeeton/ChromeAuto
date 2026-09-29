@@ -6,7 +6,10 @@ import {
   createPresetV1
 } from "../../src/core/application/preset-editor";
 import { assertValidPreset } from "../../src/core/domain/preset-validator";
-import { PresetEditor } from "../../src/sidepanel/features/presets";
+import {
+  PresetEditor,
+  validatePresetEditorFields
+} from "../../src/sidepanel/features/presets";
 import {
   createStepTemplate,
   STEP_TYPES
@@ -71,6 +74,94 @@ describe("PresetEditor", () => {
     expect(html).toContain("Duplicate preset");
     expect(html).toContain("Choose a different hostname");
     expect(html).toContain("Save duplicate");
+  });
+
+  it("renders every preset v1 step as a structured card without Steps JSON", () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Complete automation";
+    fields.automation.steps = STEP_TYPES.map((type, index) =>
+      createStepTemplate(type, `existing-${index + 1}`)
+    );
+
+    const html = renderToStaticMarkup(
+      <PresetEditor
+        initialFields={fields}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+        saving={false}
+      />
+    );
+
+    expect(html).not.toContain("Steps JSON");
+    expect(html.match(/structured-step-card/g)).toHaveLength(STEP_TYPES.length);
+    expect(html).toContain("Mouse button");
+    expect(html).toContain("Input value");
+    expect(html).toContain("Selection method");
+    expect(html).toContain("Key or shortcut");
+    expect(html).toContain("Wait condition");
+    expect(html).toContain("Wait until");
+    expect(html).toContain("JavaScript");
+    expect(html).toContain("Timeout override, ms");
+    expect(html).toContain("Post-action delay, ms");
+    expect(html).toContain("Delete step 9");
+  });
+
+  it("opens existing primary and fallback locators as structured fields", () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Existing preset";
+    fields.automation.steps = [{
+      ...createStepTemplate("click", "existing-click"),
+      name: "Submit order",
+      target: {
+        primary: { type: "testId", value: "submit-order" },
+        fallbacks: [
+          { type: "role", role: "button", name: "Submit", exact: true },
+          { type: "text", value: "Submit", exact: false }
+        ]
+      },
+      timeoutMs: 2_500,
+      postActionDelayMs: 100
+    }];
+
+    const html = renderToStaticMarkup(
+      <PresetEditor
+        initialFields={fields}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+        saving={false}
+      />
+    );
+
+    expect(html).toContain("Submit order");
+    expect(html).toContain("submit-order");
+    expect(html).toContain("Fallback 1");
+    expect(html).toContain("Fallback 2");
+    expect(html).toContain("ARIA role");
+    expect(html).toContain("Accessible name");
+    expect(html).toContain('value="2500"');
+    expect(html).toContain('value="100"');
+  });
+
+  it("returns full validation issues with the concrete step field path", () => {
+    const fields = createPresetEditorDefaults(" EXAMPLE.COM ");
+    fields.name = " Valid preset ";
+    fields.automation.steps = [{
+      ...createStepTemplate("pressKey", "invalid-key"),
+      key: "Control+DefinitelyNotAKey"
+    }];
+
+    const result = validatePresetEditorFields(fields);
+
+    expect(result.fields.name).toBe("Valid preset");
+    expect(result.fields.site.hostname).toBe("example.com");
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        path: "/automation/steps/0/key",
+        code: "invalid_press_key"
+      })
+    );
   });
 });
 

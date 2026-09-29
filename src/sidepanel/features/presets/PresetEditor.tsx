@@ -1,9 +1,15 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
-import type { PresetEditableFields } from "../../../core/application/preset-editor";
-import type { AutomationStep } from "../../../core/domain/automation-step";
+import {
+  createPresetV1,
+  type PresetEditableFields
+} from "../../../core/application/preset-editor";
+import {
+  validatePreset,
+  type PresetValidationIssue
+} from "../../../core/domain/preset-validator";
 import type { SiteProtocol } from "../../../core/domain/site-binding";
-import { createStepTemplate, STEP_TYPES } from "./step-template";
+import { StructuredStepsEditor } from "./StructuredStepsEditor";
 
 type PresetEditorProps = {
   readonly initialFields: PresetEditableFields;
@@ -23,33 +29,17 @@ export function PresetEditor({
   onSave
 }: PresetEditorProps) {
   const [fields, setFields] = useState(() => structuredClone(initialFields));
-  const [stepsJson, setStepsJson] = useState(() =>
-    formatSteps(initialFields.automation.steps)
-  );
-  const [stepType, setStepType] = useState<AutomationStep["type"]>("click");
-  const [stepsError, setStepsError] = useState<string>();
-  const parsedSteps = useMemo(() => tryParseSteps(stepsJson), [stepsJson]);
+  const [validationIssues, setValidationIssues] =
+    useState<readonly PresetValidationIssue[]>([]);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const steps = requireSteps(stepsJson, setStepsError);
-    if (steps === undefined) {
+    const { fields: normalized, issues } = validatePresetEditorFields(fields);
+    setValidationIssues(issues);
+    if (issues.length > 0) {
       return;
     }
-
-    onSave({
-      ...structuredClone(fields),
-      name: fields.name.trim(),
-      description: fields.description?.trim() ?? "",
-      site: {
-        ...fields.site,
-        hostname: fields.site.hostname.trim().toLowerCase()
-      },
-      automation: {
-        ...fields.automation,
-        steps: steps as AutomationStep[]
-      }
-    });
+    onSave(normalized);
   };
 
   const toggleProtocol = (protocol: SiteProtocol, checked: boolean) => {
@@ -62,34 +52,6 @@ export function PresetEditor({
           : current.site.protocols.filter((value) => value !== protocol)
       }
     }));
-  };
-
-  const changeSteps = (operation: (steps: unknown[]) => unknown[]) => {
-    const steps = requireSteps(stepsJson, setStepsError);
-    if (steps === undefined) {
-      return;
-    }
-    setStepsJson(formatSteps(operation(steps)));
-    setStepsError(undefined);
-  };
-
-  const addStep = () => {
-    changeSteps((steps) => [...steps, createStepTemplate(stepType)]);
-  };
-
-  const moveStep = (index: number, offset: -1 | 1) => {
-    changeSteps((steps) => {
-      const targetIndex = index + offset;
-      if (targetIndex < 0 || targetIndex >= steps.length) {
-        return steps;
-      }
-      const reordered = [...steps];
-      [reordered[index], reordered[targetIndex]] = [
-        reordered[targetIndex],
-        reordered[index]
-      ];
-      return reordered;
-    });
   };
 
   return (
@@ -326,92 +288,31 @@ export function PresetEditor({
 
       <fieldset className="editor-section">
         <legend>Step sequence</legend>
-        <div className="step-toolbar">
-          <select
-            aria-label="New step type"
-            onChange={(event) =>
-              setStepType(event.target.value as AutomationStep["type"])
-            }
-            value={stepType}
-          >
-            {STEP_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-          <button className="inline-button neutral" onClick={addStep} type="button">
-            Add step
-          </button>
-        </div>
+        <StructuredStepsEditor
+          disabled={saving}
+          issues={validationIssues}
+          onChange={(steps) => {
+            setFields((current) => ({
+              ...current,
+              automation: { ...current.automation, steps }
+            }));
+            setValidationIssues([]);
+          }}
+          steps={fields.automation.steps}
+        />
 
-        {parsedSteps.ok && parsedSteps.value.length > 0 ? (
-          <ol className="editor-step-list">
-            {parsedSteps.value.map((step, index) => {
-              const summary = summarizeStep(step, index);
-              return (
-                <li key={`${summary.id}-${index}`}>
-                  <div>
-                    <strong>{summary.name}</strong>
-                    <small>{summary.type}</small>
-                  </div>
-                  <div className="step-order-actions">
-                    <button
-                      aria-label={`Move ${summary.name} up`}
-                      disabled={index === 0}
-                      onClick={() => moveStep(index, -1)}
-                      type="button"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      aria-label={`Move ${summary.name} down`}
-                      disabled={index === parsedSteps.value.length - 1}
-                      onClick={() => moveStep(index, 1)}
-                      type="button"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      aria-label={`Delete ${summary.name}`}
-                      className="danger-text"
-                      onClick={() =>
-                        changeSteps((steps) =>
-                          steps.filter((_, stepIndex) => stepIndex !== index)
-                        )
-                      }
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        ) : (
-          <p className="editor-help">No steps. Add one or edit the JSON below.</p>
-        )}
-
-        <label className="editor-field">
-          <span>Steps JSON</span>
-          <textarea
-            className="code-editor"
-            onChange={(event) => {
-              setStepsJson(event.target.value);
-              setStepsError(undefined);
-            }}
-            rows={12}
-            spellCheck={false}
-            value={stepsJson}
-          />
-        </label>
-        <p className="editor-help">
-          Edit complete preset v1 step objects here. Use the arrows above to
-          change execution order.
-        </p>
-        {stepsError !== undefined && (
-          <p className="editor-error" role="alert">{stepsError}</p>
+        {validationIssues.some(
+          (issue) => !issue.path.startsWith("/automation/steps/")
+        ) && (
+          <div className="editor-error" role="alert">
+            {validationIssues
+              .filter((issue) => !issue.path.startsWith("/automation/steps/"))
+              .map((issue, index) => (
+                <p key={`${issue.path}-${issue.code}-${index}`}>
+                  <code>{issue.path}</code>: {issue.message}
+                </p>
+              ))}
+          </div>
         )}
       </fieldset>
 
@@ -484,56 +385,26 @@ function updateHumanDelay(
   }));
 }
 
-type ParsedSteps =
-  | { readonly ok: true; readonly value: unknown[] }
-  | { readonly ok: false; readonly message: string };
-
-function tryParseSteps(source: string): ParsedSteps {
-  try {
-    const value = JSON.parse(source) as unknown;
-    if (!Array.isArray(value)) {
-      return { ok: false, message: "Steps JSON must be an array." };
+function normalizeFields(fields: PresetEditableFields): PresetEditableFields {
+  return {
+    ...structuredClone(fields),
+    name: fields.name.trim(),
+    description: fields.description?.trim() ?? "",
+    site: {
+      ...fields.site,
+      hostname: fields.site.hostname.trim().toLowerCase()
     }
-    return { ok: true, value };
-  } catch {
-    return { ok: false, message: "Steps must contain valid JSON." };
-  }
+  };
 }
 
-function requireSteps(
-  source: string,
-  setError: (message: string | undefined) => void
-): unknown[] | undefined {
-  const parsed = tryParseSteps(source);
-  if (!parsed.ok) {
-    setError(parsed.message);
-    return undefined;
-  }
-  return parsed.value;
-}
-
-function formatSteps(steps: readonly unknown[]): string {
-  return JSON.stringify(steps, null, 2);
-}
-
-function summarizeStep(
-  value: unknown,
-  index: number
-): { id: string; name: string; type: string } {
-  if (typeof value !== "object" || value === null) {
-    return {
-      id: `invalid-${index}`,
-      name: `Invalid step ${index + 1}`,
-      type: "Invalid value"
-    };
-  }
-
-  const candidate = value as Record<string, unknown>;
-  const type = typeof candidate.type === "string" ? candidate.type : "Unknown";
-  const id = typeof candidate.id === "string" ? candidate.id : `step-${index}`;
-  const name =
-    typeof candidate.name === "string" && candidate.name.length > 0
-      ? candidate.name
-      : `Step ${index + 1}`;
-  return { id, name, type };
+export function validatePresetEditorFields(fields: PresetEditableFields): {
+  readonly fields: PresetEditableFields;
+  readonly issues: readonly PresetValidationIssue[];
+} {
+  const normalized = normalizeFields(fields);
+  const candidate = createPresetV1(normalized, {
+    createId: () => "00000000-0000-4000-8000-000000000001",
+    now: () => new Date("2026-01-01T00:00:00.000Z")
+  });
+  return { fields: normalized, issues: validatePreset(candidate) };
 }
