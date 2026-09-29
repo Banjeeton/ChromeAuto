@@ -5,8 +5,15 @@ export {
   type PresetListProps,
   type PresetListState
 } from "./PresetList";
-export { PresetEditor, validatePresetEditorFields } from "./PresetEditor";
-export { StructuredStepsEditor } from "./StructuredStepsEditor";
+export {
+  isPresetEditorDirty,
+  PresetEditor,
+  validatePresetEditorFields
+} from "./PresetEditor";
+export {
+  duplicateAutomationStep,
+  StructuredStepsEditor
+} from "./StructuredStepsEditor";
 export {
   PresetManagementPanel,
   PresetOverwriteConfirmation,

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
 import {
   createPresetV1,
@@ -9,7 +9,15 @@ import {
   type PresetValidationIssue
 } from "../../../core/domain/preset-validator";
 import type { SiteProtocol } from "../../../core/domain/site-binding";
-import { Alert, Button, Checkbox, Input, Textarea } from "../../components";
+import {
+  Alert,
+  Badge,
+  Button,
+  Checkbox,
+  ConfirmationDialog,
+  Input,
+  Textarea
+} from "../../components";
 import { StructuredStepsEditor } from "./StructuredStepsEditor";
 
 type PresetEditorProps = {
@@ -30,17 +38,19 @@ export function PresetEditor({
   onSave
 }: PresetEditorProps) {
   const [fields, setFields] = useState(() => structuredClone(initialFields));
-  const [validationIssues, setValidationIssues] =
-    useState<readonly PresetValidationIssue[]>([]);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const validation = useMemo(() => validatePresetEditorFields(fields), [fields]);
+  const dirty = isPresetEditorDirty(initialFields, fields);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const { fields: normalized, issues } = validatePresetEditorFields(fields);
-    setValidationIssues(issues);
-    if (issues.length > 0) {
-      return;
-    }
-    onSave(normalized);
+    if (validation.issues.length > 0) return;
+    onSave(validation.fields);
+  };
+
+  const requestCancel = () => {
+    if (dirty) setConfirmDiscard(true);
+    else onCancel();
   };
 
   const toggleProtocol = (protocol: SiteProtocol, checked: boolean) => {
@@ -68,19 +78,36 @@ export function PresetEditor({
           </p>
           <h3>{mode === "create" ? "Create preset" : fields.name}</h3>
         </div>
-        <Button
-          className="icon-button"
-          disabled={saving}
-          onClick={onCancel}
-          size="small"
-          variant="secondary"
-        >
-          Close
-        </Button>
+        <div className="editor-heading-actions">
+          <Badge tone={validation.issues.length === 0 ? "success" : "warning"}>
+            {validation.issues.length === 0
+              ? "Valid preset"
+              : `${validation.issues.length} ${validation.issues.length === 1 ? "issue" : "issues"}`}
+          </Badge>
+          <Button
+            className="icon-button"
+            disabled={saving}
+            onClick={requestCancel}
+            size="small"
+            variant="secondary"
+          >
+            Close
+          </Button>
+        </div>
       </div>
 
-      <fieldset className="editor-section">
+      <Alert
+        className="editor-validity"
+        tone={validation.issues.length === 0 ? "success" : "warning"}
+      >
+        {validation.issues.length === 0
+          ? "Preset is valid and ready to save."
+          : `Resolve ${validation.issues.length} validation ${validation.issues.length === 1 ? "issue" : "issues"} before saving.`}
+      </Alert>
+
+      <fieldset className="editor-section editor-section--metadata">
         <legend>Metadata</legend>
+        <p className="editor-section-description">Name and describe this automation.</p>
         <label className="editor-field">
           <span>Name</span>
           <Input
@@ -96,6 +123,7 @@ export function PresetEditor({
             required
             value={fields.name}
           />
+          <FieldIssues issues={validation.issues} path="/name" />
         </label>
         <label className="editor-field">
           <span>Description</span>
@@ -110,6 +138,7 @@ export function PresetEditor({
             rows={2}
             value={fields.description ?? ""}
           />
+          <FieldIssues issues={validation.issues} path="/description" />
         </label>
       </fieldset>
 
@@ -120,8 +149,9 @@ export function PresetEditor({
         </p>
       )}
 
-      <fieldset className="editor-section">
+      <fieldset className="editor-section editor-section--site">
         <legend>Site settings</legend>
+        <p className="editor-section-description">Choose the exact site and runtime behavior.</p>
         <label className="editor-field">
           <span>Hostname</span>
           <Input
@@ -137,6 +167,7 @@ export function PresetEditor({
             spellCheck={false}
             value={fields.site.hostname}
           />
+          <FieldIssues issues={validation.issues} path="/site/hostname" />
         </label>
 
         <div className="editor-check-row" aria-label="Allowed protocols">
@@ -149,6 +180,7 @@ export function PresetEditor({
             />
           ))}
         </div>
+        <FieldIssues issues={validation.issues} path="/site/protocols" />
 
         <div className="editor-check-row">
           <Checkbox
@@ -202,13 +234,19 @@ export function PresetEditor({
             type="number"
             value={fields.siteSettings.repeat.intervalMinutes}
           />
+          <FieldIssues
+            issues={validation.issues}
+            path="/siteSettings/repeat/intervalMinutes"
+          />
         </label>
       </fieldset>
 
-      <fieldset className="editor-section">
+      <fieldset className="editor-section editor-section--defaults">
         <legend>Automation defaults</legend>
+        <p className="editor-section-description">Set defaults inherited by individual steps.</p>
         <div className="editor-number-grid">
           <NumberField
+            issues={validation.issues}
             label="Step timeout, ms"
             min={1}
             onChange={(value) =>
@@ -220,9 +258,11 @@ export function PresetEditor({
                 }
               }))
             }
+            path="/automation/defaults/timeoutMs"
             value={fields.automation.defaults.timeoutMs}
           />
           <NumberField
+            issues={validation.issues}
             label="Post-action delay, ms"
             min={0}
             onChange={(value) =>
@@ -237,18 +277,23 @@ export function PresetEditor({
                 }
               }))
             }
+            path="/automation/defaults/postActionDelayMs"
             value={fields.automation.defaults.postActionDelayMs}
           />
           <NumberField
+            issues={validation.issues}
             label="Min typing delay, ms"
             min={0}
             onChange={(value) => updateHumanDelay(setFields, "minDelayMs", value)}
+            path="/automation/defaults/humanInput/minDelayMs"
             value={fields.automation.defaults.humanInput.minDelayMs}
           />
           <NumberField
+            issues={validation.issues}
             label="Max typing delay, ms"
             min={0}
             onChange={(value) => updateHumanDelay(setFields, "maxDelayMs", value)}
+            path="/automation/defaults/humanInput/maxDelayMs"
             value={fields.automation.defaults.humanInput.maxDelayMs}
           />
         </div>
@@ -275,34 +320,22 @@ export function PresetEditor({
         </div>
       </fieldset>
 
-      <fieldset className="editor-section">
+      <fieldset className="editor-section editor-section--steps">
         <legend>Step sequence</legend>
+        <p className="editor-section-description">Build the automation from structured actions.</p>
         <StructuredStepsEditor
           disabled={saving}
-          issues={validationIssues}
+          issues={validation.issues}
           onChange={(steps) => {
             setFields((current) => ({
               ...current,
               automation: { ...current.automation, steps }
             }));
-            setValidationIssues([]);
           }}
           steps={fields.automation.steps}
         />
 
-        {validationIssues.some(
-          (issue) => !issue.path.startsWith("/automation/steps/")
-        ) && (
-          <Alert className="editor-error" tone="error">
-            {validationIssues
-              .filter((issue) => !issue.path.startsWith("/automation/steps/"))
-              .map((issue, index) => (
-                <p key={`${issue.path}-${issue.code}-${index}`}>
-                  <code>{issue.path}</code>: {issue.message}
-                </p>
-              ))}
-          </Alert>
-        )}
+        <FieldIssues issues={validation.issues} path="/automation/steps" />
       </fieldset>
 
       {saveError !== undefined && (
@@ -313,12 +346,21 @@ export function PresetEditor({
         <Button
           className="action-button secondary"
           disabled={saving}
-          onClick={onCancel}
+          onClick={requestCancel}
           variant="secondary"
         >
           Cancel
         </Button>
-        <Button className="action-button" disabled={saving} type="submit">
+        <Button
+          className="action-button"
+          disabled={saving || validation.issues.length > 0}
+          title={
+            validation.issues.length > 0
+              ? "Resolve validation issues before saving"
+              : undefined
+          }
+          type="submit"
+        >
           {saving
             ? "Saving…"
             : mode === "create"
@@ -328,18 +370,30 @@ export function PresetEditor({
                 : "Save changes"}
         </Button>
       </div>
+
+      <ConfirmationDialog
+        confirmLabel="Discard changes"
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={onCancel}
+        open={confirmDiscard}
+        title="Discard unsaved changes?"
+      >
+        Your changes to this preset have not been saved and will be lost.
+      </ConfirmationDialog>
     </form>
   );
 }
 
 type NumberFieldProps = {
   readonly label: string;
+  readonly path: string;
+  readonly issues: readonly PresetValidationIssue[];
   readonly min: number;
   readonly value: number;
   readonly onChange: (value: number) => void;
 };
 
-function NumberField({ label, min, value, onChange }: NumberFieldProps) {
+function NumberField({ label, path, issues, min, value, onChange }: NumberFieldProps) {
   return (
     <label className="editor-field compact-field">
       <span>{label}</span>
@@ -350,8 +404,32 @@ function NumberField({ label, min, value, onChange }: NumberFieldProps) {
         type="number"
         value={value}
       />
+      <FieldIssues issues={issues} path={path} />
     </label>
   );
+}
+
+function FieldIssues({
+  issues,
+  path
+}: {
+  readonly issues: readonly PresetValidationIssue[];
+  readonly path: string;
+}) {
+  const matches = issues.filter((issue) => issue.path === path);
+  if (matches.length === 0) return null;
+  return (
+    <span className="field-error" data-error-path={path}>
+      {matches.map((issue) => issue.message).join(" ")}
+    </span>
+  );
+}
+
+export function isPresetEditorDirty(
+  initialFields: PresetEditableFields,
+  currentFields: PresetEditableFields
+): boolean {
+  return JSON.stringify(initialFields) !== JSON.stringify(currentFields);
 }
 
 function updateHumanDelay(
