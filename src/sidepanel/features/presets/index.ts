@@ -1,4 +1,10 @@
-export { PresetList, type PresetListState } from "./PresetList";
+export {
+  filterPresets,
+  PresetList,
+  type PresetFilter,
+  type PresetListProps,
+  type PresetListState
+} from "./PresetList";
 export { PresetEditor, validatePresetEditorFields } from "./PresetEditor";
 export { StructuredStepsEditor } from "./StructuredStepsEditor";
 export {

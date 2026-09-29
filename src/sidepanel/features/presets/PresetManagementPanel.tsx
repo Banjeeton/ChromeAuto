@@ -1,10 +1,14 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import type { PresetEditableFields } from "../../../core/application/preset-editor";
 import type { PresetV1 } from "../../../core/domain/preset";
-import { Alert, Button, Card, Confirmation, Input } from "../../components";
+import { Alert, Badge, Button, Card, Confirmation, Input } from "../../components";
 import { PresetEditor } from "./PresetEditor";
-import { PresetList, type PresetListState } from "./PresetList";
+import {
+  PresetList,
+  type PresetFilter,
+  type PresetListState
+} from "./PresetList";
 import type {
   PendingPresetImport,
   PresetEditorState
@@ -37,14 +41,48 @@ export interface PresetManagementPanelProps {
 
 export function PresetManagementPanel(props: PresetManagementPanelProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<PresetFilter>("all");
+  const presetCount =
+    props.listState.status === "ready" ? props.listState.presets.length : undefined;
+
   return (
-    <Card className="card" aria-labelledby="presets-title">
+    <Card className="card preset-library" aria-labelledby="presets-title">
       <div className="section-heading">
         <div>
           <p className="section-label">Automation library</p>
           <h2 id="presets-title">Saved presets</h2>
         </div>
-        <div className="header-actions">
+        {presetCount !== undefined && (
+          <Badge tone="info">
+            {presetCount} {presetCount === 1 ? "preset" : "presets"}
+          </Badge>
+        )}
+      </div>
+
+      <div className="preset-library-toolbar" aria-label="Preset library toolbar">
+        <Input
+          aria-label="Search presets"
+          onChange={(event) => setQuery(event.currentTarget.value)}
+          placeholder="Search by name or hostname"
+          type="search"
+          value={query}
+        />
+        <div className="preset-filter-group" aria-label="Filter presets" role="group">
+          {(["all", "enabled", "disabled"] as const).map((value) => (
+            <Button
+              aria-pressed={filter === value}
+              className={filter === value ? "active" : undefined}
+              key={value}
+              onClick={() => setFilter(value)}
+              size="small"
+              variant="secondary"
+            >
+              {value[0].toUpperCase() + value.slice(1)}
+            </Button>
+          ))}
+        </div>
+        <div className="preset-toolbar-actions">
           <Button className="icon-button" onClick={props.onRefresh} size="small" variant="secondary">
             Refresh
           </Button>
@@ -86,6 +124,7 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
         exportingPresetId={
           props.busyAction === "export-preset" ? props.selectedPresetId : undefined
         }
+        filter={filter}
         onEdit={props.onEdit}
         onDuplicate={props.onDuplicate}
         onExport={props.onExport}
@@ -94,6 +133,7 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
         onConfirmDelete={props.onConfirmDelete}
         onRetry={props.onRefresh}
         onSelect={props.onSelect}
+        query={query}
         selectedPresetId={props.selectedPresetId}
         state={props.listState}
       />
