@@ -350,6 +350,14 @@ function recorderEventLabel(kind: RecorderEvent["kind"]): string {
       return "Click";
     case "input":
       return "Input";
+    case "select":
+      return "Select";
+    case "check":
+      return "Check";
+    case "uncheck":
+      return "Uncheck";
+    case "pressKey":
+      return "Key press";
     case "reload":
       return "Reload";
     case "pageReady":
