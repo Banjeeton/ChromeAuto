@@ -1,15 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   PRESET_STORAGE_KEY,
   RECORDER_SESSION_STORAGE_KEY,
   REPEAT_CYCLE_STORAGE_KEY
 } from "../shared/constants";
-import {
-  AutomationSessionsPanel,
-  AutomationStatusPanel,
-  useAutomationController
-} from "./features/automation";
+import { useAutomationController } from "./features/automation";
+import { DashboardPanel } from "./features/dashboard";
 import {
   PresetManagementPanel,
   usePresetManagement
@@ -29,6 +26,7 @@ import type { ActiveTab } from "./types";
 
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>();
+  const activeTabIdRef = useRef<number | undefined>(undefined);
   const operation = useOperationState();
   const runLog = useRunLogController();
   const automation = useAutomationController({
@@ -42,7 +40,9 @@ function App() {
   });
 
   const refreshWorkspace = useCallback(
-    async (tabId: number) => {
+    async (_requestedTabId: number) => {
+      const tabId = activeTabIdRef.current;
+      if (tabId === undefined) return;
       await Promise.all([
         automation.refresh(tabId),
         recorder.refreshStatus(tabId),
@@ -65,12 +65,14 @@ function App() {
       currentWindow: true
     });
     if (tab?.id === undefined) {
+      activeTabIdRef.current = undefined;
       setActiveTab(undefined);
       automation.reset();
       recorder.reset();
       return;
     }
 
+    activeTabIdRef.current = tab.id;
     setActiveTab({
       id: tab.id,
       title: tab.title ?? `Tab #${tab.id}`,
@@ -204,18 +206,24 @@ function App() {
     }
   };
 
+  const currentManualStatus =
+    automation.manualStatus?.tabId === activeTab?.id
+      ? automation.manualStatus
+      : undefined;
+  const currentRecorderStatus =
+    recorder.status?.tabId === activeTab?.id ? recorder.status : undefined;
   const recorderIsActive =
-    recorder.status?.state === "recording" ||
-    recorder.status?.state === "stopping";
+    currentRecorderStatus?.state === "recording" ||
+    currentRecorderStatus?.state === "stopping";
   const canRun =
-    automation.manualStatus?.state === "ready" &&
+    currentManualStatus?.state === "ready" &&
     !recorderIsActive &&
     operation.busyAction === undefined;
   const currentTabHasActiveCycle =
-    automation.manualStatus?.state === "running" ||
-    automation.manualStatus?.state === "waiting";
+    currentManualStatus?.state === "running" ||
+    currentManualStatus?.state === "waiting";
   const canRecord =
-    recorder.status?.canRecord === true &&
+    currentRecorderStatus?.canRecord === true &&
     !currentTabHasActiveCycle &&
     operation.busyAction === undefined;
 
@@ -230,13 +238,13 @@ function App() {
           <span className="status-dot" title="Extension is running" />
         </header>
 
-        <AutomationStatusPanel
+        <DashboardPanel
           activeTab={activeTab}
           busyAction={operation.busyAction}
           canRecord={canRecord}
           canRun={canRun}
           currentTabHasActiveCycle={currentTabHasActiveCycle}
-          manualStatus={automation.manualStatus}
+          manualStatus={currentManualStatus}
           onRecord={startRecording}
           onRefresh={() =>
             void refreshActiveTab().catch((error: unknown) => {
@@ -245,8 +253,13 @@ function App() {
           }
           onRun={runAutomation}
           onStop={stopAutomation}
+          onStopAll={() =>
+            void automation.stopAll(activeTab, refreshWorkspace)
+          }
           onStopRecording={stopRecording}
-          recorderStatus={recorder.status}
+          repeatCycles={automation.repeatCycles}
+          recorderStatus={currentRecorderStatus}
+          sessions={automation.sessions}
         />
 
         <RecordedDraftPanel
@@ -269,7 +282,7 @@ function App() {
               void recorder.saveDraft(activeTab, steps, refreshWorkspace);
             }
           }}
-          status={recorder.status}
+          status={currentRecorderStatus}
         />
 
         <PresetManagementPanel
@@ -297,15 +310,6 @@ function App() {
           pendingImport={presets.pendingImport}
           saveError={presets.saveError}
           selectedPresetId={presets.selectedPresetId}
-        />
-
-        <AutomationSessionsPanel
-          busyAction={operation.busyAction}
-          onStopAll={() =>
-            void automation.stopAll(activeTab, refreshWorkspace)
-          }
-          repeatCycles={automation.repeatCycles}
-          sessions={automation.sessions}
         />
 
         <RunLogPanel

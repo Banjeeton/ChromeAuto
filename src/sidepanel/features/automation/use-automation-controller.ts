@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { ManualRunStatus } from "../../../core/application/manual-run-controller";
 import type { RepeatCycleStatusView } from "../../../core/application/repeat-cycle-status-controller";
@@ -30,8 +30,10 @@ export function useAutomationController({
   const [sessions, setSessions] = useState<readonly RunSession[]>([]);
   const [repeatCycles, setRepeatCycles] =
     useState<readonly RepeatCycleStatusView[]>([]);
+  const refreshRequestId = useRef(0);
 
   const refresh = useCallback(async (tabId: number) => {
+    const requestId = ++refreshRequestId.current;
     const [statusResponse, sessionsResponse, repeatResponse] = await Promise.all([
       sendRuntimeMessage({
         type: AUTOMATION_RUNTIME_MESSAGE,
@@ -59,12 +61,14 @@ export function useAutomationController({
     if (repeatResponse.result.kind !== "repeat-statuses") {
       throw new Error("The extension returned an unexpected repeat response.");
     }
+    if (requestId !== refreshRequestId.current) return;
     setManualStatus(statusResponse.result.status);
     setSessions(sessionsResponse.result.sessions);
     setRepeatCycles(repeatResponse.result.statuses);
   }, []);
 
   const reset = useCallback(() => {
+    refreshRequestId.current += 1;
     setManualStatus(undefined);
     setSessions([]);
     setRepeatCycles([]);

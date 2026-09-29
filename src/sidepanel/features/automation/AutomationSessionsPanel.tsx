@@ -7,13 +7,15 @@ export interface AutomationSessionsPanelProps {
   readonly repeatCycles: readonly RepeatCycleStatusView[];
   readonly sessions: readonly RunSession[];
   readonly onStopAll: () => void;
+  readonly showStopAll?: boolean;
 }
 
 export function AutomationSessionsPanel({
   busyAction,
   repeatCycles,
   sessions,
-  onStopAll
+  onStopAll,
+  showStopAll = true
 }: AutomationSessionsPanelProps) {
   return (
     <Card className="card" aria-labelledby="sessions-title">
@@ -22,15 +24,17 @@ export function AutomationSessionsPanel({
           <p className="section-label">Independent tabs</p>
           <h2 id="sessions-title">Automation status</h2>
         </div>
-        <Button
-          className="icon-button danger-text"
-          disabled={busyAction === "stop-all"}
-          onClick={onStopAll}
-          size="small"
-          variant="danger"
-        >
-          Stop All
-        </Button>
+        {showStopAll && (
+          <Button
+            className="icon-button danger-text"
+            disabled={busyAction === "stop-all"}
+            onClick={onStopAll}
+            size="small"
+            variant="danger"
+          >
+            Stop All
+          </Button>
+        )}
       </div>
 
       {sessions.length === 0 && repeatCycles.length === 0 ? (

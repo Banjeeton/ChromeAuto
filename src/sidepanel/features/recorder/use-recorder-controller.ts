@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { RecorderDraftView } from "../../../core/application/recorder-draft-controller";
 import type { RecorderPanelStatus } from "../../../core/application/recorder-panel-controller";
@@ -46,8 +46,11 @@ export function useRecorderController({
   const [draftError, setDraftError] = useState<string>();
   const [pendingConflict, setPendingConflict] =
     useState<PendingRecordedPresetConflict>();
+  const statusRequestId = useRef(0);
+  const draftRequestId = useRef(0);
 
   const refreshStatus = useCallback(async (tabId: number) => {
+    const requestId = ++statusRequestId.current;
     const response = await sendRuntimeMessage({
       type: AUTOMATION_RUNTIME_MESSAGE,
       action: "recorder-status",
@@ -57,10 +60,13 @@ export function useRecorderController({
     if (response.result.kind !== "recorder-status") {
       throw new Error("The extension returned an unexpected recorder response.");
     }
+    if (requestId !== statusRequestId.current) return;
     setStatus(response.result.status);
   }, []);
 
   const reset = useCallback(() => {
+    statusRequestId.current += 1;
+    draftRequestId.current += 1;
     setStatus(undefined);
     setDraft(undefined);
     setDraftError(undefined);
@@ -69,6 +75,7 @@ export function useRecorderController({
   }, []);
 
   const loadDraft = useCallback(async (tabId: number) => {
+    const requestId = ++draftRequestId.current;
     setDraftLoading(true);
     setDraftError(undefined);
     try {
@@ -81,16 +88,21 @@ export function useRecorderController({
       if (response.result.kind !== "recorder-draft") {
         throw new Error("The extension returned an unexpected draft response.");
       }
+      if (requestId !== draftRequestId.current) return;
       setDraft(response.result.draft);
     } catch (error) {
+      if (requestId !== draftRequestId.current) return;
       setDraftError(`Unable to load recorded steps: ${errorMessage(error)}`);
     } finally {
-      setDraftLoading(false);
+      if (requestId === draftRequestId.current) setDraftLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const editable = status?.state === "stopped" || status?.state === "failed";
+    const editable =
+      activeTab !== undefined &&
+      status?.tabId === activeTab.id &&
+      (status.state === "stopped" || status.state === "failed");
     if (!editable || activeTab === undefined) {
       setDraft(undefined);
       setDraftError(undefined);
