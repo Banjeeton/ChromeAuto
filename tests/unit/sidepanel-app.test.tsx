@@ -14,6 +14,9 @@ describe("side panel React entry", () => {
 
     expect(html).toContain("Automation Runner");
     expect(html).toContain("Run automation");
+    expect(html).toContain(">Record<");
+    expect(html).toContain("Stop recording");
+    expect(html).toContain("Checking recorder state");
     expect(html).toContain("Current site");
     expect(html).toContain("Saved presets");
     expect(html).toContain("Loading presets…");

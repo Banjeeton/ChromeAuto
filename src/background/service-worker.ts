@@ -4,15 +4,20 @@ import {
   parseCycleAlarmName
 } from "../adapters/chrome/alarm-scheduler";
 import { ChromeTabUrlProvider } from "../adapters/chrome/tab-url-provider";
+import { ChromeRecorderContentBridge } from "../adapters/chrome/recorder-content-bridge";
+import { ChromeRecorderDocumentProvider } from "../adapters/chrome/recorder-document-provider";
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { InMemoryRepeatCycleLog } from "../adapters/logging/in-memory-repeat-cycle-log";
+import { InMemoryRecorderLog } from "../adapters/logging/in-memory-recorder-log";
 import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
+import { ChromeRecorderSessionRegistry } from "../adapters/storage/chrome-recorder-session-registry";
 import {
   exportPresetJson,
   importPresetJsonSafely
 } from "../adapters/storage/preset-import-export";
 import { AutomationRunner } from "../core/application/automation-runner";
+import { AutomationRecorder } from "../core/application/automation-recorder";
 import { ManualRunController } from "../core/application/manual-run-controller";
 import { RepeatCycleController } from "../core/application/repeat-cycle-controller";
 import { RepeatCycleStatusController } from "../core/application/repeat-cycle-status-controller";
@@ -23,6 +28,11 @@ import {
   PresetEditorController
 } from "../core/application/preset-editor";
 import { AutomationRuntimeController } from "../core/application/automation-runtime-controller";
+import { RecordedStepMapper } from "../core/application/recorded-step-mapper";
+import { RecorderNavigationController } from "../core/application/recorder-navigation-controller";
+import { RecorderPanelController } from "../core/application/recorder-panel-controller";
+import { RecorderDraftController } from "../core/application/recorder-draft-controller";
+import { RecordedPresetController } from "../core/application/recorded-preset-controller";
 import { TabSessionManager } from "../core/application/tab-session-manager";
 import {
   AUTOMATION_RUNTIME_MESSAGE,
@@ -37,13 +47,30 @@ import {
   type PlaywrightSpikeResult
 } from "../shared/types/playwright-crx-spike";
 import { createBackgroundMessageListener } from "./message-router";
+import {
+  type RecorderDiagnosticMessage,
+  type RecorderDiagnosticReceivedResult,
+  type RecorderEventMessage,
+  type RecorderEventReceivedResult,
+  isRecorderDiagnosticMessage,
+  isRecorderEventMessage
+} from "../shared/types/recorder-runtime";
 
 const playwrightEngine = new PlaywrightEngine();
 const tabSessionManager = new TabSessionManager(playwrightEngine);
 const executionLog = new InMemoryExecutionLog();
 const repeatCycleLog = new InMemoryRepeatCycleLog();
+const recorderLog = new InMemoryRecorderLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
 const presetEditorController = new PresetEditorController(presetRepository);
+const recorderSessionRegistry = new ChromeRecorderSessionRegistry();
+const recorderContentBridge = new ChromeRecorderContentBridge();
+const recorderNavigationController = new RecorderNavigationController(
+  recorderSessionRegistry,
+  new RecordedStepMapper(),
+  recorderContentBridge,
+  { log: recorderLog }
+);
 const automationRunner = new AutomationRunner(
   playwrightEngine,
   tabSessionManager,
@@ -51,6 +78,32 @@ const automationRunner = new AutomationRunner(
 );
 const cycleScheduler = new ChromeAlarmScheduler();
 const repeatCycleRegistry = new ChromeRepeatCycleRegistry();
+const automationRecorder = new AutomationRecorder(
+  recorderSessionRegistry,
+  recorderContentBridge,
+  new ChromeRecorderDocumentProvider(),
+  {
+    isAutomationActive: async (tabId) => {
+      if (tabSessionManager.getByTabId(tabId) !== undefined) {
+        return true;
+      }
+      const cycle = await repeatCycleRegistry.getByTabId(tabId);
+      return cycle?.state === "running" || cycle?.state === "waiting";
+    }
+  },
+  { log: recorderLog }
+);
+const recorderPanelController = new RecorderPanelController(
+  automationRecorder,
+  recorderSessionRegistry
+);
+const recorderDraftController = new RecorderDraftController(
+  recorderSessionRegistry
+);
+const recordedPresetController = new RecordedPresetController(
+  recorderSessionRegistry,
+  presetRepository
+);
 const repeatCycleController = new RepeatCycleController(
   automationRunner,
   cycleScheduler,
@@ -77,7 +130,8 @@ const manualRunController = new ManualRunController(
   automationRunner,
   tabSessionManager,
   repeatCycleController,
-  repeatCycleRegistry
+  repeatCycleRegistry,
+  recorderSessionRegistry
 );
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -120,9 +174,51 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  void stopCycleForRemovedTab(tabId).catch((error: unknown) => {
-    console.error(`Unable to clean up repeat cycle for tab ${tabId}.`, error);
+  void Promise.all([
+    stopCycleForRemovedTab(tabId),
+    recorderNavigationController.handleTabRemoved(tabId)
+  ]).catch((error: unknown) => {
+    console.error(`Unable to clean up tab ${tabId} runtime state.`, error);
   });
+});
+
+chrome.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId !== 0) {
+    return;
+  }
+  void recorderNavigationController
+    .handleNavigationCommitted({
+      tabId: details.tabId,
+      url: details.url,
+      documentId: details.documentId,
+      navigationId: details.documentId,
+      transitionType: details.transitionType
+    })
+    .catch((error: unknown) => {
+      console.error(
+        `Unable to process recorder navigation in tab ${details.tabId}.`,
+        error
+      );
+    });
+});
+
+chrome.webNavigation.onDOMContentLoaded.addListener((details) => {
+  if (details.frameId !== 0) {
+    return;
+  }
+  void recorderNavigationController
+    .handlePageReady({
+      tabId: details.tabId,
+      url: details.url,
+      documentId: details.documentId,
+      navigationId: details.documentId
+    })
+    .catch((error: unknown) => {
+      console.error(
+        `Unable to restore recorder capture in tab ${details.tabId}.`,
+        error
+      );
+    });
 });
 
 // Top-level recovery runs whenever Manifest V3 recreates this service worker.
@@ -135,6 +231,24 @@ void repeatCycleRecoveryController.recover().catch((error: unknown) => {
 
 chrome.runtime.onMessage.addListener(
   createBackgroundMessageListener([
+    {
+      matches: isRecorderDiagnosticMessage,
+      handle: async (message) =>
+        handleRecorderDiagnosticMessage(message as RecorderDiagnosticMessage),
+      createErrorResponse: (error) => ({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    },
+    {
+      matches: isRecorderEventMessage,
+      handle: async (message) =>
+        handleRecorderEventMessage(message as RecorderEventMessage),
+      createErrorResponse: (error) => ({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    },
     {
       matches: isPlaywrightSpikeMessage,
       handle: (message) =>
@@ -164,6 +278,50 @@ chrome.runtime.onMessage.addListener(
     }
   ])
 );
+
+async function handleRecorderEventMessage(
+  message: RecorderEventMessage
+): Promise<RecorderEventReceivedResult> {
+  await recorderNavigationController.record(message.event);
+  return {
+    kind: "recorder-event-received",
+    eventId: message.event.eventId
+  };
+}
+
+async function handleRecorderDiagnosticMessage(
+  message: RecorderDiagnosticMessage
+): Promise<RecorderDiagnosticReceivedResult> {
+  const details = message.details === undefined
+    ? {
+        name: "RecorderContentError",
+        message: message.message
+      }
+    : {
+        name: "RecorderContentError",
+        message: message.message,
+        stack: message.details
+      };
+  await recorderLog.append({
+    id: crypto.randomUUID(),
+    recordedAt: new Date().toISOString(),
+    tabId: message.tabId,
+    ...(message.sessionId === undefined
+      ? {}
+      : { sessionId: message.sessionId }),
+    event: "failed",
+    action: message.action.replaceAll("-", " "),
+    message: message.message,
+    ...(message.eventId === undefined
+      ? {}
+      : { recorderEventId: message.eventId }),
+    ...(message.eventKind === undefined
+      ? {}
+      : { recorderEventKind: message.eventKind }),
+    details
+  });
+  return { kind: "recorder-diagnostic-received" };
+}
 
 function isAutomationRuntimeMessage(
   message: unknown
@@ -221,12 +379,58 @@ function isAutomationRuntimeMessage(
     );
   }
 
+  if (candidate.action === "save-recorder-draft") {
+    return (
+      "tabId" in candidate &&
+      typeof candidate.tabId === "number" &&
+      "sessionId" in candidate &&
+      typeof candidate.sessionId === "string" &&
+      "steps" in candidate &&
+      Array.isArray(candidate.steps)
+    );
+  }
+
+  if (candidate.action === "discard-recorder-draft") {
+    return (
+      "tabId" in candidate &&
+      typeof candidate.tabId === "number" &&
+      "sessionId" in candidate &&
+      typeof candidate.sessionId === "string"
+    );
+  }
+
+  if (candidate.action === "save-recorded-preset") {
+    return (
+      "tabId" in candidate &&
+      typeof candidate.tabId === "number" &&
+      "sessionId" in candidate &&
+      typeof candidate.sessionId === "string" &&
+      "name" in candidate &&
+      typeof candidate.name === "string" &&
+      (!("description" in candidate) ||
+        candidate.description === undefined ||
+        typeof candidate.description === "string") &&
+      "steps" in candidate &&
+      Array.isArray(candidate.steps) &&
+      (!("confirmedActivePresetIds" in candidate) ||
+        candidate.confirmedActivePresetIds === undefined ||
+        (Array.isArray(candidate.confirmedActivePresetIds) &&
+          candidate.confirmedActivePresetIds.every(
+            (id) => typeof id === "string"
+          )))
+    );
+  }
+
   return (
     (candidate.action === "manual-status" ||
       candidate.action === "run" ||
       candidate.action === "stop" ||
       candidate.action === "logs" ||
-      candidate.action === "clear-logs") &&
+      candidate.action === "clear-logs" ||
+      candidate.action === "recorder-status" ||
+      candidate.action === "record" ||
+      candidate.action === "stop-recording" ||
+      candidate.action === "recorder-draft") &&
     "tabId" in candidate &&
     typeof candidate.tabId === "number"
   );
@@ -243,6 +447,51 @@ async function handleAutomationRuntimeMessage(
         status: await manualRunController.status(message.tabId, tabUrl)
       };
     }
+    case "recorder-status": {
+      const tabUrl = await getTabUrl(message.tabId);
+      return {
+        kind: "recorder-status",
+        status: await recorderPanelController.status(message.tabId, tabUrl)
+      };
+    }
+    case "record": {
+      const tabUrl = await getTabUrl(message.tabId);
+      return {
+        kind: "recorder-status",
+        status: await recorderPanelController.start(message.tabId, tabUrl)
+      };
+    }
+    case "stop-recording": {
+      const tabUrl = await getTabUrl(message.tabId);
+      return {
+        kind: "recorder-status",
+        status: await recorderPanelController.stop(message.tabId, tabUrl)
+      };
+    }
+    case "recorder-draft":
+      return {
+        kind: "recorder-draft",
+        draft: await recorderDraftController.get(message.tabId)
+      };
+    case "save-recorder-draft":
+      return {
+        kind: "recorder-draft",
+        draft: await recorderDraftController.save(message)
+      };
+    case "discard-recorder-draft":
+      return {
+        kind: "recorder-draft-discarded",
+        tabId: message.tabId,
+        discarded: await recorderDraftController.discard(
+          message.tabId,
+          message.sessionId
+        )
+      };
+    case "save-recorded-preset":
+      return {
+        kind: "recorded-preset-save",
+        result: await recordedPresetController.save(message)
+      };
     case "run": {
       const tabUrl = await getTabUrl(message.tabId);
       return {
@@ -316,12 +565,14 @@ async function handleAutomationRuntimeMessage(
       return {
         kind: "logs",
         entries: await executionLog.list({ tabId: message.tabId }),
-        cycleEntries: await repeatCycleLog.list()
+        cycleEntries: await repeatCycleLog.list(),
+        recorderEntries: await recorderLog.list()
       };
     case "clear-logs":
       await Promise.all([
         executionLog.clear({ tabId: message.tabId }),
-        repeatCycleLog.clear()
+        repeatCycleLog.clear(),
+        recorderLog.clear()
       ]);
       return { kind: "clear-logs" };
   }

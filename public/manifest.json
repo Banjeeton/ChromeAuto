@@ -4,11 +4,33 @@
   "description": "Record, edit and run website automations in current Chrome tabs.",
   "version": "0.1.0",
   "minimum_chrome_version": "118",
-  "permissions": ["alarms", "debugger", "sidePanel", "storage", "tabs"],
+  "permissions": [
+    "alarms",
+    "debugger",
+    "scripting",
+    "sidePanel",
+    "storage",
+    "tabs",
+    "webNavigation"
+  ],
+  "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content/content-script-loader.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content/content-script.js", "assets/*"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
   "action": {
     "default_title": "Open Chrome Automation"
   },

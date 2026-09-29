@@ -43,6 +43,15 @@
           <strong data-spike-tab-token>—</strong>
         </div>
       </div>
+      <label>
+        Recorder text
+        <input data-recorder-main-input autocomplete="off" placeholder="Recorder text" />
+      </label>
+      <p>
+        Recorded action count:
+        <strong data-recorder-action-count>0</strong>
+      </p>
+      <button data-recorder-action type="button">Record test action</button>
       <button data-spike-open-modal type="button">Open HTML modal</button>
     </main>
 
@@ -64,6 +73,12 @@
       sessionStorage.setItem(reloadKey, String(count));
       document.querySelector("[data-spike-reload-count]").textContent = String(count);
       document.querySelector("[data-spike-tab-token]").textContent = Math.random().toString(36).slice(2, 7).toUpperCase();
+
+      let recordedActionCount = 0;
+      document.querySelector("[data-recorder-action]").addEventListener("click", () => {
+        recordedActionCount += 1;
+        document.querySelector("[data-recorder-action-count]").textContent = String(recordedActionCount);
+      });
 
       const modal = document.querySelector("[data-spike-modal]");
       document.querySelector("[data-spike-open-modal]").addEventListener("click", () => {

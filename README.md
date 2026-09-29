@@ -46,3 +46,4 @@ Individual checks are available through `npm run typecheck` and `npm test`.
 ## Quality assurance
 
 - [Preset Management MVP manual regression checklist](docs/preset-management-regression.md)
+- [Automation Recorder MVP manual regression checklist](docs/automation-recorder-regression.md)

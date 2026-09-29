@@ -146,6 +146,67 @@ h2 {
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
 }
 
+.recorder-controls {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #29343e;
+}
+
+.recorder-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #8795a2;
+  font-size: 11px;
+}
+
+.recorder-summary > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #dce4eb;
+}
+
+.recorder-summary > span:last-child {
+  text-align: right;
+}
+
+.recorder-state {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #66727e;
+}
+
+.recorder-state.recording {
+  background: #ff6767;
+  box-shadow: 0 0 0 4px rgb(255 103 103 / 12%);
+  animation: recorder-pulse 1.5s ease-in-out infinite;
+}
+
+.recorder-state.stopping {
+  background: #e7c676;
+}
+
+.recorder-state.failed {
+  background: #ff8d8d;
+}
+
+.recorder-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.action-button.record-button {
+  color: #fff3f3;
+  background: #b94349;
+}
+
+.action-button.record-button:not(:disabled):hover {
+  background: #ce5359;
+}
+
 .target-heading {
   min-width: 0;
 }
@@ -549,7 +610,8 @@ button:disabled {
 
 .editor-field input,
 .editor-field textarea,
-.step-toolbar select {
+.step-toolbar select,
+.editor-check-row select {
   width: 100%;
   border: 1px solid #34414d;
   border-radius: 8px;
@@ -558,7 +620,8 @@ button:disabled {
 }
 
 .editor-field input,
-.step-toolbar select {
+.step-toolbar select,
+.editor-check-row select {
   min-height: 36px;
   padding: 7px 9px;
 }
@@ -571,7 +634,8 @@ button:disabled {
 
 .editor-field input:focus,
 .editor-field textarea:focus,
-.step-toolbar select:focus {
+.step-toolbar select:focus,
+.editor-check-row select:focus {
   border-color: #58afc0;
   outline: 2px solid rgb(105 208 226 / 12%);
 }
@@ -688,6 +752,126 @@ button:disabled {
   line-height: 1.45;
 }
 
+.recorded-steps-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.recorded-step-count {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #a9dfe8;
+  background: #173039;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.recorder-step-toolbar {
+  margin-top: 0;
+}
+
+.recorded-step-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recorded-step-card {
+  display: grid;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid #2d3944;
+  border-radius: 10px;
+  background: #10161b;
+}
+
+.recorded-step-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.recorded-step-header > span {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 6px;
+  color: #8ddbea;
+  background: #193039;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.recorded-step-header > strong {
+  color: #dbe4eb;
+  font-size: 12px;
+}
+
+.recorded-step-header > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #95a3af;
+  font-size: 10px;
+}
+
+.recorded-step-header input,
+.recorded-step-card .editor-check-row input {
+  accent-color: #69d0e2;
+}
+
+.locator-editor {
+  min-height: 120px;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  tab-size: 2;
+}
+
+.field-error {
+  color: #f2a9ad;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.recorded-code-editor {
+  min-height: 150px;
+}
+
+.recorded-step-actions {
+  justify-content: flex-end;
+}
+
+.recorded-step-actions button {
+  min-width: auto;
+}
+
+.recorded-steps-editor .editor-error p {
+  margin: 0;
+}
+
+.recorded-steps-editor .editor-error p + p {
+  margin-top: 5px;
+}
+
+.recorder-discard-confirmation {
+  margin-top: 0;
+}
+
+.recorded-editor-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 2px;
+}
+
+.create-recorded-preset-button {
+  color: #061013;
+  background: #69d0e2;
+}
+
 .editor-help {
   color: #75838f;
 }
@@ -710,6 +894,12 @@ button:disabled {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes recorder-pulse {
+  50% {
+    opacity: 0.55;
   }
 }
 
@@ -850,6 +1040,7 @@ button:disabled {
 
   .editor-number-grid,
   .editor-actions,
+  .recorded-editor-actions,
   .preset-management-actions {
     grid-template-columns: 1fr;
   }

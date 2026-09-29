@@ -163,6 +163,40 @@ describe("Chrome storage adapter", () => {
     ]);
   });
 
+  it("atomically replaces an active hostname assignment after confirmation", async () => {
+    const storage = new MemoryChromeStorage();
+    const repository = new ChromePresetRepository(storage);
+    const current = createPreset();
+    const replacement = createPreset({
+      id: SECOND_PRESET_ID,
+      name: "Recorded replacement",
+      createdAt: "2026-09-29T12:00:00.000Z",
+      updatedAt: "2026-09-29T12:00:00.000Z"
+    });
+    await repository.save(current);
+    const writesBeforeReplacement = storage.setCalls;
+
+    await expect(
+      repository.saveReplacingActiveHostname(replacement, ["stale-id"])
+    ).rejects.toBeInstanceOf(PresetRepositoryConflictError);
+    await expect(repository.list()).resolves.toEqual([current]);
+
+    await repository.saveReplacingActiveHostname(replacement, [PRESET_ID]);
+
+    expect(storage.setCalls).toBe(writesBeforeReplacement + 1);
+    await expect(repository.list()).resolves.toEqual([
+      expect.objectContaining({
+        id: PRESET_ID,
+        siteSettings: expect.objectContaining({ enabled: false })
+      }),
+      expect.objectContaining({
+        id: SECOND_PRESET_ID,
+        name: "Recorded replacement",
+        siteSettings: expect.objectContaining({ enabled: true })
+      })
+    ]);
+  });
+
   it("allows active presets for exact but different hostnames", async () => {
     const repository = new ChromePresetRepository(new MemoryChromeStorage());
     await Promise.all([
@@ -275,6 +309,7 @@ describe("Chrome storage adapter", () => {
 
 class MemoryChromeStorage implements ChromeStorageArea {
   readonly values: Record<string, unknown> = {};
+  setCalls = 0;
   getError?: Error;
   setError?: Error;
 
@@ -289,6 +324,7 @@ class MemoryChromeStorage implements ChromeStorageArea {
     if (this.setError !== undefined) {
       throw this.setError;
     }
+    this.setCalls += 1;
     Object.assign(this.values, structuredClone(items));
   }
 }

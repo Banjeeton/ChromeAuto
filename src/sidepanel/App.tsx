@@ -11,9 +11,14 @@ import type { PresetV1 } from "../core/domain/preset";
 import type { RunSession } from "../core/domain/run-session";
 import type { StepLogEntry } from "../core/domain/step-log-entry";
 import type { RepeatCycleLogEntry } from "../core/domain/repeat-cycle-log-entry";
+import type { RecorderLogEntry } from "../core/domain/recorder-log-entry";
 import type { RepeatCycleStatusView } from "../core/application/repeat-cycle-status-controller";
+import type { RecorderPanelStatus } from "../core/application/recorder-panel-controller";
+import type { RecorderDraftView } from "../core/application/recorder-draft-controller";
+import type { AutomationStep } from "../core/domain/automation-step";
 import {
   PRESET_STORAGE_KEY,
+  RECORDER_SESSION_STORAGE_KEY,
   REPEAT_CYCLE_STORAGE_KEY
 } from "../shared/constants";
 import {
@@ -28,6 +33,10 @@ import {
   PresetList,
   type PresetListState
 } from "./features/presets";
+import {
+  RecordedStepsEditor,
+  type RecordedPresetFields
+} from "./features/recorder";
 
 type ActiveTab = {
   id: number;
@@ -55,15 +64,29 @@ type PresetEditorState = {
   readonly fields: PresetEditableFields;
 };
 
+type PendingRecordedPresetConflict = {
+  readonly fields: RecordedPresetFields;
+  readonly hostname: string;
+  readonly activePresets: readonly { readonly id: string; readonly name: string }[];
+};
+
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>();
   const [manualStatus, setManualStatus] = useState<ManualRunStatus>();
+  const [recorderStatus, setRecorderStatus] = useState<RecorderPanelStatus>();
+  const [recorderDraft, setRecorderDraft] = useState<RecorderDraftView>();
+  const [recorderDraftLoading, setRecorderDraftLoading] = useState(false);
+  const [recorderDraftError, setRecorderDraftError] = useState<string>();
+  const [pendingRecordedPresetConflict, setPendingRecordedPresetConflict] =
+    useState<PendingRecordedPresetConflict>();
   const [sessions, setSessions] = useState<readonly RunSession[]>([]);
   const [repeatCycles, setRepeatCycles] =
     useState<readonly RepeatCycleStatusView[]>([]);
   const [stepLogs, setStepLogs] = useState<readonly StepLogEntry[]>([]);
   const [cycleLogs, setCycleLogs] =
     useState<readonly RepeatCycleLogEntry[]>([]);
+  const [recorderLogs, setRecorderLogs] =
+    useState<readonly RecorderLogEntry[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [busyAction, setBusyAction] = useState<string>();
   const [presetListState, setPresetListState] = useState<PresetListState>({
@@ -97,11 +120,22 @@ function App() {
   );
 
   const refreshWorkspace = useCallback(async (tabId: number) => {
-    const [statusResponse, sessionsResponse, repeatResponse, logsResponse] =
+    const [
+      statusResponse,
+      recorderResponse,
+      sessionsResponse,
+      repeatResponse,
+      logsResponse
+    ] =
       await Promise.all([
         sendRuntimeMessage({
           type: AUTOMATION_RUNTIME_MESSAGE,
           action: "manual-status",
+          tabId
+        }),
+        sendRuntimeMessage({
+          type: AUTOMATION_RUNTIME_MESSAGE,
+          action: "recorder-status",
           tabId
         }),
         sendRuntimeMessage({
@@ -122,6 +156,9 @@ function App() {
     if (!statusResponse.ok) {
       throw runtimeResponseError(statusResponse);
     }
+    if (!recorderResponse.ok) {
+      throw runtimeResponseError(recorderResponse);
+    }
     if (!sessionsResponse.ok) {
       throw runtimeResponseError(sessionsResponse);
     }
@@ -134,6 +171,9 @@ function App() {
     if (statusResponse.result.kind === "manual-status") {
       setManualStatus(statusResponse.result.status);
     }
+    if (recorderResponse.result.kind === "recorder-status") {
+      setRecorderStatus(recorderResponse.result.status);
+    }
     if (sessionsResponse.result.kind === "sessions") {
       setSessions(sessionsResponse.result.sessions);
     }
@@ -143,6 +183,7 @@ function App() {
     if (logsResponse.result.kind === "logs") {
       setStepLogs(logsResponse.result.entries);
       setCycleLogs(logsResponse.result.cycleEntries);
+      setRecorderLogs(logsResponse.result.recorderEntries);
     }
   }, []);
 
@@ -192,6 +233,7 @@ function App() {
     if (tab?.id === undefined) {
       setActiveTab(undefined);
       setManualStatus(undefined);
+      setRecorderStatus(undefined);
       return;
     }
 
@@ -202,6 +244,29 @@ function App() {
     });
     await refreshWorkspace(tab.id);
   }, [refreshWorkspace]);
+
+  const loadRecorderDraft = useCallback(async (tabId: number) => {
+    setRecorderDraftLoading(true);
+    setRecorderDraftError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "recorder-draft",
+        tabId
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorder-draft") {
+        throw new Error("The extension returned an unexpected draft response.");
+      }
+      setRecorderDraft(response.result.draft);
+    } catch (error) {
+      setRecorderDraftError(`Unable to load recorded steps: ${errorMessage(error)}`);
+    } finally {
+      setRecorderDraftLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void refreshActiveTab().catch((error: unknown) => {
@@ -263,12 +328,13 @@ function App() {
         });
       } else if (
         areaName === "session" &&
-        REPEAT_CYCLE_STORAGE_KEY in changes
+        (REPEAT_CYCLE_STORAGE_KEY in changes ||
+          RECORDER_SESSION_STORAGE_KEY in changes)
       ) {
         void refreshActiveTab().catch((error: unknown) => {
           addNotice(
             "error",
-            `Unable to refresh repeat-cycle status: ${errorMessage(error)}`,
+            `Unable to refresh runtime status: ${errorMessage(error)}`,
             errorTechnicalDetails(error)
           );
         });
@@ -281,6 +347,50 @@ function App() {
       chrome.storage.onChanged.removeListener(handleStorageChange);
     };
   }, [addNotice, refreshActiveTab, refreshPresets]);
+
+  useEffect(() => {
+    const editable =
+      recorderStatus?.state === "stopped" ||
+      recorderStatus?.state === "failed";
+    if (!editable || activeTab === undefined) {
+      setRecorderDraft(undefined);
+      setRecorderDraftError(undefined);
+      setRecorderDraftLoading(false);
+      return;
+    }
+    void loadRecorderDraft(activeTab.id);
+  }, [
+    activeTab,
+    loadRecorderDraft,
+    recorderStatus?.sessionId,
+    recorderStatus?.state,
+    recorderStatus?.stepCount
+  ]);
+
+  useEffect(() => {
+    const tabId = activeTab?.id;
+    if (tabId === undefined || recorderStatus?.state !== "recording") {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      void sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "logs",
+        tabId
+      })
+        .then((response) => {
+          if (response.ok && response.result.kind === "logs") {
+            setStepLogs(response.result.entries);
+            setCycleLogs(response.result.cycleEntries);
+            setRecorderLogs(response.result.recorderEntries);
+          }
+        })
+        .catch(() => undefined);
+    }, 1_000);
+
+    return () => clearInterval(interval);
+  }, [activeTab?.id, recorderStatus?.state]);
 
   const runAutomation = async () => {
     if (activeTab === undefined) {
@@ -362,6 +472,189 @@ function App() {
     }
   };
 
+  const startRecording = async () => {
+    if (activeTab === undefined) {
+      addNotice("error", "No active browser tab was found.");
+      return;
+    }
+    setBusyAction("record");
+    setRecorderDraft(undefined);
+    setRecorderDraftError(undefined);
+    setPendingRecordedPresetConflict(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "record",
+        tabId: activeTab.id
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorder-status") {
+        throw new Error("The extension returned an unexpected recorder response.");
+      }
+      setRecorderStatus(response.result.status);
+    } catch (error) {
+      if (!isLoggedRecorderUnavailableError(error)) {
+        addNotice(
+          "error",
+          `Unable to start recording: ${errorMessage(error)}`,
+          errorTechnicalDetails(error)
+        );
+      }
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (activeTab === undefined) {
+      return;
+    }
+    setBusyAction("stop-recording");
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "stop-recording",
+        tabId: activeTab.id
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorder-status") {
+        throw new Error("The extension returned an unexpected recorder response.");
+      }
+      setRecorderStatus(response.result.status);
+    } catch (error) {
+      addNotice(
+        "error",
+        `Unable to stop recording: ${errorMessage(error)}`,
+        errorTechnicalDetails(error)
+      );
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
+  const saveRecorderDraft = async (steps: readonly AutomationStep[]) => {
+    if (activeTab === undefined || recorderDraft === undefined) {
+      return;
+    }
+    setBusyAction("save-recorder-draft");
+    setRecorderDraftError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "save-recorder-draft",
+        tabId: activeTab.id,
+        sessionId: recorderDraft.sessionId,
+        steps
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (
+        response.result.kind !== "recorder-draft" ||
+        response.result.draft === undefined
+      ) {
+        throw new Error("The extension returned an unexpected draft response.");
+      }
+      setRecorderDraft(response.result.draft);
+      addNotice("success", "Recorded step changes were saved to the draft.");
+    } catch (error) {
+      setRecorderDraftError(`Unable to save draft: ${errorMessage(error)}`);
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
+  const discardRecorderDraft = async () => {
+    if (activeTab === undefined || recorderDraft === undefined) {
+      return;
+    }
+    setBusyAction("discard-recorder-draft");
+    setRecorderDraftError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "discard-recorder-draft",
+        tabId: activeTab.id,
+        sessionId: recorderDraft.sessionId
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorder-draft-discarded") {
+        throw new Error("The extension returned an unexpected discard response.");
+      }
+      setRecorderDraft(undefined);
+      addNotice("success", "Recorded draft was discarded.");
+    } catch (error) {
+      setRecorderDraftError(`Unable to discard draft: ${errorMessage(error)}`);
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
+  const createRecordedPreset = async (
+    fields: RecordedPresetFields,
+    confirmedActivePresetIds?: readonly string[]
+  ) => {
+    if (activeTab === undefined || recorderDraft === undefined) {
+      return;
+    }
+    setBusyAction("save-recorded-preset");
+    setRecorderDraftError(undefined);
+    try {
+      const response = await sendRuntimeMessage({
+        type: AUTOMATION_RUNTIME_MESSAGE,
+        action: "save-recorded-preset",
+        tabId: activeTab.id,
+        sessionId: recorderDraft.sessionId,
+        name: fields.name,
+        ...(fields.description === undefined
+          ? {}
+          : { description: fields.description }),
+        steps: fields.steps,
+        ...(confirmedActivePresetIds === undefined
+          ? {}
+          : { confirmedActivePresetIds })
+      });
+      if (!response.ok) {
+        throw runtimeResponseError(response);
+      }
+      if (response.result.kind !== "recorded-preset-save") {
+        throw new Error("The extension returned an unexpected preset response.");
+      }
+      if (response.result.result.status === "confirmation-required") {
+        setPendingRecordedPresetConflict({
+          fields,
+          hostname: response.result.result.hostname,
+          activePresets: response.result.result.activePresets
+        });
+        return;
+      }
+
+      const preset = response.result.result.preset;
+      setPendingRecordedPresetConflict(undefined);
+      setRecorderDraft(undefined);
+      setSelectedPresetId(preset.id);
+      addNotice("success", `Recorded preset “${preset.name}” was created.`);
+      await refreshPresets();
+    } catch (error) {
+      setRecorderDraftError(
+        `Unable to create preset: ${errorMessage(error)}`
+      );
+    } finally {
+      setBusyAction(undefined);
+      await refreshWorkspace(activeTab.id).catch(() => undefined);
+    }
+  };
+
   const stopAll = async () => {
     setBusyAction("stop-all");
     try {
@@ -402,6 +695,7 @@ function App() {
       }
       setStepLogs([]);
       setCycleLogs([]);
+      setRecorderLogs([]);
       setNotices([]);
     } catch (error) {
       addNotice(
@@ -625,9 +919,19 @@ function App() {
     }
   };
 
-  const canRun = manualStatus?.state === "ready" && busyAction === undefined;
+  const recorderIsActive =
+    recorderStatus?.state === "recording" ||
+    recorderStatus?.state === "stopping";
+  const canRun =
+    manualStatus?.state === "ready" &&
+    !recorderIsActive &&
+    busyAction === undefined;
   const currentTabHasActiveCycle =
     manualStatus?.state === "running" || manualStatus?.state === "waiting";
+  const canRecord =
+    recorderStatus?.canRecord === true &&
+    !currentTabHasActiveCycle &&
+    busyAction === undefined;
 
   return (
     <main className="app-shell">
@@ -699,7 +1003,117 @@ function App() {
               {busyAction === "stop" ? "Stopping…" : "Stop"}
             </button>
           </div>
+
+          <div className="recorder-controls">
+            <div className="recorder-summary" aria-live="polite">
+              <div>
+                <span className={`recorder-state ${recorderStatus?.state ?? "idle"}`} />
+                <strong>Recorder</strong>
+              </div>
+              <span>{recorderStatus?.message ?? "Checking recorder state…"}</span>
+            </div>
+            <div className="button-grid recorder-actions">
+              <button
+                className="action-button record-button"
+                disabled={!canRecord}
+                onClick={() => void startRecording()}
+                type="button"
+              >
+                {busyAction === "record" ? "Starting…" : "Record"}
+              </button>
+              <button
+                className="action-button secondary"
+                disabled={
+                  recorderStatus?.canStop !== true ||
+                  busyAction !== undefined
+                }
+                onClick={() => void stopRecording()}
+                type="button"
+              >
+                {busyAction === "stop-recording"
+                  ? "Stopping…"
+                  : "Stop recording"}
+              </button>
+            </div>
+          </div>
         </section>
+
+        {(recorderStatus?.state === "stopped" ||
+          recorderStatus?.state === "failed") && (
+          <section className="card" aria-labelledby="recorded-draft-title">
+            <div className="section-heading recorded-draft-heading">
+              <div>
+                <p className="section-label">Recorder</p>
+                <h2 id="recorded-draft-title">Recorded steps</h2>
+              </div>
+            </div>
+
+            {recorderDraftLoading ? (
+              <div className="preset-list-state">
+                <span className="loading-indicator" />
+                <p>Loading recorded steps…</p>
+              </div>
+            ) : recorderDraft === undefined ? (
+              <p className="editor-error" role="alert">
+                {recorderDraftError ?? "The recorded draft is unavailable."}
+              </p>
+            ) : (
+              <RecordedStepsEditor
+                busy={
+                  busyAction === "save-recorder-draft" ||
+                  busyAction === "discard-recorder-draft" ||
+                  busyAction === "save-recorded-preset"
+                }
+                draft={recorderDraft}
+                key={recorderDraft.sessionId}
+                creatingPreset={busyAction === "save-recorded-preset"}
+                onCreatePreset={(fields) => void createRecordedPreset(fields)}
+                onDiscard={() => void discardRecorderDraft()}
+                onSave={(steps) => void saveRecorderDraft(steps)}
+                saveError={recorderDraftError}
+              />
+            )}
+
+            {pendingRecordedPresetConflict !== undefined && (
+              <div className="delete-confirmation recorder-preset-conflict">
+                <p>
+                  {pendingRecordedPresetConflict.hostname} is already assigned to
+                  {" "}
+                  {pendingRecordedPresetConflict.activePresets
+                    .map(({ name }) => `“${name}”`)
+                    .join(", ")}
+                  . Replace the active assignment? The existing preset will be
+                  kept but disabled.
+                </p>
+                <div>
+                  <button
+                    className="inline-button neutral"
+                    disabled={busyAction !== undefined}
+                    onClick={() => setPendingRecordedPresetConflict(undefined)}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="inline-button destructive"
+                    disabled={busyAction !== undefined}
+                    onClick={() =>
+                      void createRecordedPreset(
+                        pendingRecordedPresetConflict.fields,
+                        pendingRecordedPresetConflict.activePresets.map(
+                          ({ id }) => id
+                        )
+                      )
+                    }
+                    type="button"
+                  >
+                    Replace assignment
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="card" aria-labelledby="presets-title">
           <div className="section-heading">
@@ -873,8 +1287,9 @@ function App() {
 
           {notices.length === 0 &&
           stepLogs.length === 0 &&
-          cycleLogs.length === 0 ? (
-            <p className="empty-state">Step results will appear here.</p>
+          cycleLogs.length === 0 &&
+          recorderLogs.length === 0 ? (
+            <p className="empty-state">Automation and recorder events will appear here.</p>
           ) : (
             <ol className="log-list">
               {notices.map((notice) => (
@@ -898,6 +1313,23 @@ function App() {
                 >
                   <span>{entry.event.toUpperCase()}</span>
                   <p>{entry.message}</p>
+                </li>
+              ))}
+              {[...recorderLogs].reverse().map((entry) => (
+                <li
+                  className={`log-entry recorder-${entry.event} ${recorderLogTone(entry)}`}
+                  key={entry.id}
+                >
+                  <span>{recorderLogLabel(entry)}</span>
+                  <div className="log-entry-content">
+                    <p>{entry.message}</p>
+                    {entry.details !== undefined && (
+                      <details className="log-details">
+                        <summary>Technical details</summary>
+                        <pre>{formatRecorderLogDetails(entry)}</pre>
+                      </details>
+                    )}
+                  </div>
                 </li>
               ))}
               {[...stepLogs].reverse().map((entry) => (
@@ -1008,6 +1440,42 @@ function cycleLogTone(entry: RepeatCycleLogEntry): string {
   return "succeeded";
 }
 
+function recorderLogTone(entry: RecorderLogEntry): string {
+  return entry.event === "failed" ? "failed" : entry.event === "stopped" ||
+    entry.event === "context-changed" || entry.event === "tab-closed"
+    ? "stopped"
+    : "succeeded";
+}
+
+function recorderLogLabel(entry: RecorderLogEntry): string {
+  if (entry.event === "action-recorded") {
+    return "RECORDED";
+  }
+  if (entry.event === "context-changed" || entry.event === "tab-closed") {
+    return "STOPPED";
+  }
+  return entry.event.toUpperCase();
+}
+
+function formatRecorderLogDetails(entry: RecorderLogEntry): string {
+  const details = entry.details;
+  if (details === undefined) {
+    return "";
+  }
+  return [
+    `Action: ${entry.action}`,
+    `Tab: ${entry.tabId}`,
+    ...(entry.sessionId === undefined ? [] : [`Session: ${entry.sessionId}`]),
+    ...(entry.recorderEventId === undefined
+      ? []
+      : [`Event: ${entry.recorderEventId}`]),
+    ...(details.code === undefined ? [] : [`Code: ${details.code}`]),
+    `${details.name}: ${details.message}`,
+    ...(details.cause === undefined ? [] : [`Cause: ${details.cause}`]),
+    ...(details.stack === undefined ? [] : [details.stack])
+  ].join("\n");
+}
+
 export default App;
 
 type PresetOverwriteConfirmationProps = {
@@ -1082,6 +1550,13 @@ function errorTechnicalDetails(error: unknown): string {
     return error.stack ?? `${error.name}: ${error.message}`;
   }
   return String(error);
+}
+
+function isLoggedRecorderUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof RuntimeRequestError &&
+    error.details.code === "recorder-unavailable"
+  );
 }
 
 function sortPresets(presets: readonly PresetV1[]): readonly PresetV1[] {

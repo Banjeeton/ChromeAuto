@@ -49,6 +49,53 @@ export class ChromePresetRepository implements PresetRepository {
     return this.#save(preset, expectedUpdatedAt);
   }
 
+  async saveReplacingActiveHostname(
+    preset: PresetV1,
+    expectedActivePresetIds: readonly string[]
+  ): Promise<void> {
+    const normalized = normalizePreset(preset);
+    await this.#enqueueMutation(async () => {
+      const presets = await this.#readPresets();
+      if (presets.some((item) => item.id === normalized.id)) {
+        throw new PresetRepositoryDataError(
+          "duplicate_preset_id",
+          `Preset id ${normalized.id} already exists.`,
+          [normalized.id]
+        );
+      }
+
+      const conflicting = presets.filter(
+        (item) =>
+          item.siteSettings.enabled &&
+          item.site.hostname.toLowerCase() === normalized.site.hostname
+      );
+      const actualIds = conflicting.map(({ id }) => id).sort();
+      const expectedIds = [...new Set(expectedActivePresetIds)].sort();
+      if (!sameStrings(actualIds, expectedIds)) {
+        throw new PresetRepositoryConflictError(
+          normalized.site.hostname,
+          actualIds
+        );
+      }
+
+      const conflictIds = new Set(actualIds);
+      const replaced = presets.map((item) => {
+        if (!conflictIds.has(item.id)) {
+          return item;
+        }
+        const disabled: PresetV1 = {
+          ...item,
+          updatedAt: nextUpdatedAt(item.updatedAt, normalized.updatedAt),
+          siteSettings: { ...item.siteSettings, enabled: false }
+        };
+        assertValidPreset(disabled);
+        return disabled;
+      });
+      replaced.push(normalized);
+      await this.#writePresets(replaced);
+    });
+  }
+
   async #save(
     preset: PresetV1,
     expectedUpdatedAt: string | null | undefined
@@ -190,6 +237,18 @@ function findDuplicates(values: readonly string[]): string[] {
     seen.add(value);
   }
   return [...duplicates];
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function nextUpdatedAt(previous: string, proposed: string): string {
+  const next = Math.max(Date.parse(previous) + 1, Date.parse(proposed));
+  return new Date(next).toISOString();
 }
 
 function isPresetV1(value: unknown): value is PresetV1 {

@@ -1,0 +1,400 @@
+import { RecordedStepMapper } from "./recorded-step-mapper";
+import type { AutomationStep } from "../domain/automation-step";
+import type {
+  RecorderEvent,
+  RecorderPageReadyEvent,
+  RecorderReloadEvent
+} from "../domain/recorder-event";
+import type { RecorderContentBridge } from "../ports/recorder-content-bridge";
+import type {
+  RecorderSessionRecord,
+  RecorderSessionRegistry
+} from "../ports/recorder-session-registry";
+import type { RecorderLog } from "../ports/recorder-log";
+import {
+  appendRecorderLog,
+  recorderErrorDetails
+} from "./recorder-log-utils";
+
+export interface RecorderNavigationEvent {
+  readonly tabId: number;
+  readonly url: string;
+  readonly documentId: string;
+  readonly navigationId: string;
+}
+
+export interface RecorderNavigationCommittedEvent
+  extends RecorderNavigationEvent {
+  readonly transitionType: string;
+}
+
+export interface RecorderNavigationControllerOptions {
+  readonly clock?: () => string;
+  readonly createEventId?: () => string;
+  readonly createLogId?: () => string;
+  readonly log?: RecorderLog;
+}
+
+export type RecorderEventDisposition = "recorded" | "duplicate" | "ignored";
+
+/**
+ * Serializes recorder events and Chrome navigation signals per tab.
+ * Runtime events stay in session storage and are mapped into portable steps.
+ */
+export class RecorderNavigationController {
+  readonly #pendingByTab = new Map<number, Promise<void>>();
+  readonly #clock: () => string;
+  readonly #createEventId: () => string;
+  readonly #createLogId: () => string;
+  readonly #log?: RecorderLog;
+
+  constructor(
+    readonly registry: RecorderSessionRegistry,
+    readonly mapper: RecordedStepMapper,
+    readonly contentBridge: RecorderContentBridge,
+    options: RecorderNavigationControllerOptions = {}
+  ) {
+    this.#clock = options.clock ?? (() => new Date().toISOString());
+    this.#createEventId = options.createEventId ?? (() => crypto.randomUUID());
+    this.#createLogId = options.createLogId ?? (() => crypto.randomUUID());
+    this.#log = options.log;
+  }
+
+  async record(event: RecorderEvent): Promise<RecorderEventDisposition> {
+    return await this.#exclusive(event.tabId, async () => {
+      try {
+        const record = await this.registry.getByTabId(event.tabId);
+        if (!acceptsContentEvent(record, event)) {
+          return "ignored";
+        }
+        if (
+          record.recordedEvents.some(({ eventId }) => eventId === event.eventId)
+        ) {
+          return "duplicate";
+        }
+        const updated = await this.#append(record, event);
+        await this.#appendLog({
+          tabId: event.tabId,
+          sessionId: event.sessionId,
+          event: "action-recorded",
+          action: `record ${event.kind}`,
+          message: `${recorderEventLabel(event.kind)} recorded in tab ${event.tabId} as step ${updated.draftSteps.length}.`,
+          recorderEventId: event.eventId,
+          recorderEventKind: event.kind,
+          stepCount: updated.draftSteps.length
+        });
+        return "recorded";
+      } catch (error) {
+        await this.#appendLog({
+          tabId: event.tabId,
+          sessionId: event.sessionId,
+          event: "failed",
+          action: `record ${event.kind}`,
+          message: `Unable to record ${event.kind} action in tab ${event.tabId}: ${errorMessage(error)} The existing draft was preserved.`,
+          recorderEventId: event.eventId,
+          recorderEventKind: event.kind,
+          details: recorderErrorDetails(error)
+        });
+        throw error;
+      }
+    });
+  }
+
+  async handleNavigationCommitted(
+    event: RecorderNavigationCommittedEvent
+  ): Promise<RecorderEventDisposition> {
+    return await this.#exclusive(event.tabId, async () => {
+      const record = await this.registry.getByTabId(event.tabId);
+      if (record?.session.state !== "recording") {
+        return "ignored";
+      }
+      if (!matchesSourceContext(record, event.url)) {
+        await this.#stopForContextChange(record, event.url);
+        return "recorded";
+      }
+
+      const moved: RecorderSessionRecord = {
+        ...record,
+        documentId: event.documentId,
+        currentUrl: event.url
+      };
+      if (event.transitionType !== "reload") {
+        await this.registry.save(moved);
+        return "recorded";
+      }
+
+      const duplicate = moved.recordedEvents.some(
+        (candidate) =>
+          candidate.kind === "reload" &&
+          candidate.payload.navigationId === event.navigationId
+      );
+      if (duplicate) {
+        if (
+          moved.documentId !== record.documentId ||
+          moved.currentUrl !== record.currentUrl
+        ) {
+          await this.registry.save(moved);
+        }
+        return "duplicate";
+      }
+
+      const reload: RecorderReloadEvent = {
+        ...this.#navigationEventBase(moved, event, "reload"),
+        payload: {
+          navigationId: event.navigationId,
+          waitUntil: "domcontentloaded"
+        }
+      };
+      const updated = await this.#append(moved, reload);
+      await this.#appendLog({
+        tabId: event.tabId,
+        sessionId: record.session.sessionId,
+        event: "action-recorded",
+        action: "record reload",
+        message: `Reload recorded in tab ${event.tabId} as step ${updated.draftSteps.length}.`,
+        recorderEventId: reload.eventId,
+        recorderEventKind: "reload",
+        stepCount: updated.draftSteps.length
+      });
+      return "recorded";
+    });
+  }
+
+  async handlePageReady(
+    event: RecorderNavigationEvent
+  ): Promise<RecorderEventDisposition> {
+    return await this.#exclusive(event.tabId, async () => {
+      const record = await this.registry.getByTabId(event.tabId);
+      if (record?.session.state !== "recording") {
+        return "ignored";
+      }
+      if (!matchesSourceContext(record, event.url)) {
+        await this.#stopForContextChange(record, event.url);
+        return "recorded";
+      }
+
+      let current: RecorderSessionRecord = {
+        ...record,
+        documentId: event.documentId,
+        currentUrl: event.url
+      };
+      const duplicate = current.recordedEvents.some(
+        (candidate) =>
+          candidate.kind === "pageReady" &&
+          candidate.payload.navigationId === event.navigationId &&
+          candidate.payload.state === "domcontentloaded"
+      );
+      if (!duplicate) {
+        const pageReady: RecorderPageReadyEvent = {
+          ...this.#navigationEventBase(current, event, "pageReady"),
+          payload: {
+            navigationId: event.navigationId,
+            state: "domcontentloaded"
+          }
+        };
+        current = await this.#append(current, pageReady);
+      } else if (
+        current.documentId !== record.documentId ||
+        current.currentUrl !== record.currentUrl
+      ) {
+        await this.registry.save(current);
+      }
+
+      try {
+        await this.contentBridge.startCapture({
+          sessionId: current.session.sessionId,
+          tabId: current.session.tabId,
+          documentId: current.documentId,
+          url: current.currentUrl
+        });
+      } catch (error) {
+        await this.#appendLog({
+          tabId: current.session.tabId,
+          sessionId: current.session.sessionId,
+          event: "failed",
+          action: "restore content capture",
+          message: `Unable to restore recorder capture after page load in tab ${current.session.tabId}: ${errorMessage(error)}`,
+          details: recorderErrorDetails(error)
+        });
+        throw error;
+      }
+      return duplicate ? "duplicate" : "recorded";
+    });
+  }
+
+  async handleTabRemoved(tabId: number): Promise<void> {
+    await this.#exclusive(tabId, async () => {
+      const stopped = await this.registry.markTabClosed(tabId, this.#clock());
+      if (stopped !== undefined) {
+        await this.#appendLog({
+          tabId,
+          sessionId: stopped.session.sessionId,
+          event: "tab-closed",
+          action: "close recorded tab",
+          message: `Recording stopped because tab ${tabId} was closed. The ${stopped.draftSteps.length}-step draft was preserved.`,
+          stepCount: stopped.draftSteps.length,
+          stopReason: "tab-closed"
+        });
+      }
+    });
+  }
+
+  async #append(
+    record: RecorderSessionRecord,
+    event: RecorderEvent
+  ): Promise<RecorderSessionRecord> {
+    const recordedEvents = [...record.recordedEvents, event];
+    const mapped = this.mapper.map(recordedEvents);
+    const draftSteps = preserveExistingStepIds(record.draftSteps, mapped.steps);
+    const updated: RecorderSessionRecord = {
+      ...record,
+      session: {
+        ...record.session,
+        recordedEventCount: recordedEvents.length
+      },
+      recordedEvents,
+      draftSteps
+    };
+    await this.registry.save(updated);
+    return updated;
+  }
+
+  async #stopForContextChange(
+    record: RecorderSessionRecord,
+    destinationUrl: string
+  ): Promise<void> {
+    const stopped: RecorderSessionRecord = {
+      ...record,
+      session: {
+        sessionId: record.session.sessionId,
+        tabId: record.session.tabId,
+        context: record.session.context,
+        startedAt: record.session.startedAt,
+        recordedEventCount: record.session.recordedEventCount,
+        state: "stopped",
+        stopReason: "tab-context-changed",
+        stoppedAt: this.#clock()
+      }
+    };
+    await this.registry.save(stopped);
+    await this.#appendLog({
+      tabId: record.session.tabId,
+      sessionId: record.session.sessionId,
+      event: "context-changed",
+      action: "validate recorder hostname",
+      message: `Recording stopped because tab ${record.session.tabId} left ${record.session.context.hostname}. The recorded draft was preserved.`,
+      stepCount: record.draftSteps.length,
+      stopReason: "tab-context-changed",
+      details: {
+        name: "RecorderContextChanged",
+        message: `Expected ${record.session.context.protocol}://${record.session.context.hostname}; received ${destinationUrl}.`
+      }
+    });
+    try {
+      await this.contentBridge.stopCapture(record.session.tabId);
+    } catch {
+      // Navigation may already have destroyed the old content script.
+    }
+  }
+
+  #navigationEventBase<K extends "reload" | "pageReady">(
+    record: RecorderSessionRecord,
+    event: RecorderNavigationEvent,
+    kind: K
+  ) {
+    return {
+      version: 1 as const,
+      eventId: this.#createEventId(),
+      sessionId: record.session.sessionId,
+      tabId: event.tabId,
+      documentId: event.documentId,
+      occurredAt: this.#clock(),
+      url: event.url,
+      kind
+    };
+  }
+
+  #exclusive<T>(tabId: number, operation: () => Promise<T>): Promise<T> {
+    const previous = this.#pendingByTab.get(tabId) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const settled = result.then(
+      () => undefined,
+      () => undefined
+    );
+    this.#pendingByTab.set(tabId, settled);
+    void settled.finally(() => {
+      if (this.#pendingByTab.get(tabId) === settled) {
+        this.#pendingByTab.delete(tabId);
+      }
+    });
+    return result;
+  }
+
+  async #appendLog(
+    entry: Parameters<typeof appendRecorderLog>[1]
+  ): Promise<void> {
+    await appendRecorderLog(
+      {
+        log: this.#log,
+        clock: this.#clock,
+        createLogId: this.#createLogId
+      },
+      entry
+    );
+  }
+}
+
+function recorderEventLabel(kind: RecorderEvent["kind"]): string {
+  switch (kind) {
+    case "click":
+      return "Click";
+    case "input":
+      return "Input";
+    case "reload":
+      return "Reload";
+    case "pageReady":
+      return "Page-ready event";
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function acceptsContentEvent(
+  record: RecorderSessionRecord | undefined,
+  event: RecorderEvent
+): record is RecorderSessionRecord {
+  return (
+    record?.session.state === "recording" &&
+    record.session.sessionId === event.sessionId &&
+    record.session.tabId === event.tabId &&
+    record.documentId === event.documentId &&
+    matchesSourceContext(record, event.url)
+  );
+}
+
+function matchesSourceContext(
+  record: RecorderSessionRecord,
+  rawUrl: string
+): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return (
+      url.hostname === record.session.context.hostname &&
+      url.protocol === `${record.session.context.protocol}:`
+    );
+  } catch {
+    return false;
+  }
+}
+
+function preserveExistingStepIds(
+  existing: readonly AutomationStep[],
+  mapped: readonly AutomationStep[]
+): readonly AutomationStep[] {
+  return mapped.map((step, index) => {
+    const previous = existing[index];
+    return previous === undefined ? step : { ...step, id: previous.id };
+  });
+}
