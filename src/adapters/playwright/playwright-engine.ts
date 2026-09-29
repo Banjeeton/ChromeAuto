@@ -121,7 +121,7 @@ export class PlaywrightEngine implements AutomationEngine {
             : "step-failed";
       throw this.#toEngineError(
         code,
-        `Automation step ${request.step.id} failed`,
+        `Automation step ${request.step.id} failed: ${errorMessage(error)}`,
         error,
         this.#stepContext(request, tabId)
       );
@@ -350,4 +350,8 @@ function isStepTimeout(error: unknown): boolean {
     error instanceof CustomJavaScriptTimeoutError ||
     (error instanceof Error && error.name === "TimeoutError")
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

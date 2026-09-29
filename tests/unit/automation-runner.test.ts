@@ -196,6 +196,59 @@ describe("AutomationRunner", () => {
     ]);
   });
 
+  it("logs the number, name and reason of a failed select step", async () => {
+    const engine = createEngine();
+    const failure = new AutomationEngineError(
+      "step-failed",
+      'Automation step select-country failed: Option "ca" was not found',
+      {
+        context: {
+          sessionId: "session-1",
+          tabId: 42,
+          stepId: "select-country",
+          stepIndex: 0
+        }
+      }
+    );
+    vi.mocked(engine.executeStep).mockRejectedValueOnce(failure);
+    const { log, runner } = createRunner(engine);
+    const automation: AutomationDefinition = {
+      defaults,
+      steps: [
+        {
+          id: "select-country",
+          name: "Select country",
+          type: "select",
+          enabled: true,
+          target: {
+            primary: { type: "css", value: "#country" },
+            fallbacks: []
+          },
+          option: { by: "value", value: "ca" }
+        }
+      ]
+    };
+
+    await expect(
+      runner.run({ presetId: "preset-1", tabId: 42, automation })
+    ).rejects.toBe(failure);
+
+    expect(await log.list()).toEqual([
+      expect.objectContaining({
+        stepId: "select-country",
+        stepIndex: 0,
+        stepNumber: 1,
+        stepName: "Select country",
+        status: "failed",
+        error: expect.objectContaining({
+          code: "step-failed",
+          message:
+            'Automation step select-country failed: Option "ca" was not found'
+        })
+      })
+    ]);
+  });
+
   it("distinguishes a requested stop from a failed step", async () => {
     const engine = createEngine();
     const stopped = new AutomationEngineError(

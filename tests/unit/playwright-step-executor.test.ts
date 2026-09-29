@@ -75,6 +75,63 @@ describe("Playwright step executor", () => {
     expect(input.pressSequentially).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["value", "ca", { value: "ca" }],
+    ["label", "Canada", { label: "Canada" }],
+    ["index", 2, { index: 2 }]
+  ] as const)("selects an option by %s", async (by, value, expected) => {
+    const select = createLocator(1);
+    const page = createPage({ getByLabel: vi.fn(() => select) });
+    const step: AutomationStep = {
+      id: `select-country-${by}`,
+      name: "Select country",
+      type: "select",
+      enabled: true,
+      target: {
+        primary: { type: "label", value: "Country", exact: true },
+        fallbacks: []
+      },
+      option: { by, value }
+    } as AutomationStep;
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(select.selectOption).toHaveBeenCalledWith(expected, {
+      timeout: 5_000
+    });
+  });
+
+  it("selects through a fallback locator with timing overrides", async () => {
+    const primary = createLocator(0);
+    const fallback = createLocator(1);
+    const page = createPage({
+      locator: vi.fn((selector: string) =>
+        selector === "#country" ? primary : fallback
+      )
+    });
+    const step: AutomationStep = {
+      id: "select-country",
+      type: "select",
+      enabled: true,
+      timeoutMs: 1_750,
+      postActionDelayMs: 40,
+      target: {
+        primary: { type: "css", value: "#country" },
+        fallbacks: [{ type: "css", value: "select[name=country]" }]
+      },
+      option: { by: "value", value: "ca" }
+    };
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(fallback.selectOption).toHaveBeenCalledWith(
+      { value: "ca" },
+      { timeout: 1_750 }
+    );
+    expect(primary.selectOption).not.toHaveBeenCalled();
+    expect(page.waitForTimeout).toHaveBeenCalledWith(40);
+  });
+
   it("appends input without clearing the current value", async () => {
     const input = createLocator(1);
     const page = createPage({ locator: vi.fn(() => input) });
@@ -290,6 +347,7 @@ function createLocator(count = 1): Locator {
     fill: vi.fn(async () => undefined),
     first: vi.fn(),
     pressSequentially: vi.fn(async () => undefined),
+    selectOption: vi.fn(async () => []),
     waitFor: vi.fn(async () => undefined)
   };
   locator.first.mockReturnValue(locator);

@@ -384,6 +384,100 @@ describe("PlaywrightEngine", () => {
     });
   });
 
+  it("reports a missing select option as a contextual domain error", async () => {
+    const failure = new Error('Option with label "Canada" was not found');
+    const select = {
+      count: vi.fn(async () => 1),
+      first: vi.fn(),
+      selectOption: vi.fn(async () => {
+        throw failure;
+      })
+    };
+    select.first.mockReturnValue(select);
+    const page = createPage({ getByLabel: vi.fn(() => select) });
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => createApplication(page))
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    await expect(
+      engine.executeStep({
+        sessionId: "session-1",
+        stepIndex: 2,
+        defaults,
+        step: {
+          id: "select-country",
+          name: "Select country",
+          type: "select",
+          enabled: true,
+          target: {
+            primary: { type: "label", value: "Country", exact: true },
+            fallbacks: []
+          },
+          option: { by: "label", value: "Canada" }
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "step-failed",
+      message:
+        'Automation step select-country failed: Option with label "Canada" was not found',
+      context: {
+        sessionId: "session-1",
+        tabId: 42,
+        stepId: "select-country",
+        stepIndex: 2
+      },
+      cause: failure
+    });
+  });
+
+  it("reports a missing select element as a contextual timeout", async () => {
+    const timeout = new Error("Select element was not found within 5000ms");
+    timeout.name = "TimeoutError";
+    const missingSelect = {
+      count: vi.fn(async () => 0),
+      first: vi.fn(),
+      selectOption: vi.fn(async () => {
+        throw timeout;
+      })
+    };
+    missingSelect.first.mockReturnValue(missingSelect);
+    const page = createPage({ locator: vi.fn(() => missingSelect) });
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => createApplication(page))
+    });
+    await engine.start({ sessionId: "session-1", target: { tabId: 42 } });
+
+    await expect(
+      engine.executeStep({
+        sessionId: "session-1",
+        stepIndex: 1,
+        defaults,
+        step: {
+          id: "select-missing-country",
+          type: "select",
+          enabled: true,
+          target: {
+            primary: { type: "css", value: "#missing-country" },
+            fallbacks: []
+          },
+          option: { by: "value", value: "ca" }
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "step-timeout",
+      message:
+        "Automation step select-missing-country failed: Select element was not found within 5000ms",
+      context: {
+        sessionId: "session-1",
+        tabId: 42,
+        stepId: "select-missing-country",
+        stepIndex: 1
+      },
+      cause: timeout
+    });
+  });
+
   it("attaches a tab once and returns its page snapshot", async () => {
     const page = createPage();
     const application = createApplication(page);

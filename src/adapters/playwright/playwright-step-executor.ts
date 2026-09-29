@@ -4,6 +4,7 @@ import type {
   ElementLocator,
   ElementTarget,
   InputStep,
+  SelectStep,
   WaitStep
 } from "../../core/domain/automation-step";
 import type { ExecuteAutomationStepRequest } from "../../core/ports/automation-engine";
@@ -51,6 +52,12 @@ export async function executePlaywrightStep(
       break;
     }
 
+    case "select": {
+      const locator = await resolveTarget(page, step.target);
+      await executeSelectStep(locator, step, timeout);
+      break;
+    }
+
     case "wait":
       await executeWaitStep(page, step, timeout);
       break;
@@ -77,6 +84,23 @@ export async function executePlaywrightStep(
   }
 
   return output;
+}
+
+async function executeSelectStep(
+  locator: Locator,
+  step: SelectStep,
+  timeout: number
+): Promise<void> {
+  switch (step.option.by) {
+    case "value":
+      await locator.selectOption({ value: step.option.value }, { timeout });
+      return;
+    case "label":
+      await locator.selectOption({ label: step.option.value }, { timeout });
+      return;
+    case "index":
+      await locator.selectOption({ index: step.option.value }, { timeout });
+  }
 }
 
 async function executeInputStep(
