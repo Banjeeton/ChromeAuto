@@ -88,7 +88,7 @@ export class PlaywrightEngine implements AutomationEngine {
       this.#removeSessionForTab(target.tabId);
       throw this.#toEngineError(
         "engine-unavailable",
-        `Could not attach automation session to tab ${target.tabId}`,
+        attachFailureMessage(target.tabId, error),
         error,
         { sessionId, tabId: target.tabId }
       );
@@ -367,6 +367,20 @@ function isStepTimeout(error: unknown): boolean {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function attachFailureMessage(tabId: number, error: unknown): string {
+  const message = errorMessage(error);
+  if (
+    message.includes("Cannot access a chrome-extension:// URL of different extension")
+  ) {
+    return (
+      `Could not attach automation session to tab ${tabId}. ` +
+      "Another extension injected a protected frame into this page. " +
+      "Close its popup or disable it for this site, reload the tab, and try again."
+    );
+  }
+  return `Could not attach automation session to tab ${tabId}`;
 }
 
 function stepTarget(step: AutomationStep): ElementTarget | undefined {

@@ -211,6 +211,28 @@ describe("PlaywrightEngine", () => {
     expect(application.attach).toHaveBeenCalledTimes(2);
   });
 
+  it("explains attach failures caused by protected frames from another extension", async () => {
+    const page = createPage();
+    const attachFailure = new Error(
+      "crxApplication.attach: Cannot access a chrome-extension:// URL of different extension"
+    );
+    const application = createApplication(page);
+    vi.mocked(application.attach).mockRejectedValueOnce(attachFailure);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await expect(
+      engine.start({ sessionId: "session-protected-frame", target: { tabId: 42 } })
+    ).rejects.toMatchObject({
+      code: "engine-unavailable",
+      message:
+        "Could not attach automation session to tab 42. Another extension injected a protected frame into this page. Close its popup or disable it for this site, reload the tab, and try again.",
+      context: { sessionId: "session-protected-frame", tabId: 42 },
+      cause: attachFailure
+    });
+  });
+
   it("keeps two automation sessions isolated by tab", async () => {
     const firstPage = createPage();
     const secondPage = createPage();
