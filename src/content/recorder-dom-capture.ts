@@ -192,8 +192,16 @@ export class RecorderDomCapture {
     this.#inputDebounceMs = options.inputDebounceMs ?? 300;
     this.#clock = options.clock ?? (() => new Date().toISOString());
     this.#createEventId = options.createEventId ?? (() => crypto.randomUUID());
-    this.#schedule = options.schedule ?? setTimeout;
-    this.#cancelScheduled = options.cancelScheduled ?? clearTimeout;
+    const configuredSchedule = options.schedule;
+    const configuredCancel = options.cancelScheduled;
+    this.#schedule =
+      configuredSchedule === undefined
+        ? (callback, delayMs) => globalThis.setTimeout(callback, delayMs)
+        : (callback, delayMs) => configuredSchedule(callback, delayMs);
+    this.#cancelScheduled =
+      configuredCancel === undefined
+        ? (handle) => globalThis.clearTimeout(handle)
+        : (handle) => configuredCancel(handle);
     this.#generateTarget =
       options.generateTarget ??
       ((element) => generateDomLocatorTarget(element as unknown as Element));

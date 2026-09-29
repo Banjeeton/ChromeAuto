@@ -494,13 +494,14 @@ function App() {
         throw new Error("The extension returned an unexpected recorder response.");
       }
       setRecorderStatus(response.result.status);
-      addNotice("success", "Recording started for the current tab.");
     } catch (error) {
-      addNotice(
-        "error",
-        `Unable to start recording: ${errorMessage(error)}`,
-        errorTechnicalDetails(error)
-      );
+      if (!isLoggedRecorderUnavailableError(error)) {
+        addNotice(
+          "error",
+          `Unable to start recording: ${errorMessage(error)}`,
+          errorTechnicalDetails(error)
+        );
+      }
     } finally {
       setBusyAction(undefined);
       await refreshWorkspace(activeTab.id).catch(() => undefined);
@@ -525,10 +526,6 @@ function App() {
         throw new Error("The extension returned an unexpected recorder response.");
       }
       setRecorderStatus(response.result.status);
-      addNotice(
-        "success",
-        `Recording stopped with ${response.result.status.stepCount} recorded steps.`
-      );
     } catch (error) {
       addNotice(
         "error",
@@ -1553,6 +1550,13 @@ function errorTechnicalDetails(error: unknown): string {
     return error.stack ?? `${error.name}: ${error.message}`;
   }
   return String(error);
+}
+
+function isLoggedRecorderUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof RuntimeRequestError &&
+    error.details.code === "recorder-unavailable"
+  );
 }
 
 function sortPresets(presets: readonly PresetV1[]): readonly PresetV1[] {

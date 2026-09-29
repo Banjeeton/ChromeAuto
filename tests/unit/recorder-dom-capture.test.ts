@@ -17,7 +17,7 @@ import {
 } from "../../src/shared/types/recorder-runtime";
 
 describe("RecorderDomCapture", () => {
-  it("stays passive before Record and captures only trusted clicks", () => {
+  it("captures trusted clicks in the page DOM and an HTML modal", () => {
     const harness = createHarness();
     const pageButton = new FakeElement("button", { id: "page-action" });
     const modalButton = new FakeElement("button", {
@@ -75,6 +75,62 @@ describe("RecorderDomCapture", () => {
         locators: [{ type: "css", value: 'input[name="query"]' }]
       },
       payload: { value: "hello", inputType: "search" }
+    });
+  });
+
+  it("calls timer hooks without an illegal receiver", () => {
+    const source = new FakeDocumentSource();
+    const events: RecorderEvent[] = [];
+    const errors: unknown[] = [];
+    const tasks = new Map<ReturnType<typeof setTimeout>, () => void>();
+    let nextHandle = 0;
+    const schedule: NonNullable<RecorderCaptureOptions["schedule"]> = function (
+      this: unknown,
+      callback
+    ) {
+      if (this !== undefined) {
+        throw new TypeError("Illegal invocation");
+      }
+      const handle = { id: ++nextHandle } as unknown as ReturnType<
+        typeof setTimeout
+      >;
+      tasks.set(handle, callback);
+      return handle;
+    };
+    const cancel: NonNullable<
+      RecorderCaptureOptions["cancelScheduled"]
+    > = function (this: unknown, handle) {
+      if (this !== undefined) {
+        throw new TypeError("Illegal invocation");
+      }
+      tasks.delete(handle);
+    };
+    const capture = new RecorderDomCapture(
+      source,
+      (event) => events.push(event),
+      {
+        schedule,
+        cancelScheduled: cancel,
+        generateTarget: () => ({
+          locators: [{ type: "testId", value: "recorder-input" }]
+        }),
+        onError: (error) => errors.push(error)
+      }
+    );
+    const input = new FakeElement("input", { type: "text" });
+    capture.start(captureSession());
+
+    input.value = "R";
+    source.dispatch("input", trustedEvent(input));
+    input.value = "Record";
+    source.dispatch("input", trustedEvent(input));
+    [...tasks.values()].forEach((task) => task());
+
+    expect(errors).toEqual([]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      kind: "input",
+      payload: { value: "Record" }
     });
   });
 
