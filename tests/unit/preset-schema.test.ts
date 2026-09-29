@@ -222,6 +222,40 @@ describe("preset v1 semantic validation", () => {
     });
   });
 
+  it("reports an invalid URL wait regular expression", () => {
+    const preset = cloneValidPreset();
+    preset.automation.steps.push({
+      id: "wait-for-url",
+      type: "wait",
+      enabled: true,
+      condition: { type: "url", match: "regex", value: "[unterminated" }
+    });
+    const stepIndex = preset.automation.steps.length - 1;
+
+    expect(validatePresetSemantics(preset)).toContainEqual({
+      code: "invalid_url_regex",
+      path: `/automation/steps/${stepIndex}/condition/value`,
+      message: "value must be a valid JavaScript regular expression."
+    });
+  });
+
+  it.each(["example\\.com/(done|success)", "^https://", "(?<page>.+)"])(
+    "accepts the valid URL wait regular expression %s",
+    (value) => {
+      const preset = cloneValidPreset();
+      preset.automation.steps.push({
+        id: "wait-for-url",
+        type: "wait",
+        enabled: true,
+        condition: { type: "url", match: "regex", value }
+      });
+
+      expect(validatePresetSemantics(preset)).not.toContainEqual(
+        expect.objectContaining({ code: "invalid_url_regex" })
+      );
+    }
+  );
+
   it.each([
     " ",
     "F13",

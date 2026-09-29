@@ -12,6 +12,7 @@ const validateSchema = generatedValidateSchema as GeneratedSchemaValidator;
 export type PresetSemanticIssueCode =
   | "duplicate_step_id"
   | "invalid_human_input_range"
+  | "invalid_url_regex"
   | "invalid_press_key"
   | "empty_automation";
 
@@ -95,6 +96,19 @@ export function validatePresetSemantics(
       });
     }
 
+    if (
+      step.type === "wait" &&
+      step.condition.type === "url" &&
+      step.condition.match === "regex" &&
+      !isValidRegularExpression(step.condition.value)
+    ) {
+      issues.push({
+        code: "invalid_url_regex",
+        path: `/automation/steps/${index}/condition/value`,
+        message: "value must be a valid JavaScript regular expression."
+      });
+    }
+
     if (step.type === "pressKey" && !isSupportedAutomationKey(step.key)) {
       issues.push({
         code: "invalid_press_key",
@@ -106,6 +120,15 @@ export function validatePresetSemantics(
   });
 
   return issues;
+}
+
+function isValidRegularExpression(value: string): boolean {
+  try {
+    new RegExp(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Applies JSON Schema first and semantic validation only to a valid shape. */

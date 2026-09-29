@@ -163,6 +163,107 @@ describe("PresetEditor", () => {
       })
     );
   });
+
+  it("renders every wait condition and per-input human delay controls", () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Wait and input settings";
+    fields.automation.steps = [
+      {
+        ...createStepTemplate("wait", "wait-timeout"),
+        condition: { type: "timeout", durationMs: 1_500 }
+      },
+      {
+        ...createStepTemplate("wait", "wait-element"),
+        condition: {
+          type: "element",
+          state: "hidden",
+          target: {
+            primary: { type: "css", value: ".spinner" },
+            fallbacks: []
+          }
+        }
+      },
+      {
+        ...createStepTemplate("wait", "wait-url"),
+        condition: {
+          type: "url",
+          match: "regex",
+          value: "example\\.com/(done|success)"
+        }
+      },
+      {
+        ...createStepTemplate("wait", "wait-page"),
+        condition: { type: "pageLoad", state: "networkidle" }
+      },
+      {
+        ...createStepTemplate("input", "human-input"),
+        inputMode: "human",
+        humanInput: { minDelayMs: 55, maxDelayMs: 140 }
+      }
+    ];
+
+    const html = renderToStaticMarkup(
+      <PresetEditor
+        initialFields={fields}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+        saving={false}
+      />
+    );
+
+    expect(html).toContain("Duration, ms");
+    expect(html).toContain("Element state");
+    expect(html).toContain("Attached");
+    expect(html).toContain("Detached");
+    expect(html).toContain("Visible");
+    expect(html).toContain("Hidden");
+    expect(html).toContain("URL match");
+    expect(html).toContain("Exact");
+    expect(html).toContain("Contains");
+    expect(html).toContain("Regular expression");
+    expect(html).toContain("Load state");
+    expect(html).toContain("DOM content loaded");
+    expect(html).toContain("Network idle");
+    expect(html).toContain("Input mode");
+    expect(html).toContain("Default");
+    expect(html).toContain("Instant");
+    expect(html).toContain("Human");
+    expect(html).toContain("Min typing delay, ms");
+    expect(html).toContain("Max typing delay, ms");
+    expect(html).toContain('value="55"');
+    expect(html).toContain('value="140"');
+  });
+
+  it("blocks invalid input delays and URL regex with concrete field paths", () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Invalid advanced settings";
+    fields.automation.steps = [
+      {
+        ...createStepTemplate("input", "invalid-delays"),
+        humanInput: { minDelayMs: 200, maxDelayMs: 20 }
+      },
+      {
+        ...createStepTemplate("wait", "invalid-regex"),
+        condition: { type: "url", match: "regex", value: "[invalid" }
+      }
+    ];
+
+    const { issues } = validatePresetEditorFields(fields);
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "invalid_human_input_range",
+          path: "/automation/steps/0/humanInput/maxDelayMs"
+        }),
+        expect.objectContaining({
+          code: "invalid_url_regex",
+          path: "/automation/steps/1/condition/value"
+        })
+      ])
+    );
+  });
 });
 
 describe("preset step templates", () => {
