@@ -37,6 +37,7 @@ const handler = (request, response) => {
 
   if (
     request.url === "/playwright-crx-fixture.html" ||
+    request.url?.startsWith("/protected-frame.html") ||
     request.url === "/"
   ) {
     response.writeHead(200, {

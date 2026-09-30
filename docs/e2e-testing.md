@@ -42,6 +42,10 @@ npm run verify:all
 - Create → Save → Run через side panel;
 - Record → reload → HTML modal → Edit → Save → Run;
 - Dashboard и Run log;
+- отдельный attach к `localhost` и `127.0.0.1`;
+- понятную ошибку для защищённого frame другого расширения, отсутствие зависшей
+  сессии и успешный повтор после удаления frame и reload;
+- изоляцию здоровой вкладки от attach-ошибки другой вкладки;
 - repeat и его остановку кнопкой Stop;
 - два независимых запуска во вкладках и Stop All.
 

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "E2E Protected Frame Fixture",
+  "version": "1.0.0",
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1:4173/protected-frame.html*"],
+      "js": ["inject-frame.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["frame.html"],
+      "matches": ["http://127.0.0.1:4173/*"]
+    }
+  ]
+}

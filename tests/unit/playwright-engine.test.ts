@@ -231,6 +231,83 @@ describe("PlaywrightEngine", () => {
       context: { sessionId: "session-protected-frame", tabId: 42 },
       cause: attachFailure
     });
+    expect(application.detach).toHaveBeenCalledWith(42);
+  });
+
+  it("detects a foreign extension frame before starting Playwright CRX", async () => {
+    const start = vi.fn(async () => createApplication(createPage()));
+    const engine = new PlaywrightEngine(
+      { start },
+      {
+        inspectFrames: vi.fn(async () => [
+          "http://127.0.0.1:4173/playwright-crx-fixture.html",
+          "about:blank",
+          "chrome-extension://foreign-extension/frame.html"
+        ])
+      }
+    );
+
+    await expect(
+      engine.start({ sessionId: "protected-preflight", target: { tabId: 51 } })
+    ).rejects.toMatchObject({
+      code: "engine-unavailable",
+      message: expect.stringContaining(
+        "Another extension injected a protected frame"
+      ),
+      context: { sessionId: "protected-preflight", tabId: 51 }
+    });
+    expect(start).not.toHaveBeenCalled();
+    expect(engine.attachedTabIds()).toEqual([]);
+  });
+
+  it("recognizes a protected-frame failure wrapped in an error cause", async () => {
+    const protectedCause = new Error(
+      "Cannot access a chrome-extension:// URL of different extension"
+    );
+    const attachFailure = new Error("Playwright page initialization failed", {
+      cause: protectedCause
+    });
+    const application = createApplication(createPage());
+    vi.mocked(application.attach).mockRejectedValueOnce(attachFailure);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await expect(
+      engine.start({ sessionId: "wrapped-frame", target: { tabId: 52 } })
+    ).rejects.toMatchObject({
+      code: "engine-unavailable",
+      message: expect.stringContaining("disable it for this site")
+    });
+    expect(application.detach).toHaveBeenCalledWith(52);
+  });
+
+  it("cleans only the failed tab and allows a clean retry after reload", async () => {
+    const firstPage = createPage();
+    const recoveredPage = createPage();
+    const application = createApplication(firstPage);
+    vi.mocked(application.attach)
+      .mockImplementationOnce(async () => firstPage)
+      .mockRejectedValueOnce(new Error("Temporary attach failure"))
+      .mockImplementationOnce(async () => recoveredPage);
+    const engine = new PlaywrightEngine({
+      start: vi.fn(async () => application)
+    });
+
+    await engine.start({ sessionId: "healthy-tab", target: { tabId: 11 } });
+    await expect(
+      engine.start({ sessionId: "failed-tab", target: { tabId: 22 } })
+    ).rejects.toMatchObject({ code: "engine-unavailable" });
+
+    expect(application.detach).toHaveBeenCalledWith(22);
+    expect(engine.attachedTabIds()).toEqual([11]);
+    await expect(
+      engine.executeStep(reloadRequest("healthy-tab", "healthy-after-failure"))
+    ).resolves.toMatchObject({ stepId: "healthy-after-failure" });
+    await expect(
+      engine.start({ sessionId: "recovered-tab", target: { tabId: 22 } })
+    ).resolves.toMatchObject({ sessionId: "recovered-tab" });
+    expect(engine.attachedTabIds()).toEqual([11, 22]);
   });
 
   it("keeps two automation sessions isolated by tab", async () => {

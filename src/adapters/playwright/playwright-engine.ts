@@ -43,6 +43,22 @@ export type HtmlModalSmokeResult = {
 
 type CrxRuntime = Pick<typeof crx, "start">;
 
+export interface PlaywrightEngineOptions {
+  readonly inspectFrames?: (tabId: number) => Promise<readonly string[]>;
+}
+
+class ProtectedExtensionFrameError extends Error {
+  readonly frameCount: number;
+
+  constructor(frameCount: number) {
+    super(
+      `Cannot access ${frameCount} chrome-extension:// frame${frameCount === 1 ? "" : "s"} owned by another extension`
+    );
+    this.name = "ProtectedExtensionFrameError";
+    this.frameCount = frameCount;
+  }
+}
+
 /**
  * Thin boundary around playwright-crx.
  *
@@ -52,13 +68,18 @@ type CrxRuntime = Pick<typeof crx, "start">;
  */
 export class PlaywrightEngine implements AutomationEngine {
   readonly #runtime: CrxRuntime;
+  readonly #inspectFrames: (tabId: number) => Promise<readonly string[]>;
   readonly #pages = new Map<number, Page>();
   readonly #tabIdBySessionId = new Map<AutomationSessionId, number>();
   readonly #sessionIdByTabId = new Map<number, AutomationSessionId>();
   #applicationPromise?: Promise<CrxApplication>;
 
-  constructor(runtime: CrxRuntime = crx) {
+  constructor(
+    runtime: CrxRuntime = crx,
+    options: PlaywrightEngineOptions = {}
+  ) {
     this.#runtime = runtime;
+    this.#inspectFrames = options.inspectFrames ?? inspectTabFrames;
   }
 
   async start(
@@ -162,10 +183,27 @@ export class PlaywrightEngine implements AutomationEngine {
       return attachedPage;
     }
 
+    const frames = await this.#inspectFrames(tabId).catch(() => []);
+    const protectedFrameCount = frames.filter(isForeignExtensionFrame).length;
+    if (protectedFrameCount > 0) {
+      throw new ProtectedExtensionFrameError(protectedFrameCount);
+    }
+
     const application = await this.#application();
-    const page = await application.attach(tabId);
-    this.#pages.set(tabId, page);
-    return page;
+    try {
+      const page = await application.attach(tabId);
+      this.#pages.set(tabId, page);
+      return page;
+    } catch (error) {
+      // playwright-crx can fail after chrome.debugger has already attached,
+      // especially while discovering an inaccessible OOPIF. Always release
+      // only this tab so a reload can start a clean session and other tabs stay
+      // attached.
+      await application.detach(tabId).catch(() => undefined);
+      this.#pages.delete(tabId);
+      this.#removeSessionForTab(tabId);
+      throw error;
+    }
   }
 
   async snapshot(tabId: number): Promise<PlaywrightPageSnapshot> {
@@ -370,9 +408,11 @@ function errorMessage(error: unknown): string {
 }
 
 function attachFailureMessage(tabId: number, error: unknown): string {
-  const message = errorMessage(error);
+  const message = errorChainText(error);
   if (
-    message.includes("Cannot access a chrome-extension:// URL of different extension")
+    error instanceof ProtectedExtensionFrameError ||
+    message.includes("Cannot access a chrome-extension:// URL of different extension") ||
+    /chrome-extension:\/\/.*different extension/i.test(message)
   ) {
     return (
       `Could not attach automation session to tab ${tabId}. ` +
@@ -380,7 +420,64 @@ function attachFailureMessage(tabId: number, error: unknown): string {
       "Close its popup or disable it for this site, reload the tab, and try again."
     );
   }
-  return `Could not attach automation session to tab ${tabId}`;
+  if (
+    /another debugger|debugger is already attached|already attached to the tab/i.test(
+      message
+    )
+  ) {
+    return (
+      `Could not attach automation session to tab ${tabId}. ` +
+      "DevTools or another automation tool is already controlling this tab. " +
+      "Close it, reload the page, and try again."
+    );
+  }
+  if (/no tab|tab .*not found|target closed|inspected target navigated or closed/i.test(message)) {
+    return (
+      `Could not attach automation session to tab ${tabId}. ` +
+      "The tab was closed or became unavailable. Open the HTTP/HTTPS page again and retry."
+    );
+  }
+  if (/cannot access contents of url|cannot attach to this target/i.test(message)) {
+    return (
+      `Could not attach automation session to tab ${tabId}. ` +
+      "Automation is only available on ordinary HTTP or HTTPS pages."
+    );
+  }
+  return (
+    `Could not attach automation session to tab ${tabId}. ` +
+    "Reload the page and try again. If the problem continues, close DevTools and disable other automation extensions for this site."
+  );
+}
+
+function errorChainText(error: unknown): string {
+  const messages: string[] = [];
+  const visited = new Set<unknown>();
+  let current: unknown = error;
+  while (current !== undefined && current !== null && !visited.has(current)) {
+    visited.add(current);
+    messages.push(errorMessage(current));
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return messages.join("\n");
+}
+
+async function inspectTabFrames(tabId: number): Promise<readonly string[]> {
+  if (
+    typeof chrome === "undefined" ||
+    chrome.webNavigation?.getAllFrames === undefined
+  ) {
+    return [];
+  }
+  const frames = await chrome.webNavigation.getAllFrames({ tabId });
+  return frames?.map(({ url }) => url) ?? [];
+}
+
+function isForeignExtensionFrame(url: string): boolean {
+  if (!url.startsWith("chrome-extension://")) return false;
+  if (typeof chrome === "undefined" || chrome.runtime?.getURL === undefined) {
+    return true;
+  }
+  return !url.startsWith(chrome.runtime.getURL(""));
 }
 
 function stepTarget(step: AutomationStep): ElementTarget | undefined {

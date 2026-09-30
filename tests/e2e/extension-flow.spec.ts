@@ -10,6 +10,9 @@ import {
 } from "@playwright/test";
 
 const extensionPath = resolve("dist");
+const protectedFrameExtensionPath = resolve(
+  "tests/e2e/fixtures/protected-frame-extension"
+);
 const httpFixture = "http://localhost:4173/playwright-crx-fixture.html";
 const secondHttpFixture =
   "http://127.0.0.1:4173/playwright-crx-fixture.html";
@@ -33,8 +36,8 @@ const test = base.extend<{ environment: ExtensionEnvironment }>({
       headless: true,
       ignoreHTTPSErrors: true,
       args: [
-        `--disable-extensions-except=${extensionPath}`,
-        `--load-extension=${extensionPath}`
+        `--disable-extensions-except=${extensionPath},${protectedFrameExtensionPath}`,
+        `--load-extension=${extensionPath},${protectedFrameExtensionPath}`
       ]
     });
 
@@ -46,6 +49,11 @@ const test = base.extend<{ environment: ExtensionEnvironment }>({
     await fixture.goto(httpFixture);
     const panel = await context.newPage();
     await panel.goto(`chrome-extension://${extensionId}/index.html`);
+    await fixture.bringToFront();
+    await expect
+      .poll(() => activeTabUrl(panel))
+      .toBe(httpFixture);
+    await panel.reload();
     await fixture.bringToFront();
 
     await expect(panel.getByRole("heading", { name: "Current site" })).toBeVisible();
@@ -154,6 +162,82 @@ test.describe("unpacked extension release flows", () => {
     await expect(panel.getByText(/succeeded/).first()).toBeVisible();
   });
 
+  test("isolates a protected extension frame and retries cleanly after reload", async ({
+    environment
+  }) => {
+    const { context, fixture, panel } = environment;
+    const protectedTab = await context.newPage();
+    await protectedTab.goto("http://127.0.0.1:4173/protected-frame.html");
+    await expect(
+      protectedTab.locator("iframe[data-e2e-protected-extension-frame]")
+    ).toHaveAttribute("src", /^chrome-extension:\/\//);
+    const protectedTabId = await tabIdFor(panel, protectedTab);
+
+    await sendRuntime(panel, {
+      type: runtimeMessageType,
+      action: "create-preset",
+      fields: presetFields("E2E protected frame", "127.0.0.1", false, [
+        customCodeStep(
+          "protected-frame-run",
+          "document.body.dataset.protectedFrameRetry = 'done';"
+        )
+      ])
+    });
+
+    const failedRun = await rawRuntime(panel, {
+      type: runtimeMessageType,
+      action: "run",
+      tabId: protectedTabId
+    });
+    expect(failedRun.ok).toBe(false);
+    expect(failedRun.error).toContain(
+      "Another extension injected a protected frame"
+    );
+    expect(failedRun.error).toContain("reload the tab, and try again");
+    await expect.poll(async () => (await sessions(panel)).length).toBe(0);
+
+    await sendRuntime(panel, {
+      type: runtimeMessageType,
+      action: "create-preset",
+      fields: presetFields("E2E healthy tab", "localhost", false, [
+        customCodeStep(
+          "healthy-tab-run",
+          "document.body.dataset.healthyTabRun = 'done';"
+        )
+      ])
+    });
+    const healthyTabId = await tabIdFor(panel, fixture);
+    await sendRuntime(panel, {
+      type: runtimeMessageType,
+      action: "run",
+      tabId: healthyTabId
+    });
+    await expect(fixture.locator("body")).toHaveAttribute(
+      "data-healthy-tab-run",
+      "done"
+    );
+
+    await protectedTab.evaluate(() =>
+      sessionStorage.setItem("e2e-disable-protected-frame", "1")
+    );
+    await protectedTab.reload();
+    await expect(
+      protectedTab.locator("iframe[data-e2e-protected-extension-frame]")
+    ).toHaveCount(0);
+    await protectedTab.bringToFront();
+
+    await sendRuntime(panel, {
+      type: runtimeMessageType,
+      action: "run",
+      tabId: protectedTabId
+    });
+    await expect(protectedTab.locator("body")).toHaveAttribute(
+      "data-protected-frame-retry",
+      "done"
+    );
+    await expect.poll(async () => (await sessions(panel)).length).toBe(0);
+  });
+
   test("covers repeat, Stop, Stop All and two independent tabs", async ({
     environment
   }) => {
@@ -258,6 +342,13 @@ async function activeTabId(panel: Page): Promise<number> {
   });
 }
 
+async function activeTabUrl(panel: Page): Promise<string | undefined> {
+  return panel.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab?.url;
+  });
+}
+
 async function tabIdFor(panel: Page, target: Page): Promise<number> {
   await target.bringToFront();
   return activeTabId(panel);
@@ -267,14 +358,21 @@ async function sendRuntime(
   panel: Page,
   message: Record<string, unknown>
 ): Promise<any> {
-  const response = await panel.evaluate(
-    async (runtimeMessage) => chrome.runtime.sendMessage(runtimeMessage),
-    message
-  );
+  const response = await rawRuntime(panel, message);
   if (response?.ok !== true) {
     throw new Error(response?.error ?? "Extension runtime request failed.");
   }
   return response;
+}
+
+async function rawRuntime(
+  panel: Page,
+  message: Record<string, unknown>
+): Promise<any> {
+  return panel.evaluate(
+    async (runtimeMessage) => chrome.runtime.sendMessage(runtimeMessage),
+    message
+  );
 }
 
 async function startRunWithoutWaiting(panel: Page, tabId: number): Promise<void> {
@@ -342,5 +440,18 @@ function waitStep(id: string, durationMs: number) {
     name: id,
     enabled: true,
     condition: { type: "timeout", durationMs }
+  };
+}
+
+function customCodeStep(id: string, source: string) {
+  return {
+    id,
+    type: "customCode",
+    name: id,
+    enabled: true,
+    language: "javascript",
+    apiVersion: 1,
+    executionContext: "page",
+    source
   };
 }
