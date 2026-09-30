@@ -34,12 +34,24 @@ npm run verify
 
 Individual checks are available through `npm run typecheck` and `npm test`.
 
+Install the browser used by the unpacked-extension E2E suite once, then run the
+full browser scenarios with one command:
+
+```powershell
+npm run test:e2e:install
+npm run test:e2e
+```
+
+`npm run verify:all` runs the Vitest suite and the production unpacked-extension
+E2E suite. See [E2E testing](docs/e2e-testing.md) for details.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Side panel UX architecture](docs/side-panel-ux.md)
 - [Portable preset v1 format](docs/preset-format.md)
 - [Release Candidate requirements](docs/release-candidate.md)
+- [E2E testing](docs/e2e-testing.md)
 
 ## Technical spikes
 

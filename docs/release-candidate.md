@@ -192,6 +192,10 @@ npm run verify
 
 ### Перед созданием RC
 
+```powershell
+npm run verify:all
+```
+
 - E2E-загрузка папки `dist` как unpacked extension;
 - Create/Import → Save → Run;
 - Record → Edit → Save → Run;
@@ -275,9 +279,9 @@ npm run verify
 | Chrome Beta, Dev, Canary, Edge и другие Chromium-браузеры | Не поддерживается | Отдельная квалификационная матрица |
 | Автогенерируемые recorder-локаторы для нестандартных компонентов | Best effort | Набор fixture- и E2E-тестов для конкретного типа компонента |
 
-Текущий placeholder в `tests/e2e/extension-flow.test.ts` является
-release blocker, а не доказательством E2E-покрытия. Он должен быть заменён
-реальным сценарием до присвоения сборке статуса Release Candidate.
+Browser-проверки реализованы в `tests/e2e/extension-flow.spec.ts` и запускаются
+командой `npm run test:e2e`. Тесты используют чистый профиль Chromium,
+production-папку `dist` и локальные HTTP/HTTPS fixture-страницы.
 
 ## Решение о выпуске
 

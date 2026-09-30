@@ -13,7 +13,11 @@
     "generate:schemas": "node scripts/generate-preset-validator.mjs",
     "build": "npm run generate:schemas && npm run typecheck && vite build --config vite.config.ts",
     "preview": "vite preview --config vite.config.ts",
+    "test:e2e": "npm run build && playwright test",
+    "test:e2e:headed": "npm run build && playwright test --headed",
+    "test:e2e:install": "playwright install chromium",
     "verify": "npm run build && npm test",
+    "verify:all": "npm test && npm run test:e2e",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -26,11 +30,13 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/chrome": "0.3.0",
     "@types/node": "^24.19.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",
+    "selfsigned": "5.5.0",
     "typescript": "^7.0.2",
     "vite": "7.3.6",
     "vitest": "^5.0.2"

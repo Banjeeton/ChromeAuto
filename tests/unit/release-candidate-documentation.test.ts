@@ -31,6 +31,7 @@ describe("Release Candidate documentation", () => {
     expect(requirements).toContain("## Ограничения Manifest V3");
     expect(requirements).toContain("## Экспериментальные и неподтверждённые возможности");
     expect(requirements).toContain("Cannot access a chrome-extension:// URL");
-    expect(requirements).toContain("release blocker");
+    expect(requirements).toContain("tests/e2e/extension-flow.spec.ts");
+    expect(requirements).toContain("npm run test:e2e");
   });
 });

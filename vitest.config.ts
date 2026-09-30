@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "node",
-    include: ["tests/**/*.test.{ts,tsx}"]
+    include: ["tests/**/*.test.{ts,tsx}"],
+    exclude: ["tests/e2e/**"]
   }
 });
