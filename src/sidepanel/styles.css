@@ -170,6 +170,12 @@ textarea {
   text-transform: uppercase;
 }
 
+.section-label:has(.ui-icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 h1,
 h2,
 p {
@@ -2223,11 +2229,27 @@ body {
   text-transform: none;
 }
 
-.workspace-state-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: currentcolor;
+.workspace-header__actions .status-badge--ready {
+  color: var(--color-success);
+}
+
+.workspace-header__actions .status-badge--running {
+  color: var(--color-accent);
+}
+
+.workspace-header__actions .status-badge--waiting,
+.workspace-header__actions .status-badge--stopped {
+  color: var(--color-warning);
+}
+
+.workspace-header__actions .status-badge--recording,
+.workspace-header__actions .status-badge--failed {
+  color: var(--color-error);
+}
+
+.workspace-header__actions .status-badge--disabled,
+.workspace-header__actions .status-badge--unavailable {
+  color: var(--color-text-muted);
 }
 
 .workspace-header__divider {

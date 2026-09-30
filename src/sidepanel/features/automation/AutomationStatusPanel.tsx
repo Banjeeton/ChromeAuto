@@ -1,7 +1,7 @@
 import type { ManualRunStatus } from "../../../core/application/manual-run-controller";
 import type { RecorderPanelStatus } from "../../../core/application/recorder-panel-controller";
 import type { ActiveTab } from "../../types";
-import { Alert, Button, Card, type StatusTone } from "../../components";
+import { Alert, Button, Card, Icon, type StatusTone } from "../../components";
 import { RecorderControls } from "../recorder/RecorderControls";
 
 export interface AutomationStatusPanelProps {
@@ -54,6 +54,7 @@ export function AutomationStatusPanel({
             )}
           </div>
           <Button onClick={onRefresh} size="small" variant="secondary">
+            <Icon name="refresh" />
             Refresh
           </Button>
         </div>
@@ -70,6 +71,7 @@ export function AutomationStatusPanel({
 
         <div className="button-grid primary-actions">
           <Button disabled={!canRun} onClick={onRun}>
+            <Icon name="run" />
             {busyAction === "run" ? "Running…" : "Run automation"}
           </Button>
           <Button
@@ -77,6 +79,7 @@ export function AutomationStatusPanel({
             onClick={onStop}
             variant="secondary"
           >
+            <Icon name="stop" />
             {busyAction === "stop" ? "Stopping…" : "Stop"}
           </Button>
         </div>

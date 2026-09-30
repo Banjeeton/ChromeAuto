@@ -14,6 +14,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  Icon,
   ConfirmationDialog,
   Input,
   Textarea
@@ -367,6 +368,7 @@ export function PresetEditor({
           }
           type="submit"
         >
+          <Icon name={mode === "create" ? "add" : mode === "duplicate" ? "duplicate" : "edit"} />
           {saving
             ? "Saving…"
             : mode === "create"

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 
 import type { PresetEditableFields } from "../../../core/application/preset-editor";
 import type { PresetV1 } from "../../../core/domain/preset";
-import { Alert, Badge, Button, Card, Confirmation, Input } from "../../components";
+import { Alert, Badge, Button, Card, Confirmation, Icon, Input } from "../../components";
 import { PresetEditor } from "./PresetEditor";
 import {
   PresetList,
@@ -84,6 +84,7 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
         </div>
         <div className="preset-toolbar-actions">
           <Button onClick={props.onRefresh} size="small" variant="secondary">
+            <Icon name="refresh" />
             Refresh
           </Button>
           <Button
@@ -92,6 +93,7 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
             size="small"
             variant="secondary"
           >
+            <Icon name="import" />
             {props.busyAction === "import-preset" ? "Importing…" : "Import JSON"}
           </Button>
           <Input
@@ -111,6 +113,7 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
             size="small"
             variant="secondary"
           >
+            <Icon name="add" />
             New preset
           </Button>
         </div>

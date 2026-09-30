@@ -50,6 +50,14 @@ describe("side panel accessibility and responsive style contracts", () => {
     expect(styles).toContain("width: 100%");
   });
 
+  it("keeps prototype icons crisp and consistently aligned in every control state", () => {
+    expect(components).toContain(".ui-icon");
+    expect(components).toContain("vector-effect: non-scaling-stroke");
+    expect(components).toContain(".ui-button .ui-icon");
+    expect(components).toContain(".status-badge");
+    expect(components).toContain("white-space: nowrap");
+  });
+
   it("implements the approved light Figma shell and vertical navigation", () => {
     expect(tokens).toContain("color-scheme: light");
     expect(tokens).toContain("--color-accent: #4c3df0");

@@ -7,6 +7,12 @@ export {
   type ButtonVariant
 } from "./Button";
 export { Card, type CardProps } from "./Card";
+export { Icon, type IconName, type IconProps } from "./Icon";
+export {
+  StatusBadge,
+  type AutomationStatus,
+  type StatusBadgeProps
+} from "./StatusBadge";
 export {
   Confirmation,
   ConfirmationDialog,

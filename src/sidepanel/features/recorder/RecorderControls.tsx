@@ -1,5 +1,5 @@
 import type { RecorderPanelStatus } from "../../../core/application/recorder-panel-controller";
-import { Button } from "../../components";
+import { Button, Icon } from "../../components";
 
 export interface RecorderControlsProps {
   readonly status?: RecorderPanelStatus;
@@ -45,6 +45,7 @@ export function RecorderControls({
           onClick={onRecord}
           variant="danger"
         >
+          <Icon name="record" />
           {busyAction === "record" ? "Starting…" : "Record"}
         </Button>
         <Button
@@ -52,6 +53,7 @@ export function RecorderControls({
           onClick={onStopRecording}
           variant={active ? "danger" : "secondary"}
         >
+          <Icon name="stop" />
           {busyAction === "stop-recording" ? "Stopping…" : "Stop recording"}
         </Button>
       </div>

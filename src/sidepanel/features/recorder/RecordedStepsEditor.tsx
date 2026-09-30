@@ -11,7 +11,7 @@ import type {
   PressKeyStep,
   SelectStep
 } from "../../../core/domain/automation-step";
-import { Alert, Button, ConfirmationDialog } from "../../components";
+import { Alert, Button, ConfirmationDialog, Icon } from "../../components";
 import { createStepTemplate } from "../presets/step-template";
 
 type ManualRecordedStepType =
@@ -281,6 +281,7 @@ export function RecordedStepsEditor({
           size="small"
           variant="secondary"
         >
+          <Icon name="add" />
           Add step
         </Button>
       </div>
@@ -445,7 +446,7 @@ export function RecordedStepsEditor({
                   onClick={() => moveStep(index, -1)}
                   type="button"
                 >
-                  ↑ Up
+                  <Icon name="up" /> Up
                 </button>
                 <button
                   aria-label={`Move step ${index + 1} down`}
@@ -453,7 +454,7 @@ export function RecordedStepsEditor({
                   onClick={() => moveStep(index, 1)}
                   type="button"
                 >
-                  ↓ Down
+                  <Icon name="down" /> Down
                 </button>
                 <button
                   aria-label={`Delete step ${index + 1}`}
@@ -462,7 +463,7 @@ export function RecordedStepsEditor({
                   onClick={() => removeStep(index, step.id)}
                   type="button"
                 >
-                  Delete
+                  <Icon name="delete" /> Delete
                 </button>
               </div>
             </li>
@@ -502,6 +503,7 @@ export function RecordedStepsEditor({
           Cancel creation
         </Button>
         <Button disabled={busy} type="submit">
+          <Icon name="edit" />
           {busy ? "Saving…" : "Save draft"}
         </Button>
         <Button

@@ -4,7 +4,7 @@ import type { RecorderLogEntry } from "../../../core/domain/recorder-log-entry";
 import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
 import type { StepLogEntry } from "../../../core/domain/step-log-entry";
 import type { NaturalPacingLogEntry } from "../../../core/domain/natural-pacing-log-entry";
-import { Button, Card } from "../../components";
+import { Button, Card, Icon } from "../../components";
 import type { Notice } from "../../types";
 import {
   buildRunLogGroups,
@@ -74,6 +74,7 @@ export function RunLogPanel({
           size="small"
           variant="secondary"
         >
+          <Icon name="delete" />
           Clear
         </Button>
       </div>

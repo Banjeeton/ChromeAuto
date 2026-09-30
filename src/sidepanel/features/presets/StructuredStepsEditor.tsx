@@ -11,7 +11,7 @@ import type {
   WaitStep
 } from "../../../core/domain/automation-step";
 import type { PresetValidationIssue } from "../../../core/domain/preset-validator";
-import { Alert, Badge, Button, Checkbox, Select } from "../../components";
+import { Alert, Badge, Button, Checkbox, Icon, Select } from "../../components";
 import { createStepTemplate, STEP_TYPES } from "./step-template";
 
 export interface StructuredStepsEditorProps {
@@ -95,6 +95,7 @@ export function StructuredStepsEditor({
           size="small"
           variant="secondary"
         >
+          <Icon name="add" />
           Add step
         </Button>
       </div>
@@ -182,7 +183,7 @@ export function StructuredStepsEditor({
                         onClick={() => moveStep(index, -1)}
                         type="button"
                       >
-                        ↑ Up
+                        <Icon name="up" /> Up
                       </button>
                       <button
                         aria-label={`Duplicate step ${index + 1}`}
@@ -190,7 +191,7 @@ export function StructuredStepsEditor({
                         onClick={() => duplicateStep(index)}
                         type="button"
                       >
-                        Duplicate
+                        <Icon name="duplicate" /> Duplicate
                       </button>
                       <button
                         aria-label={`Move step ${index + 1} down`}
@@ -198,7 +199,7 @@ export function StructuredStepsEditor({
                         onClick={() => moveStep(index, 1)}
                         type="button"
                       >
-                        ↓ Down
+                        <Icon name="down" /> Down
                       </button>
                       <button
                         aria-label={`Delete step ${index + 1}`}
@@ -207,7 +208,7 @@ export function StructuredStepsEditor({
                         onClick={() => removeStep(index)}
                         type="button"
                       >
-                        Delete
+                        <Icon name="delete" /> Delete
                       </button>
                     </div>
                   </div>
@@ -508,7 +509,7 @@ function TargetEditor({ target, path, issues, disabled, onChange }: { readonly t
           <button className="danger-text locator-remove-button" disabled={disabled} onClick={() => onChange({ ...target, fallbacks: target.fallbacks.filter((_, fallbackIndex) => fallbackIndex !== index) })} type="button">Remove fallback</button>
         </div>
       ))}
-      <Button className="add-fallback-button" disabled={disabled} onClick={() => onChange({ ...target, fallbacks: [...target.fallbacks, { type: "css", value: "body" }] })} size="small" variant="secondary">Add fallback locator</Button>
+      <Button className="add-fallback-button" disabled={disabled} onClick={() => onChange({ ...target, fallbacks: [...target.fallbacks, { type: "css", value: "body" }] })} size="small" variant="secondary"><Icon name="add" /> Add fallback locator</Button>
     </fieldset>
   );
 }

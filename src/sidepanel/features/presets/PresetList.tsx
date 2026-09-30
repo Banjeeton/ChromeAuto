@@ -1,5 +1,5 @@
 import type { PresetV1 } from "../../../core/domain/preset";
-import { Alert, Badge, Button, Confirmation } from "../../components";
+import { Alert, Badge, Button, Confirmation, Icon } from "../../components";
 
 export type PresetListState =
   | { readonly status: "loading" }
@@ -57,6 +57,7 @@ export function PresetList({
       <Alert className="preset-library-state" tone="error">
         <span>{state.message}</span>
         <Button onClick={onRetry} size="small" variant="danger">
+          <Icon name="refresh" />
           Try again
         </Button>
       </Alert>
@@ -210,9 +211,11 @@ function PresetCard({
       ) : (
         <div className="preset-card-actions">
           <Button onClick={() => perform(onEdit)} size="small" variant="secondary">
+            <Icon name="edit" />
             Edit
           </Button>
           <Button onClick={() => perform(onDuplicate)} size="small" variant="secondary">
+            <Icon name="duplicate" />
             Duplicate
           </Button>
           <Button
@@ -221,6 +224,7 @@ function PresetCard({
             size="small"
             variant="secondary"
           >
+            <Icon name="export" />
             {exporting ? "Exporting…" : "Export"}
           </Button>
           <Button
@@ -231,6 +235,7 @@ function PresetCard({
             size="small"
             variant="danger"
           >
+            <Icon name="delete" />
             Delete
           </Button>
         </div>

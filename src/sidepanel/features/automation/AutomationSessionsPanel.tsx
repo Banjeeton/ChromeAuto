@@ -4,7 +4,14 @@ import type { RepeatCycleStatusView } from "../../../core/application/repeat-cyc
 import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
 import type { RunSession } from "../../../core/domain/run-session";
 import type { StepLogEntry } from "../../../core/domain/step-log-entry";
-import { Badge, Button, Card, ConfirmationDialog } from "../../components";
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmationDialog,
+  Icon,
+  StatusBadge
+} from "../../components";
 
 export interface AutomationSessionsPanelProps {
   readonly busyAction?: string;
@@ -109,7 +116,13 @@ export function AutomationSessionsPanel({
                 className={`session-outcome ${outcome.state}`}
                 key={outcome.id}
               >
-                <Badge tone={outcomeTone(outcome.state)}>{outcome.state}</Badge>
+                <StatusBadge status={
+                  outcome.state === "completed"
+                    ? "Ready"
+                    : outcome.state === "stopped"
+                      ? "Stopped"
+                      : "Failed"
+                } />
                 <div>
                   <strong>Tab #{outcome.tabId}</strong>
                   <span>{outcome.message}</span>
@@ -127,6 +140,7 @@ export function AutomationSessionsPanel({
           onClick={() => setConfirmStopAll(true)}
           variant="danger"
         >
+          <Icon name="stop" />
           {busyAction === "stop-all" ? "Stopping all…" : "Stop All"}
         </Button>
       )}
@@ -166,9 +180,7 @@ function RepeatCycleCard({
           <span className="session-indicator" />
           <strong>{cycle.presetName}</strong>
         </div>
-        <Badge tone={cycle.state === "running" ? "info" : "warning"}>
-          {cycle.state === "running" ? "Running" : "Waiting"}
-        </Badge>
+        <StatusBadge status={cycle.state === "running" ? "Running" : "Waiting"} />
       </div>
       <dl className="automation-session-details">
         <div><dt>Hostname</dt><dd>{cycle.hostname}</dd></div>
@@ -193,6 +205,7 @@ function RepeatCycleCard({
           size="small"
           variant="secondary"
         >
+          <Icon name="stop" />
           Stop tab #{cycle.tabId}
         </Button>
       )}
@@ -216,9 +229,11 @@ function RunSessionCard({
           <span className="session-indicator" />
           <strong>Tab #{session.tabId}</strong>
         </div>
-        <Badge tone={session.status === "stopping" ? "warning" : "info"}>
-          {session.status === "stopping" ? "Stopping" : "Running"}
-        </Badge>
+        {session.status === "stopping" ? (
+          <Badge tone="warning">Stopping</Badge>
+        ) : (
+          <StatusBadge status="Running" />
+        )}
       </div>
       <p className="automation-session-preset">Preset: {session.presetId}</p>
       {session.currentStep !== undefined && (
@@ -235,6 +250,7 @@ function RunSessionCard({
           size="small"
           variant="secondary"
         >
+          <Icon name="stop" />
           Stop tab #{session.tabId}
         </Button>
       )}
@@ -317,12 +333,6 @@ export function buildRecentSessionOutcomes(
   return [...stepOutcomes, ...cycleOutcomes]
     .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))
     .slice(0, 6);
-}
-
-function outcomeTone(state: SessionOutcomeView["state"]) {
-  if (state === "completed") return "success" as const;
-  if (state === "failed") return "error" as const;
-  return "warning" as const;
 }
 
 function formatNextRun(timestamp: number): string {

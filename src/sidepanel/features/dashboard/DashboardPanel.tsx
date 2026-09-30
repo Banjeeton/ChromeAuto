@@ -5,7 +5,15 @@ import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-
 import type { RunSession } from "../../../core/domain/run-session";
 import type { StepLogEntry } from "../../../core/domain/step-log-entry";
 import type { ReactNode } from "react";
-import { Alert, Badge, Button, Card, type StatusTone } from "../../components";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Icon,
+  StatusBadge,
+  type StatusTone
+} from "../../components";
 import type { ActiveTab } from "../../types";
 import { AutomationSessionsPanel } from "../automation";
 import { RecorderControls } from "../recorder";
@@ -95,8 +103,9 @@ export function DashboardPanel({
             </p>
           </div>
           <div className="dashboard-heading-actions">
-            <Badge tone={dashboardTone(state)}>{state}</Badge>
+            <StatusBadge status={state} />
             <Button onClick={onRefresh} size="small" variant="secondary">
+              <Icon name="refresh" />
               Refresh
             </Button>
           </div>
@@ -128,7 +137,7 @@ export function DashboardPanel({
             {contextPreset.stepCount !== undefined && (
               <small>{contextPreset.stepCount} steps</small>
             )}
-            <Badge tone={dashboardTone(state)}>{state}</Badge>
+            <StatusBadge status={state} />
           </div>
         ) : !hasNoPreset ? (
           <div className="dashboard-preset" aria-label="Assigned preset">
@@ -166,12 +175,16 @@ export function DashboardPanel({
               <span>Create a preset or record actions on this page.</span>
             </div>
             <div className="context-preset-empty__actions">
-              <Button onClick={onCreatePreset}>Create preset</Button>
+              <Button onClick={onCreatePreset}>
+                <Icon name="add" />
+                Create preset
+              </Button>
               <Button
                 disabled={!canRecord}
                 onClick={onRecord}
                 variant="secondary"
               >
+                <Icon name="record" />
                 Record actions
               </Button>
             </div>
@@ -183,6 +196,7 @@ export function DashboardPanel({
               aria-label="Automation actions"
             >
               <Button disabled={!canRun} onClick={onRun}>
+                <Icon name="run" />
                 {busyAction === "run" ? "Running…" : "Run"}
               </Button>
               <Button
@@ -194,6 +208,7 @@ export function DashboardPanel({
                 onClick={onStop}
                 variant="secondary"
               >
+                <Icon name="stop" />
                 {busyAction === "stop" ? "Stopping…" : "Stop"}
               </Button>
             </div>
@@ -204,6 +219,7 @@ export function DashboardPanel({
                 onClick={() => onEditPreset(contextPresetId)}
                 variant="secondary"
               >
+                <Icon name="edit" />
                 Edit preset
               </Button>
             )}
@@ -224,7 +240,7 @@ export function DashboardPanel({
         <Card className="card dashboard-card repeat-settings-card">
           <div className="pacing-heading">
             <div>
-              <p className="section-label">Scheduling</p>
+              <p className="section-label"><Icon name="repeat" size={14} /> Scheduling</p>
               <h2>Repeat cycle</h2>
               <p>
                 {contextPreset.repeatEnabled

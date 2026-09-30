@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Checkbox, Input } from "../../components";
+import { Alert, Button, Card, Checkbox, Icon, Input } from "../../components";
 
 export interface NaturalPacingPanelProps {
   readonly enabled: boolean;
@@ -32,7 +32,7 @@ export function NaturalPacingPanel({
     <Card className="card dashboard-card pacing-card" aria-labelledby="natural-pacing-title">
       <div className="pacing-heading">
         <div>
-          <p className="section-label">Timing</p>
+          <p className="section-label"><Icon name="pacing" size={14} /> Timing</p>
           <h2 id="natural-pacing-title">Natural pacing</h2>
           <p>Random pauses between enabled automation steps.</p>
         </div>
@@ -87,6 +87,7 @@ export function NaturalPacingPanel({
         size="small"
         variant="secondary"
       >
+        <Icon name="settings" />
         {saving ? "Saving…" : "Save pacing"}
       </Button>
     </Card>

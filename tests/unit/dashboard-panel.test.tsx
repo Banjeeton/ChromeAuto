@@ -67,7 +67,9 @@ describe("current-site Dashboard", () => {
     expect(html).toContain("3 steps");
     expect(html).toContain("Disabled");
     expect(html).toContain(">Edit preset<");
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Run<\/button>/);
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*><svg[^>]*ui-icon--run[\s\S]*?Run<\/button>/
+    );
   });
 
   it("offers creation and recording only when the exact hostname has no preset", () => {
@@ -139,7 +141,9 @@ describe("current-site Dashboard", () => {
 
     expect(running).toContain("Running");
     expect(running).toContain("is running in this tab");
-    expect(running).toMatch(/<button(?![^>]*disabled)[^>]*>Stop<\/button>/);
+    expect(running).toMatch(
+      /<button(?![^>]*disabled)[^>]*><svg[^>]*ui-icon--stop[\s\S]*?Stop<\/button>/
+    );
     expect(waiting).toContain("Waiting");
     expect(waiting).toContain("waiting for its next run");
     expect(recording).toContain("Recording");

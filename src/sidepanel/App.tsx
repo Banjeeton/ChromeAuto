@@ -24,7 +24,7 @@ import {
   useNaturalPacingController
 } from "./features/natural-pacing";
 import { useOperationState } from "./hooks/use-operation-state";
-import { Badge, type StatusTone } from "./components";
+import { Icon, StatusBadge } from "./components";
 import {
   SidePanelNavigation,
   type SidePanelView
@@ -336,22 +336,14 @@ function App() {
         <div className="workspace-main">
           <header className="workspace-header">
             <div className="workspace-brand">
-              <svg aria-hidden="true" className="workspace-brand__mark" viewBox="0 0 24 24">
-                <path d="M13.3 1.8 4.8 13h6.1l-1 9.2L19.2 10h-6.4l.5-8.2Z" />
-              </svg>
+              <Icon className="workspace-brand__mark" name="bolt" size={24} />
               <h1 id="app-title">Automation</h1>
             </div>
             <div className="workspace-header__actions">
-              <Badge tone={workspaceTone(workspaceState)}>
-                <span aria-hidden="true" className="workspace-state-dot" />
-                {workspaceState}
-              </Badge>
+              <StatusBadge status={workspaceState} />
               <span aria-hidden="true" className="workspace-header__divider" />
               <span aria-hidden="true" className="workspace-settings">
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
-                  <path d="m19 13.2 1.5 1.2-1.8 3.1-1.8-.7a7 7 0 0 1-2.1 1.2l-.3 1.9h-3.6l-.3-1.9a7 7 0 0 1-2.1-1.2l-1.8.7-1.8-3.1 1.5-1.2a7.1 7.1 0 0 1 0-2.4L4.9 9.6l1.8-3.1 1.8.7A7 7 0 0 1 10.6 6l.3-1.9h3.6l.3 1.9a7 7 0 0 1 2.1 1.2l1.8-.7 1.8 3.1-1.5 1.2a7.1 7.1 0 0 1 0 2.4Z" />
-                </svg>
+                <Icon name="settings" size={20} />
               </span>
             </div>
           </header>
@@ -514,14 +506,6 @@ export function getWorkspaceState(
     return unavailableReason === "preset-disabled" ? "Disabled" : "Unavailable";
   }
   return "Ready";
-}
-
-function workspaceTone(state: WorkspaceState): StatusTone {
-  if (state === "Ready") return "success";
-  if (state === "Running") return "info";
-  if (state === "Waiting" || state === "Stopped") return "warning";
-  if (state === "Disabled" || state === "Unavailable") return "neutral";
-  return "error";
 }
 
 export { createPresetFilename } from "./features/presets";

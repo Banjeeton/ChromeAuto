@@ -9,9 +9,11 @@ import {
   Checkbox,
   Confirmation,
   ConfirmationDialog,
+  Icon,
   Input,
   Modal,
   Select,
+  StatusBadge,
   Textarea
 } from "../../src/sidepanel/components";
 
@@ -111,5 +113,36 @@ describe("side panel design system", () => {
     expect(html).toContain("ui-confirmation");
     expect(html).toContain("Delete this preset?");
     expect(html).toContain("Replace preset");
+  });
+
+  it("renders local reusable action icons without exposing decorative SVG to assistive technology", () => {
+    const html = renderToStaticMarkup(
+      <Button aria-label="Export preset" variant="secondary">
+        <Icon name="export" />
+        Export
+      </Button>
+    );
+
+    expect(html).toContain("ui-icon--export");
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('focusable="false"');
+    expect(html).not.toContain("http://");
+    expect(html).not.toContain("https://");
+  });
+
+  it.each([
+    "Ready",
+    "Running",
+    "Waiting",
+    "Recording",
+    "Stopped",
+    "Disabled",
+    "Unavailable",
+    "Failed"
+  ] as const)("renders the %s status with text and a distinct icon", (status) => {
+    const html = renderToStaticMarkup(<StatusBadge status={status} />);
+    expect(html).toContain(`status-badge--${status.toLowerCase()}`);
+    expect(html).toContain(`>${status}<`);
+    expect(html).toContain("<svg");
   });
 });
