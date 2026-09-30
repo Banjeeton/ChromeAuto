@@ -4,6 +4,7 @@ import type { RepeatCycleStatusView } from "../../../core/application/repeat-cyc
 import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
 import type { RunSession } from "../../../core/domain/run-session";
 import type { StepLogEntry } from "../../../core/domain/step-log-entry";
+import type { ReactNode } from "react";
 import { Alert, Badge, Button, Card, type StatusTone } from "../../components";
 import type { ActiveTab } from "../../types";
 import { AutomationSessionsPanel } from "../automation";
@@ -38,6 +39,7 @@ export interface DashboardPanelProps {
   readonly onStopTab?: (tabId: number) => void;
   readonly onStopRecording: () => void;
   readonly onStopAll: () => void;
+  readonly naturalPacingPanel?: ReactNode;
 }
 
 export function DashboardPanel({
@@ -60,7 +62,8 @@ export function DashboardPanel({
   onStop,
   onStopTab,
   onStopRecording,
-  onStopAll
+  onStopAll,
+  naturalPacingPanel
 }: DashboardPanelProps) {
   const currentManualStatus = statusForTab(activeTab, manualStatus);
   const currentRecorderStatus = statusForTab(activeTab, recorderStatus);
@@ -216,6 +219,27 @@ export function DashboardPanel({
           </>
         )}
       </Card>
+
+      {contextPreset !== undefined && (
+        <Card className="card dashboard-card repeat-settings-card">
+          <div className="pacing-heading">
+            <div>
+              <p className="section-label">Scheduling</p>
+              <h2>Repeat cycle</h2>
+              <p>
+                {contextPreset.repeatEnabled
+                  ? `Runs again ${contextPreset.repeatIntervalMinutes} minute(s) after completion.`
+                  : "Runs once when started manually."}
+              </p>
+            </div>
+            <Badge tone={contextPreset.repeatEnabled ? "info" : "neutral"}>
+              {contextPreset.repeatEnabled ? "Enabled" : "Off"}
+            </Badge>
+          </div>
+        </Card>
+      )}
+
+      {contextPreset !== undefined && naturalPacingPanel}
 
       <AutomationSessionsPanel
         busyAction={busyAction}

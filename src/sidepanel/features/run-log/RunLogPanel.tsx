@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { RecorderLogEntry } from "../../../core/domain/recorder-log-entry";
 import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
 import type { StepLogEntry } from "../../../core/domain/step-log-entry";
+import type { NaturalPacingLogEntry } from "../../../core/domain/natural-pacing-log-entry";
 import { Button, Card } from "../../components";
 import type { Notice } from "../../types";
 import {
@@ -18,6 +19,7 @@ export interface RunLogPanelProps {
   readonly stepLogs: readonly StepLogEntry[];
   readonly cycleLogs: readonly RepeatCycleLogEntry[];
   readonly recorderLogs: readonly RecorderLogEntry[];
+  readonly naturalPacingLogs?: readonly NaturalPacingLogEntry[];
   readonly onClear: () => void;
 }
 
@@ -34,6 +36,7 @@ export function RunLogPanel({
   stepLogs,
   cycleLogs,
   recorderLogs,
+  naturalPacingLogs = [],
   onClear
 }: RunLogPanelProps) {
   const [filter, setFilter] = useState<RunLogFilter>("all");
@@ -41,7 +44,8 @@ export function RunLogPanel({
     notices.length === 0 &&
     stepLogs.length === 0 &&
     cycleLogs.length === 0 &&
-    recorderLogs.length === 0;
+    recorderLogs.length === 0 &&
+    naturalPacingLogs.length === 0;
   const groups = useMemo(
     () =>
       buildRunLogGroups({
@@ -50,9 +54,10 @@ export function RunLogPanel({
         stepLogs,
         cycleLogs,
         recorderLogs,
+        naturalPacingLogs,
         filter
       }),
-    [currentTabId, notices, stepLogs, cycleLogs, recorderLogs, filter]
+    [currentTabId, notices, stepLogs, cycleLogs, recorderLogs, naturalPacingLogs, filter]
   );
 
   return (

@@ -2849,6 +2849,10 @@ h2 {
   border-left-color: var(--color-error);
 }
 
+.log-run-group.log-source-pacing {
+  border-left-color: #16a085;
+}
+
 .log-details pre {
   border-color: var(--color-border-default);
   color: #344057;
@@ -2963,5 +2967,71 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .workspace-view {
     animation: none;
+  }
+}
+
+.repeat-settings-card,
+.pacing-card {
+  display: grid;
+  gap: 16px;
+}
+
+.pacing-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.pacing-heading > div {
+  min-width: 0;
+}
+
+.pacing-heading h2 {
+  margin: 2px 0 4px;
+}
+
+.pacing-heading p:last-child {
+  margin: 0;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.pacing-heading .ui-checkbox {
+  flex: 0 0 auto;
+}
+
+.pacing-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pacing-fields > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.pacing-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 380px) {
+  .pacing-heading,
+  .pacing-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pacing-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

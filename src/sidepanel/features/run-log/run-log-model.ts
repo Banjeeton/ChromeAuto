@@ -1,12 +1,13 @@
 import type { RecorderLogEntry } from "../../../core/domain/recorder-log-entry";
 import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
 import type { StepLogEntry } from "../../../core/domain/step-log-entry";
+import type { NaturalPacingLogEntry } from "../../../core/domain/natural-pacing-log-entry";
 import type { Notice } from "../../types";
 import { formatStepLogDetails } from "../logs/step-log-format";
 
 export type RunLogFilter = "all" | "success" | "warning" | "error";
 export type RunLogSeverity = Exclude<RunLogFilter, "all">;
-export type RunLogSource = "automation" | "repeat" | "recorder" | "interface";
+export type RunLogSource = "automation" | "repeat" | "recorder" | "pacing" | "interface";
 
 export interface RunLogItem {
   readonly id: string;
@@ -42,6 +43,7 @@ export interface BuildRunLogGroupsInput {
   readonly stepLogs: readonly StepLogEntry[];
   readonly cycleLogs: readonly RepeatCycleLogEntry[];
   readonly recorderLogs: readonly RecorderLogEntry[];
+  readonly naturalPacingLogs?: readonly NaturalPacingLogEntry[];
   readonly filter?: RunLogFilter;
 }
 
@@ -51,13 +53,15 @@ export function buildRunLogGroups({
   stepLogs,
   cycleLogs,
   recorderLogs,
+  naturalPacingLogs = [],
   filter = "all"
 }: BuildRunLogGroupsInput): readonly RunLogTabGroup[] {
   const items = [
     ...notices.map((notice) => noticeItem(notice, currentTabId)),
     ...stepLogs.map(stepItem),
     ...cycleLogs.map(cycleItem),
-    ...recorderLogs.map(recorderItem)
+    ...recorderLogs.map(recorderItem),
+    ...naturalPacingLogs.map(naturalPacingItem)
   ]
     .filter((item) => filter === "all" || item.severity === filter)
     .sort((left, right) => timestamp(right.recordedAt) - timestamp(left.recordedAt));
@@ -95,6 +99,27 @@ export function buildRunLogGroups({
       }))
     };
   });
+}
+
+function naturalPacingItem(entry: NaturalPacingLogEntry): RunLogItem {
+  return {
+    id: `pacing:${entry.id}`,
+    tabId: entry.tabId,
+    runKey: `automation:${entry.sessionId}`,
+    runLabel: `Automation run ${shortId(entry.sessionId)}`,
+    recordedAt: entry.recordedAt,
+    severity: entry.event === "stopped" ? "warning" : "success",
+    state: titleCase(entry.event),
+    action: "Natural pacing",
+    message: entry.message,
+    source: "pacing",
+    technicalDetails: [
+      `Preset: ${entry.presetId}`,
+      `Tab: ${entry.tabId}`,
+      `Step #${entry.stepNumber}: ${entry.stepId}`,
+      `Selected delay: ${entry.durationMs} ms`
+    ].join("\n")
+  };
 }
 
 export function formatRunLogTime(recordedAt: string): string {

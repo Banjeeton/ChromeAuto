@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  NATURAL_PACING_STORAGE_KEY,
   PRESET_STORAGE_KEY,
   RECORDER_SESSION_STORAGE_KEY,
   REPEAT_CYCLE_STORAGE_KEY
@@ -18,6 +19,10 @@ import {
   type RecordedPresetFields
 } from "./features/recorder";
 import { RunLogPanel, useRunLogController } from "./features/run-log";
+import {
+  NaturalPacingPanel,
+  useNaturalPacingController
+} from "./features/natural-pacing";
 import { useOperationState } from "./hooks/use-operation-state";
 import { Badge, type StatusTone } from "./components";
 import {
@@ -37,6 +42,7 @@ function App() {
   const activeTabIdRef = useRef<number | undefined>(undefined);
   const operation = useOperationState();
   const runLog = useRunLogController();
+  const naturalPacing = useNaturalPacingController();
   const automation = useAutomationController({
     addNotice: runLog.addNotice,
     operation
@@ -145,6 +151,11 @@ function App() {
           );
         });
       } else if (
+        areaName === "local" &&
+        NATURAL_PACING_STORAGE_KEY in changes
+      ) {
+        void naturalPacing.refresh(naturalPacing.presetId);
+      } else if (
         areaName === "session" &&
         (REPEAT_CYCLE_STORAGE_KEY in changes ||
           RECORDER_SESSION_STORAGE_KEY in changes)
@@ -157,7 +168,13 @@ function App() {
 
     chrome.storage.onChanged.addListener(handleStorageChange);
     return () => chrome.storage.onChanged.removeListener(handleStorageChange);
-  }, [presets.refresh, refreshActiveTab, reportActiveTabError]);
+  }, [
+    naturalPacing.presetId,
+    naturalPacing.refresh,
+    presets.refresh,
+    refreshActiveTab,
+    reportActiveTabError
+  ]);
 
   useEffect(() => {
     const tabId = activeTab?.id;
@@ -287,6 +304,9 @@ function App() {
       : undefined;
   const currentRecorderStatus =
     recorder.status?.tabId === activeTab?.id ? recorder.status : undefined;
+  useEffect(() => {
+    void naturalPacing.refresh(currentManualStatus?.presetId);
+  }, [currentManualStatus?.presetId, naturalPacing.refresh]);
   const recorderIsActive =
     currentRecorderStatus?.state === "recording" ||
     currentRecorderStatus?.state === "stopping";
@@ -350,6 +370,21 @@ function App() {
                 currentTabHasActiveCycle={currentTabHasActiveCycle}
                 cycleLogs={runLog.cycleLogs}
                 manualStatus={currentManualStatus}
+                naturalPacingPanel={
+                  <NaturalPacingPanel
+                    enabled={naturalPacing.enabled}
+                    error={naturalPacing.error}
+                    loading={naturalPacing.loading}
+                    maximumDelay={naturalPacing.maximumDelay}
+                    minimumDelay={naturalPacing.minimumDelay}
+                    onEnabledChange={naturalPacing.setEnabled}
+                    onMaximumDelayChange={naturalPacing.setMaximumDelay}
+                    onMinimumDelayChange={naturalPacing.setMinimumDelay}
+                    onSave={() => void naturalPacing.save()}
+                    saving={naturalPacing.saving}
+                    validationErrors={naturalPacing.validationErrors}
+                  />
+                }
                 onCreatePreset={openPresetCreator}
                 onEditPreset={openPresetEditor}
                 onRecord={startRecording}
@@ -437,6 +472,7 @@ function App() {
                 currentTabId={activeTab?.id}
                 cycleLogs={runLog.cycleLogs}
                 notices={runLog.notices}
+                naturalPacingLogs={runLog.naturalPacingLogs}
                 onClear={() => {
                   if (activeTab !== undefined) void runLog.clear(activeTab.id);
                 }}

@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import type { RecorderLogEntry } from "../../../core/domain/recorder-log-entry";
 import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
 import type { StepLogEntry } from "../../../core/domain/step-log-entry";
+import type { NaturalPacingLogEntry } from "../../../core/domain/natural-pacing-log-entry";
 import { AUTOMATION_RUNTIME_MESSAGE } from "../../../shared/types/automation-runtime";
 import {
   errorMessage,
@@ -19,6 +20,8 @@ export function useRunLogController() {
     useState<readonly RepeatCycleLogEntry[]>([]);
   const [recorderLogs, setRecorderLogs] =
     useState<readonly RecorderLogEntry[]>([]);
+  const [naturalPacingLogs, setNaturalPacingLogs] =
+    useState<readonly NaturalPacingLogEntry[]>([]);
   const [notices, setNotices] = useState<readonly Notice[]>([]);
 
   const addNotice: AddNotice = useCallback((
@@ -61,6 +64,7 @@ export function useRunLogController() {
     setStepLogs(response.result.entries);
     setCycleLogs(response.result.cycleEntries);
     setRecorderLogs(response.result.recorderEntries);
+    setNaturalPacingLogs(response.result.naturalPacingEntries);
   }, []);
 
   const clear = useCallback(
@@ -77,6 +81,7 @@ export function useRunLogController() {
         setStepLogs([]);
         setCycleLogs([]);
         setRecorderLogs([]);
+        setNaturalPacingLogs([]);
         setNotices((current) =>
           current.filter((notice) => notice.tabId !== tabId)
         );
@@ -96,6 +101,7 @@ export function useRunLogController() {
     clear,
     cycleLogs,
     notices,
+    naturalPacingLogs,
     recorderLogs,
     refresh,
     stepLogs

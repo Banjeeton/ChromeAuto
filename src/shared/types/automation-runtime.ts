@@ -11,6 +11,8 @@ import type { RecorderPanelStatus } from "../../core/application/recorder-panel-
 import type { RecorderDraftView } from "../../core/application/recorder-draft-controller";
 import type { SaveRecordedPresetResult } from "../../core/application/recorded-preset-controller";
 import type { AutomationStep } from "../../core/domain/automation-step";
+import type { NaturalPacingSettings } from "../../core/domain/natural-pacing";
+import type { NaturalPacingLogEntry } from "../../core/domain/natural-pacing-log-entry";
 import type {
   StopAllAutomationsResult,
   StopAutomationResult
@@ -90,6 +92,17 @@ type AutomationRuntimeCommand =
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
       readonly action: "export-preset";
       readonly presetId: string;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "natural-pacing";
+      readonly presetId: string;
+    }
+  | {
+      readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
+      readonly action: "update-natural-pacing";
+      readonly presetId: string;
+      readonly settings: NaturalPacingSettings;
     };
 
 export type AutomationRuntimeMessage = AutomationRuntimeCommand & {
@@ -136,10 +149,16 @@ export type AutomationRuntimeResult =
       readonly json: string;
     }
   | {
+      readonly kind: "natural-pacing";
+      readonly presetId: string;
+      readonly settings: NaturalPacingSettings;
+    }
+  | {
       readonly kind: "logs";
       readonly entries: readonly StepLogEntry[];
       readonly cycleEntries: readonly RepeatCycleLogEntry[];
       readonly recorderEntries: readonly RecorderLogEntry[];
+      readonly naturalPacingEntries: readonly NaturalPacingLogEntry[];
     }
   | { readonly kind: "clear-logs" };
 

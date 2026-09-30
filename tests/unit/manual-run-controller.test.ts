@@ -26,7 +26,9 @@ describe("ManualRunController", () => {
       hostname: "example.com",
       presetId: PRESET_ID,
       presetName: "Example automation",
-      stepCount: 1
+      stepCount: 1,
+      repeatEnabled: false,
+      repeatIntervalMinutes: 1
     });
 
     await expect(
@@ -106,6 +108,8 @@ describe("ManualRunController", () => {
       presetId: PRESET_ID,
       presetName: "Example automation",
       stepCount: 1,
+      repeatEnabled: true,
+      repeatIntervalMinutes: 3,
       nextRunAt: 1_800_000_000_000
     });
   });

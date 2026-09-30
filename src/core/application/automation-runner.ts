@@ -4,12 +4,18 @@ import {
 } from "../domain/automation-engine-error";
 import type { AutomationDefinition } from "../domain/automation";
 import type { AutomationStep } from "../domain/automation-step";
+import {
+  randomNaturalPacingDelayMs,
+  type NaturalPacingSettings
+} from "../domain/natural-pacing";
 import type {
   StepLogEntry,
   StepLogStatus
 } from "../domain/step-log-entry";
 import type { AutomationEngine } from "../ports/automation-engine";
 import type { ExecutionLog } from "../ports/execution-log";
+import type { NaturalPacingLog } from "../ports/natural-pacing-log";
+import type { NaturalPacingRepository } from "../ports/natural-pacing-repository";
 import type { TabSessionManager } from "./tab-session-manager";
 
 export interface RunAutomationRequest {
@@ -29,6 +35,10 @@ export interface AutomationRunResult {
 export interface AutomationRunnerOptions {
   readonly clock?: () => number;
   readonly createLogEntryId?: () => string;
+  readonly naturalPacingRepository?: NaturalPacingRepository;
+  readonly naturalPacingLog?: NaturalPacingLog;
+  readonly random?: () => number;
+  readonly delay?: (durationMs: number, signal: AbortSignal) => Promise<void>;
 }
 
 export class AutomationRunner {
@@ -37,6 +47,10 @@ export class AutomationRunner {
   readonly #log: ExecutionLog;
   readonly #clock: () => number;
   readonly #createLogEntryId: () => string;
+  readonly #naturalPacingRepository?: NaturalPacingRepository;
+  readonly #naturalPacingLog?: NaturalPacingLog;
+  readonly #random: () => number;
+  readonly #delay: (durationMs: number, signal: AbortSignal) => Promise<void>;
 
   constructor(
     engine: AutomationEngine,
@@ -49,14 +63,30 @@ export class AutomationRunner {
     this.#log = log;
     this.#clock = options.clock ?? Date.now;
     this.#createLogEntryId = options.createLogEntryId ?? (() => crypto.randomUUID());
+    this.#naturalPacingRepository = options.naturalPacingRepository;
+    this.#naturalPacingLog = options.naturalPacingLog;
+    this.#random = options.random ?? Math.random;
+    this.#delay = options.delay ?? abortableDelay;
   }
 
   async run(request: RunAutomationRequest): Promise<AutomationRunResult> {
+    const naturalPacing = await this.#naturalPacingRepository?.get(
+      request.presetId
+    );
     const session = await this.#sessions.start({
       presetId: request.presetId,
       tabId: request.tabId
     });
     const signal = this.#sessions.cancellationSignal(session.sessionId);
+    const defaults = naturalPacing?.enabled
+      ? {
+          ...request.automation.defaults,
+          humanInput: {
+            ...request.automation.defaults.humanInput,
+            enabled: true
+          }
+        }
+      : request.automation.defaults;
     let executedSteps = 0;
     let skippedSteps = 0;
 
@@ -87,12 +117,13 @@ export class AutomationRunner {
         }
 
         const startedAt = this.#clock();
+        let stepCompleted = false;
         try {
           const result = await this.#engine.executeStep({
             sessionId: session.sessionId,
             stepIndex,
             step,
-            defaults: request.automation.defaults
+            defaults
           });
           this.#throwIfStopped(signal, session.sessionId, request.tabId);
           executedSteps += 1;
@@ -106,6 +137,22 @@ export class AutomationRunner {
             status: "succeeded",
             output: result.output
           });
+          stepCompleted = true;
+          if (
+            naturalPacing?.enabled === true &&
+            step.postActionDelayMs === undefined &&
+            hasLaterEnabledStep(request.automation.steps, stepIndex)
+          ) {
+            await this.#applyNaturalPacing({
+              settings: naturalPacing,
+              sessionId: session.sessionId,
+              presetId: request.presetId,
+              tabId: request.tabId,
+              step,
+              stepIndex,
+              signal
+            });
+          }
         } catch (error) {
           const normalizedError = this.#normalizeStepError(
             error,
@@ -115,6 +162,7 @@ export class AutomationRunner {
             step,
             stepIndex
           );
+          if (stepCompleted) throw normalizedError;
           const status: StepLogStatus =
             normalizedError.code === "session-stopped" ? "stopped" : "failed";
           await this.#appendStepEntry({
@@ -164,6 +212,62 @@ export class AutomationRunner {
       }
       throw normalizedError;
     }
+  }
+
+  async #applyNaturalPacing(input: {
+    readonly settings: NaturalPacingSettings;
+    readonly sessionId: string;
+    readonly presetId: string;
+    readonly tabId: number;
+    readonly step: AutomationStep;
+    readonly stepIndex: number;
+    readonly signal: AbortSignal;
+  }): Promise<void> {
+    const durationMs = randomNaturalPacingDelayMs(input.settings, this.#random);
+    await this.#appendNaturalPacingEntry("started", durationMs, input);
+    try {
+      await this.#delay(durationMs, input.signal);
+      this.#throwIfStopped(input.signal, input.sessionId, input.tabId);
+      await this.#appendNaturalPacingEntry("completed", durationMs, input);
+    } catch (error) {
+      if (input.signal.aborted) {
+        await this.#appendNaturalPacingEntry("stopped", durationMs, input);
+      }
+      throw error;
+    }
+  }
+
+  async #appendNaturalPacingEntry(
+    event: "started" | "completed" | "stopped",
+    durationMs: number,
+    input: {
+      readonly sessionId: string;
+      readonly presetId: string;
+      readonly tabId: number;
+      readonly step: AutomationStep;
+      readonly stepIndex: number;
+    }
+  ): Promise<void> {
+    if (this.#naturalPacingLog === undefined) return;
+    const seconds = durationMs / 1_000;
+    await this.#naturalPacingLog.append({
+      id: this.#createLogEntryId(),
+      recordedAt: new Date(this.#clock()).toISOString(),
+      event,
+      sessionId: input.sessionId,
+      presetId: input.presetId,
+      tabId: input.tabId,
+      stepId: input.step.id,
+      stepIndex: input.stepIndex,
+      stepNumber: input.stepIndex + 1,
+      durationMs,
+      message:
+        event === "started"
+          ? `Natural pacing pause started for ${seconds} second(s).`
+          : event === "completed"
+            ? `Natural pacing pause completed after ${seconds} second(s).`
+            : `Natural pacing pause of ${seconds} second(s) was stopped.`
+    });
   }
 
   async #appendStepEntry(input: {
@@ -294,6 +398,28 @@ export class AutomationRunner {
     }
     return undefined;
   }
+}
+
+function hasLaterEnabledStep(
+  steps: readonly AutomationStep[],
+  stepIndex: number
+): boolean {
+  return steps.slice(stepIndex + 1).some((step) => step.enabled);
+}
+
+function abortableDelay(durationMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, durationMs);
+    const abort = () => {
+      globalThis.clearTimeout(timeout);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function createStepLogError(

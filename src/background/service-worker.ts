@@ -9,10 +9,12 @@ import { ChromeRecorderDocumentProvider } from "../adapters/chrome/recorder-docu
 import { InMemoryExecutionLog } from "../adapters/logging/in-memory-execution-log";
 import { InMemoryRepeatCycleLog } from "../adapters/logging/in-memory-repeat-cycle-log";
 import { InMemoryRecorderLog } from "../adapters/logging/in-memory-recorder-log";
+import { InMemoryNaturalPacingLog } from "../adapters/logging/in-memory-natural-pacing-log";
 import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import { ChromeRecorderSessionRegistry } from "../adapters/storage/chrome-recorder-session-registry";
 import { ChromeRuntimeRequestJournal } from "../adapters/storage/chrome-runtime-request-journal";
+import { ChromeNaturalPacingRepository } from "../adapters/storage/chrome-natural-pacing-repository";
 import {
   exportPresetJson,
   importPresetJsonSafely
@@ -63,7 +65,11 @@ const tabSessionManager = new TabSessionManager(playwrightEngine);
 const executionLog = new InMemoryExecutionLog();
 const repeatCycleLog = new InMemoryRepeatCycleLog();
 const recorderLog = new InMemoryRecorderLog();
+const naturalPacingLog = new InMemoryNaturalPacingLog();
 const presetRepository = new ChromePresetRepository(chrome.storage.local);
+const naturalPacingRepository = new ChromeNaturalPacingRepository(
+  chrome.storage.local
+);
 const presetEditorController = new PresetEditorController(presetRepository);
 const recorderSessionRegistry = new ChromeRecorderSessionRegistry();
 const recorderContentBridge = new ChromeRecorderContentBridge();
@@ -77,7 +83,8 @@ const recorderNavigationController = new RecorderNavigationController(
 const automationRunner = new AutomationRunner(
   playwrightEngine,
   tabSessionManager,
-  executionLog
+  executionLog,
+  { naturalPacingRepository, naturalPacingLog }
 );
 const cycleScheduler = new ChromeAlarmScheduler();
 const repeatCycleRegistry = new ChromeRepeatCycleRegistry();
@@ -407,6 +414,19 @@ function isAutomationRuntimeMessage(
     );
   }
 
+  if (candidate.action === "natural-pacing") {
+    return "presetId" in candidate && typeof candidate.presetId === "string";
+  }
+
+  if (candidate.action === "update-natural-pacing") {
+    return (
+      "presetId" in candidate &&
+      typeof candidate.presetId === "string" &&
+      "settings" in candidate &&
+      isNaturalPacingSettings(candidate.settings)
+    );
+  }
+
   if (candidate.action === "save-recorder-draft") {
     return (
       "tabId" in candidate &&
@@ -573,6 +593,7 @@ async function handleAutomationRuntimeCommand(
     }
     case "delete-preset": {
       await presetEditorController.remove(message.presetId);
+      await naturalPacingRepository.remove(message.presetId);
       return { kind: "preset-deleted", presetId: message.presetId };
     }
     case "import-preset": {
@@ -590,6 +611,7 @@ async function handleAutomationRuntimeCommand(
           existingUpdatedAt: result.existingPreset.updatedAt
         };
       }
+      await naturalPacingRepository.remove(result.preset.id);
       return { kind: "preset-imported", preset: result.preset };
     }
     case "export-preset": {
@@ -606,18 +628,33 @@ async function handleAutomationRuntimeCommand(
         json: exportPresetJson(preset)
       };
     }
+    case "natural-pacing":
+      return {
+        kind: "natural-pacing",
+        presetId: message.presetId,
+        settings: await naturalPacingRepository.get(message.presetId)
+      };
+    case "update-natural-pacing":
+      await naturalPacingRepository.save(message.presetId, message.settings);
+      return {
+        kind: "natural-pacing",
+        presetId: message.presetId,
+        settings: await naturalPacingRepository.get(message.presetId)
+      };
     case "logs":
       return {
         kind: "logs",
         entries: await executionLog.list({ tabId: message.tabId }),
         cycleEntries: await repeatCycleLog.list({ tabId: message.tabId }),
-        recorderEntries: await recorderLog.list({ tabId: message.tabId })
+        recorderEntries: await recorderLog.list({ tabId: message.tabId }),
+        naturalPacingEntries: await naturalPacingLog.list({ tabId: message.tabId })
       };
     case "clear-logs":
       await Promise.all([
         executionLog.clear({ tabId: message.tabId }),
         repeatCycleLog.clear({ tabId: message.tabId }),
-        recorderLog.clear({ tabId: message.tabId })
+        recorderLog.clear({ tabId: message.tabId }),
+        naturalPacingLog.clear({ tabId: message.tabId })
       ]);
       return { kind: "clear-logs" };
   }
@@ -636,6 +673,17 @@ function isIdempotentControlAction(
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isNaturalPacingSettings(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    typeof value.enabled === "boolean" &&
+    typeof value.minimumDelaySeconds === "number" &&
+    Number.isFinite(value.minimumDelaySeconds) &&
+    typeof value.maximumDelaySeconds === "number" &&
+    Number.isFinite(value.maximumDelaySeconds)
+  );
 }
 
 async function getTabUrl(tabId: number): Promise<string> {

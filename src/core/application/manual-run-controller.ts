@@ -30,6 +30,8 @@ export type ManualRunStatus =
       readonly presetName: string;
       readonly presetDescription?: string;
       readonly stepCount: number;
+      readonly repeatEnabled?: boolean;
+      readonly repeatIntervalMinutes?: number;
       readonly hasCustomCode?: boolean;
     }
   | {
@@ -40,6 +42,8 @@ export type ManualRunStatus =
       readonly presetName: string;
       readonly presetDescription?: string;
       readonly stepCount?: number;
+      readonly repeatEnabled?: boolean;
+      readonly repeatIntervalMinutes?: number;
       readonly sessionId: string;
       readonly hasCustomCode?: boolean;
     }
@@ -51,6 +55,8 @@ export type ManualRunStatus =
       readonly presetName: string;
       readonly presetDescription?: string;
       readonly stepCount?: number;
+      readonly repeatEnabled?: boolean;
+      readonly repeatIntervalMinutes?: number;
       readonly nextRunAt: number;
       readonly hasCustomCode?: boolean;
     }
@@ -62,6 +68,8 @@ export type ManualRunStatus =
       readonly presetName?: string;
       readonly presetDescription?: string;
       readonly stepCount?: number;
+      readonly repeatEnabled?: boolean;
+      readonly repeatIntervalMinutes?: number;
       readonly reason: ManualRunUnavailableReason;
       readonly message: string;
     };
@@ -273,14 +281,19 @@ function presetHasCustomCode(preset: PresetV1 | undefined): boolean {
   ) ?? false;
 }
 
-function presetSummary(
-  preset: PresetV1
-): { readonly presetDescription?: string; readonly stepCount: number } {
+function presetSummary(preset: PresetV1): {
+  readonly presetDescription?: string;
+  readonly stepCount: number;
+  readonly repeatEnabled: boolean;
+  readonly repeatIntervalMinutes: number;
+} {
   return {
     ...(preset.description === undefined || preset.description.trim().length === 0
       ? {}
       : { presetDescription: preset.description }),
-    stepCount: preset.automation.steps.length
+    stepCount: preset.automation.steps.length,
+    repeatEnabled: preset.siteSettings.repeat.enabled,
+    repeatIntervalMinutes: preset.siteSettings.repeat.intervalMinutes
   };
 }
 
