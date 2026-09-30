@@ -99,7 +99,13 @@ export function useAutomationController({
         if (response.result.kind === "run") {
           addNotice(
             "success",
-            `Automation finished: ${response.result.run.executedSteps} steps executed.`
+            `Automation finished: ${response.result.run.executedSteps} steps executed.`,
+            undefined,
+            {
+              action: "Run",
+              tabId: response.result.run.tabId,
+              sessionId: response.result.run.sessionId
+            }
           );
         }
       } catch (error) {
@@ -131,7 +137,9 @@ export function useAutomationController({
             "success",
             response.result.stop.stopped
               ? `Automation stopped for tab #${tabId}.`
-              : `Tab #${tabId} has no active automation.`
+              : `Tab #${tabId} has no active automation.`,
+            undefined,
+            { action: "Stop", tabId }
           );
         }
       } catch (error) {
@@ -167,7 +175,15 @@ export function useAutomationController({
           action: "stop-all"
         });
         if (!response.ok) throw runtimeResponseError(response);
-        addNotice("success", "All automation sessions were stopped.");
+        addNotice(
+          "success",
+          "All automation sessions were stopped.",
+          undefined,
+          {
+            action: "Stop All",
+            ...(activeTab === undefined ? {} : { tabId: activeTab.id })
+          }
+        );
       } catch (error) {
         addNotice(
           "error",

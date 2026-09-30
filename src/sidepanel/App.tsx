@@ -340,6 +340,7 @@ function App() {
         />
 
         <RunLogPanel
+          currentTabId={activeTab?.id}
           cycleLogs={runLog.cycleLogs}
           notices={runLog.notices}
           onClear={() => {

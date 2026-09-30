@@ -1,11 +1,19 @@
+import { useMemo, useState } from "react";
+
 import type { RecorderLogEntry } from "../../../core/domain/recorder-log-entry";
 import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
 import type { StepLogEntry } from "../../../core/domain/step-log-entry";
 import { Button, Card } from "../../components";
 import type { Notice } from "../../types";
-import { StepLogEntryView } from "../logs/StepLogEntryView";
+import {
+  buildRunLogGroups,
+  formatRunLogTime,
+  type RunLogFilter,
+  type RunLogItem
+} from "./run-log-model";
 
 export interface RunLogPanelProps {
+  readonly currentTabId?: number;
   readonly notices: readonly Notice[];
   readonly stepLogs: readonly StepLogEntry[];
   readonly cycleLogs: readonly RepeatCycleLogEntry[];
@@ -13,18 +21,39 @@ export interface RunLogPanelProps {
   readonly onClear: () => void;
 }
 
+const FILTERS: readonly { value: RunLogFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "success", label: "Success" },
+  { value: "warning", label: "Warning" },
+  { value: "error", label: "Error" }
+];
+
 export function RunLogPanel({
+  currentTabId,
   notices,
   stepLogs,
   cycleLogs,
   recorderLogs,
   onClear
 }: RunLogPanelProps) {
+  const [filter, setFilter] = useState<RunLogFilter>("all");
   const empty =
     notices.length === 0 &&
     stepLogs.length === 0 &&
     cycleLogs.length === 0 &&
     recorderLogs.length === 0;
+  const groups = useMemo(
+    () =>
+      buildRunLogGroups({
+        ...(currentTabId === undefined ? {} : { currentTabId }),
+        notices,
+        stepLogs,
+        cycleLogs,
+        recorderLogs,
+        filter
+      }),
+    [currentTabId, notices, stepLogs, cycleLogs, recorderLogs, filter]
+  );
 
   return (
     <Card className="card log-card" aria-labelledby="log-title">
@@ -33,100 +62,85 @@ export function RunLogPanel({
           <p className="section-label">Current tab</p>
           <h2 id="log-title">Run log</h2>
         </div>
-        <Button className="icon-button" onClick={onClear} size="small" variant="secondary">
+        <Button
+          aria-label="Clear log for current tab"
+          className="icon-button"
+          disabled={empty || currentTabId === undefined}
+          onClick={onClear}
+          size="small"
+          variant="secondary"
+        >
           Clear
         </Button>
       </div>
 
+      <div aria-label="Filter run log" className="log-filters" role="group">
+        {FILTERS.map(({ value, label }) => (
+          <Button
+            aria-pressed={filter === value}
+            className="log-filter-button"
+            key={value}
+            onClick={() => setFilter(value)}
+            size="small"
+            variant="secondary"
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+
       {empty ? (
         <p className="empty-state">Automation and recorder events will appear here.</p>
+      ) : groups.length === 0 ? (
+        <p className="empty-state">No events match this filter.</p>
       ) : (
-        <ol className="log-list">
-          {notices.map((notice) => (
-            <li className={`log-entry ${notice.status}`} key={notice.id}>
-              <span>{notice.status === "success" ? "DONE" : "ERROR"}</span>
-              <div className="log-entry-content">
-                <p>{notice.text}</p>
-                {notice.details !== undefined && (
-                  <details className="log-details">
-                    <summary>Technical details</summary>
-                    <pre>{notice.details}</pre>
-                  </details>
-                )}
+        <div className="log-tab-list">
+          {groups.map((tabGroup) => (
+            <section className="log-tab-group" key={tabGroup.key}>
+              <div className="log-group-heading">
+                <h3>{tabGroup.label}</h3>
+                <span>{eventCount(tabGroup.runs.flatMap(({ items }) => items))}</span>
               </div>
-            </li>
-          ))}
-          {[...cycleLogs].reverse().map((entry) => (
-            <li
-              className={`log-entry cycle-${entry.event} ${cycleLogTone(entry)}`}
-              key={entry.id}
-            >
-              <span>{entry.event.toUpperCase()}</span>
-              <p>{entry.message}</p>
-            </li>
-          ))}
-          {[...recorderLogs].reverse().map((entry) => (
-            <li
-              className={`log-entry recorder-${entry.event} ${recorderLogTone(entry)}`}
-              key={entry.id}
-            >
-              <span>{recorderLogLabel(entry)}</span>
-              <div className="log-entry-content">
-                <p>{entry.message}</p>
-                {entry.details !== undefined && (
-                  <details className="log-details">
-                    <summary>Technical details</summary>
-                    <pre>{formatRecorderLogDetails(entry)}</pre>
-                  </details>
-                )}
+
+              <div className="log-run-list">
+                {tabGroup.runs.map((run) => (
+                  <section className={`log-run-group log-source-${run.source}`} key={run.key}>
+                    <h4>{run.label}</h4>
+                    <ol className="log-list">
+                      {run.items.map((item) => (
+                        <RunLogEntryView item={item} key={item.id} />
+                      ))}
+                    </ol>
+                  </section>
+                ))}
               </div>
-            </li>
+            </section>
           ))}
-          {[...stepLogs].reverse().map((entry) => (
-            <StepLogEntryView entry={entry} key={entry.id} />
-          ))}
-        </ol>
+        </div>
       )}
     </Card>
   );
 }
 
-function cycleLogTone(entry: RepeatCycleLogEntry): string {
-  if (entry.event === "failed") return "failed";
-  if (entry.event === "stopped") return "stopped";
-  return "succeeded";
+function RunLogEntryView({ item }: { readonly item: RunLogItem }) {
+  return (
+    <li className={`log-entry log-entry--${item.severity}`}>
+      <div className="log-entry-header">
+        <time dateTime={item.recordedAt}>{formatRunLogTime(item.recordedAt)}</time>
+        <span className="log-entry-state">{item.state}</span>
+        <span className="log-entry-action">{item.action}</span>
+      </div>
+      <p>{item.message}</p>
+      {item.technicalDetails !== undefined && item.technicalDetails.length > 0 && (
+        <details className="log-details">
+          <summary>Technical details</summary>
+          <pre>{item.technicalDetails}</pre>
+        </details>
+      )}
+    </li>
+  );
 }
 
-function recorderLogTone(entry: RecorderLogEntry): string {
-  if (entry.event === "action-skipped") return "skipped";
-  return entry.event === "failed" ? "failed" : entry.event === "stopped" ||
-    entry.event === "context-changed" || entry.event === "tab-closed"
-    ? "stopped"
-    : "succeeded";
-}
-
-function recorderLogLabel(entry: RecorderLogEntry): string {
-  if (entry.event === "action-recorded") return "RECORDED";
-  if (entry.event === "action-skipped") return "SKIPPED";
-  if (entry.event === "context-changed" || entry.event === "tab-closed") {
-    return "STOPPED";
-  }
-  return entry.event.toUpperCase();
-}
-
-function formatRecorderLogDetails(entry: RecorderLogEntry): string {
-  const details = entry.details;
-  if (details === undefined) return "";
-  return [
-    `Action: ${entry.action}`,
-    `Tab: ${entry.tabId}`,
-    ...(entry.sessionId === undefined ? [] : [`Session: ${entry.sessionId}`]),
-    ...(entry.recorderEventId === undefined
-      ? []
-      : [`Event: ${entry.recorderEventId}`]),
-    ...(details.code === undefined ? [] : [`Code: ${details.code}`]),
-    `${details.name}: ${details.message}`,
-    ...(details.cause === undefined ? [] : [`Cause: ${details.cause}`]),
-    ...(details.stack === undefined ? [] : [details.stack])
-  ].join("\n");
+function eventCount(items: readonly RunLogItem[]): string {
+  return `${items.length} ${items.length === 1 ? "event" : "events"}`;
 }

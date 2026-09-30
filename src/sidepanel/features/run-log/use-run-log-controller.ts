@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { RecorderLogEntry } from "../../../core/domain/recorder-log-entry";
 import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
@@ -10,9 +10,10 @@ import {
   runtimeResponseError,
   sendRuntimeMessage
 } from "../../runtime/runtime-client";
-import type { AddNotice, Notice } from "../../types";
+import type { AddNotice, Notice, NoticeContext } from "../../types";
 
 export function useRunLogController() {
+  const currentTabId = useRef<number | undefined>(undefined);
   const [stepLogs, setStepLogs] = useState<readonly StepLogEntry[]>([]);
   const [cycleLogs, setCycleLogs] =
     useState<readonly RepeatCycleLogEntry[]>([]);
@@ -20,12 +21,24 @@ export function useRunLogController() {
     useState<readonly RecorderLogEntry[]>([]);
   const [notices, setNotices] = useState<readonly Notice[]>([]);
 
-  const addNotice: AddNotice = useCallback((status, text, details) => {
+  const addNotice: AddNotice = useCallback((
+    status,
+    text,
+    details,
+    context: NoticeContext = {}
+  ) => {
+    const tabId = context.tabId ?? currentTabId.current;
     setNotices((current) => [
       {
         id: Date.now() + Math.random(),
         status,
         text,
+        recordedAt: new Date().toISOString(),
+        ...(tabId === undefined ? {} : { tabId }),
+        ...(context.sessionId === undefined
+          ? {}
+          : { sessionId: context.sessionId }),
+        ...(context.action === undefined ? {} : { action: context.action }),
         ...(details === undefined ? {} : { details })
       },
       ...current
@@ -33,6 +46,7 @@ export function useRunLogController() {
   }, []);
 
   const refresh = useCallback(async (tabId: number) => {
+    currentTabId.current = tabId;
     const response = await sendRuntimeMessage({
       type: AUTOMATION_RUNTIME_MESSAGE,
       action: "logs",
@@ -63,7 +77,9 @@ export function useRunLogController() {
         setStepLogs([]);
         setCycleLogs([]);
         setRecorderLogs([]);
-        setNotices([]);
+        setNotices((current) =>
+          current.filter((notice) => notice.tabId !== tabId)
+        );
       } catch (error) {
         addNotice(
           "error",

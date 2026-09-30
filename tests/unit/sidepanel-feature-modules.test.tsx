@@ -207,7 +207,7 @@ describe("side panel feature modules", () => {
     expect(presetsHtml).toContain("No saved presets yet");
     expect(draftHtml).toContain("Loading recorded steps");
     expect(logHtml).toContain("Automation finished");
-    expect(logHtml).toContain("SKIPPED");
+    expect(logHtml).toContain("Recorder · Skip");
     expect(logHtml).toContain("draft was preserved");
   });
 });
