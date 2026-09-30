@@ -90,7 +90,6 @@ export function StructuredStepsEditor({
           ))}
         </Select>
         <Button
-          className="inline-button neutral"
           disabled={disabled}
           onClick={addStep}
           size="small"
@@ -503,7 +502,7 @@ function TargetEditor({ target, path, issues, disabled, onChange }: { readonly t
           <button className="danger-text locator-remove-button" disabled={disabled} onClick={() => onChange({ ...target, fallbacks: target.fallbacks.filter((_, fallbackIndex) => fallbackIndex !== index) })} type="button">Remove fallback</button>
         </div>
       ))}
-      <button className="inline-button neutral add-fallback-button" disabled={disabled} onClick={() => onChange({ ...target, fallbacks: [...target.fallbacks, { type: "css", value: "body" }] })} type="button">Add fallback locator</button>
+      <Button className="add-fallback-button" disabled={disabled} onClick={() => onChange({ ...target, fallbacks: [...target.fallbacks, { type: "css", value: "body" }] })} size="small" variant="secondary">Add fallback locator</Button>
     </fieldset>
   );
 }

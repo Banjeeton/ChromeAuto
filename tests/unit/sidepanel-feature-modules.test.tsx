@@ -144,6 +144,9 @@ describe("side panel feature modules", () => {
     expect(sessionsHtml).toContain("stopped");
     expect(sessionsHtml).toContain("failed");
     expect(sessionsHtml).toContain("No next run was scheduled");
+    expect(sessionsHtml).toContain("ui-button--danger");
+    expect(sessionsHtml).toContain("stop-all-button");
+    expect(sessionsHtml).toContain("2 active");
   });
 
   it("renders preset, recorder draft and log states in their own modules", () => {

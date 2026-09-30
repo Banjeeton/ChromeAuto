@@ -83,11 +83,10 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
           ))}
         </div>
         <div className="preset-toolbar-actions">
-          <Button className="icon-button" onClick={props.onRefresh} size="small" variant="secondary">
+          <Button onClick={props.onRefresh} size="small" variant="secondary">
             Refresh
           </Button>
           <Button
-            className="inline-button neutral"
             disabled={props.busyAction !== undefined}
             onClick={() => importInputRef.current?.click()}
             size="small"
@@ -107,7 +106,6 @@ export function PresetManagementPanel(props: PresetManagementPanelProps) {
             type="file"
           />
           <Button
-            className="inline-button neutral"
             disabled={props.busyAction !== undefined}
             onClick={props.onNew}
             size="small"

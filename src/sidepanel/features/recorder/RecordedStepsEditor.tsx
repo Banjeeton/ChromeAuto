@@ -11,7 +11,7 @@ import type {
   PressKeyStep,
   SelectStep
 } from "../../../core/domain/automation-step";
-import { ConfirmationDialog } from "../../components";
+import { Button, ConfirmationDialog } from "../../components";
 import { createStepTemplate } from "../presets/step-template";
 
 type ManualRecordedStepType =
@@ -275,14 +275,14 @@ export function RecordedStepsEditor({
           <option value="wait">wait</option>
           <option value="customCode">customCode</option>
         </select>
-        <button
-          className="inline-button neutral"
+        <Button
           disabled={busy}
           onClick={addStep}
-          type="button"
+          size="small"
+          variant="secondary"
         >
           Add step
-        </button>
+        </Button>
       </div>
 
       {steps.length === 0 ? (
@@ -487,25 +487,23 @@ export function RecordedStepsEditor({
       </ConfirmationDialog>
 
       <div className="editor-actions recorded-editor-actions">
-        <button
-          className="action-button secondary"
+        <Button
           disabled={busy}
           onClick={() => setConfirmDiscard(true)}
-          type="button"
+          variant="secondary"
         >
           Cancel creation
-        </button>
-        <button className="action-button" disabled={busy} type="submit">
+        </Button>
+        <Button disabled={busy} type="submit">
           {busy ? "Saving…" : "Save draft"}
-        </button>
-        <button
-          className="action-button create-recorded-preset-button"
+        </Button>
+        <Button
+          className="create-recorded-preset-button"
           disabled={busy}
           onClick={createPreset}
-          type="button"
         >
           {creatingPreset ? "Creating preset…" : "Create preset"}
-        </button>
+        </Button>
       </div>
     </form>
   );

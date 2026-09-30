@@ -71,9 +71,9 @@ export function DashboardPanel({
           </div>
           <div className="dashboard-heading-actions">
             <Badge tone={dashboardTone(state)}>{state}</Badge>
-            <button className="icon-button" onClick={onRefresh} type="button">
+            <Button onClick={onRefresh} size="small" variant="secondary">
               Refresh
-            </button>
+            </Button>
           </div>
         </div>
 

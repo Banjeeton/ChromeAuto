@@ -64,7 +64,6 @@ export function RunLogPanel({
         </div>
         <Button
           aria-label="Clear log for current tab"
-          className="icon-button"
           disabled={empty || currentTabId === undefined}
           onClick={onClear}
           size="small"

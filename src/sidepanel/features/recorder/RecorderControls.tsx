@@ -40,7 +40,7 @@ export function RecorderControls({
       </div>
       <div className="button-grid recorder-actions">
         <Button
-          className="action-button record-button"
+          className="record-button"
           disabled={!canRecord}
           onClick={onRecord}
           variant="danger"
@@ -48,7 +48,6 @@ export function RecorderControls({
           {busyAction === "record" ? "Starting…" : "Record"}
         </Button>
         <Button
-          className="action-button secondary"
           disabled={status?.canStop !== true || busyAction === "stop-recording"}
           onClick={onStopRecording}
           variant={active ? "danger" : "secondary"}

@@ -36,7 +36,6 @@ export function AutomationStatusPanel({
   return (
     <>
       <Alert
-        className={`notice ${legacyStatusTone(manualStatus)}`}
         tone={statusTone(manualStatus)}
       >
         {statusMessage(manualStatus)}
@@ -54,7 +53,9 @@ export function AutomationStatusPanel({
               </p>
             )}
           </div>
-          <button className="icon-button" onClick={onRefresh}>Refresh</button>
+          <Button onClick={onRefresh} size="small" variant="secondary">
+            Refresh
+          </Button>
         </div>
 
         {manualStatus?.presetName !== undefined && (
@@ -68,11 +69,10 @@ export function AutomationStatusPanel({
         )}
 
         <div className="button-grid primary-actions">
-          <Button className="action-button" disabled={!canRun} onClick={onRun}>
+          <Button disabled={!canRun} onClick={onRun}>
             {busyAction === "run" ? "Running…" : "Run automation"}
           </Button>
           <Button
-            className="action-button secondary"
             disabled={!currentTabHasActiveCycle || busyAction === "stop"}
             onClick={onStop}
             variant="secondary"
@@ -113,12 +113,4 @@ function statusTone(status?: ManualRunStatus): StatusTone {
     return "warning";
   }
   return "neutral";
-}
-
-function legacyStatusTone(status?: ManualRunStatus): string {
-  if (status?.state === "ready") return "ready";
-  if (status?.state === "running" || status?.state === "waiting") {
-    return "running";
-  }
-  return "muted";
 }

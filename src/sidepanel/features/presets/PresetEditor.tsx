@@ -87,7 +87,6 @@ export function PresetEditor({
               : `${validation.issues.length} ${validation.issues.length === 1 ? "issue" : "issues"}`}
           </Badge>
           <Button
-            className="icon-button"
             disabled={saving}
             onClick={requestCancel}
             size="small"
@@ -353,7 +352,6 @@ export function PresetEditor({
 
       <div className="editor-actions">
         <Button
-          className="action-button secondary"
           disabled={saving}
           onClick={requestCancel}
           variant="secondary"
@@ -361,7 +359,6 @@ export function PresetEditor({
           Cancel
         </Button>
         <Button
-          className="action-button"
           disabled={saving || validation.issues.length > 0}
           title={
             validation.issues.length > 0

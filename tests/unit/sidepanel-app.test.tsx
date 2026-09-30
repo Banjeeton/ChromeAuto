@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import App, {
   createPresetFilename,
+  getWorkspaceState,
   PresetOverwriteConfirmation,
   sendRuntimeMessage
 } from "../../src/sidepanel/App";
@@ -12,7 +13,12 @@ describe("side panel React entry", () => {
   it("renders the manual automation controls", () => {
     const html = renderToStaticMarkup(<App />);
 
-    expect(html).toContain("Automation Runner");
+    expect(html).toContain("Automation</h1>");
+    expect(html).toContain('aria-label="Side panel sections"');
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain('aria-label="Dashboard"');
+    expect(html).toContain('aria-label="Presets and editor"');
+    expect(html).toContain('aria-label="Run log"');
     expect(html).toContain(">Run<");
     expect(html).toContain(">Record<");
     expect(html).toContain("Unavailable");
@@ -24,6 +30,16 @@ describe("side panel React entry", () => {
     expect(html).toContain("Automation status");
     expect(html).toContain(">Stop<");
     expect(html).toContain("Stop All");
+  });
+
+  it("maps all approved workspace states without mixing runtime contexts", () => {
+    expect(getWorkspaceState("ready", "idle")).toBe("Ready");
+    expect(getWorkspaceState("running", "idle")).toBe("Running");
+    expect(getWorkspaceState("waiting", "idle")).toBe("Waiting");
+    expect(getWorkspaceState("stopped", "idle")).toBe("Stopped");
+    expect(getWorkspaceState("failed", "idle")).toBe("Failed");
+    expect(getWorkspaceState("ready", "recording")).toBe("Recording");
+    expect(getWorkspaceState("running", "failed")).toBe("Failed");
   });
 
   it("creates a safe portable preset filename", () => {

@@ -60,17 +60,9 @@ export function AutomationSessionsPanel({
           <p className="section-label">Independent tabs</p>
           <h2 id="sessions-title">Automation status</h2>
         </div>
-        {showStopAll && (
-          <Button
-            className="icon-button danger-text"
-            disabled={activeCount === 0 || busyAction === "stop-all"}
-            onClick={() => setConfirmStopAll(true)}
-            size="small"
-            variant="danger"
-          >
-            Stop All
-          </Button>
-        )}
+        <Badge tone={activeCount > 0 ? "info" : "neutral"}>
+          {activeCount} active
+        </Badge>
       </div>
 
       {activeCount === 0 ? (
@@ -126,6 +118,17 @@ export function AutomationSessionsPanel({
             ))}
           </ol>
         </section>
+      )}
+
+      {showStopAll && (
+        <Button
+          className="stop-all-button"
+          disabled={activeCount === 0 || busyAction === "stop-all"}
+          onClick={() => setConfirmStopAll(true)}
+          variant="danger"
+        >
+          {busyAction === "stop-all" ? "Stopping all…" : "Stop All"}
+        </Button>
       )}
 
       <ConfirmationDialog

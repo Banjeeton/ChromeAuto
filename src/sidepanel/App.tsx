@@ -18,6 +18,11 @@ import {
 } from "./features/recorder";
 import { RunLogPanel, useRunLogController } from "./features/run-log";
 import { useOperationState } from "./hooks/use-operation-state";
+import { Badge, type StatusTone } from "./components";
+import {
+  SidePanelNavigation,
+  type SidePanelView
+} from "./components/SidePanelNavigation";
 import {
   errorMessage,
   errorTechnicalDetails
@@ -25,6 +30,7 @@ import {
 import type { ActiveTab } from "./types";
 
 function App() {
+  const [activeView, setActiveView] = useState<SidePanelView>("dashboard");
   const [activeTab, setActiveTab] = useState<ActiveTab>();
   const activeTabIdRef = useRef<number | undefined>(undefined);
   const operation = useOperationState();
@@ -250,6 +256,10 @@ function App() {
     currentRecorderStatus?.canRecord === true &&
     !currentTabHasActiveCycle &&
     operation.busyAction === undefined;
+  const workspaceState = getWorkspaceState(
+    currentManualStatus?.state,
+    currentRecorderStatus?.state
+  );
 
   return (
     <main className="app-shell">
@@ -257,12 +267,19 @@ function App() {
         <header className="workspace-header">
           <div>
             <p className="eyebrow">Chrome Automation</p>
-            <h1 id="app-title">Automation Runner</h1>
+            <h1 id="app-title">Automation</h1>
           </div>
-          <span className="status-dot" title="Extension is running" />
+          <Badge tone={workspaceTone(workspaceState)}>{workspaceState}</Badge>
         </header>
 
-        <DashboardPanel
+        <SidePanelNavigation activeView={activeView} onChange={setActiveView} />
+
+        <section
+          aria-label="Dashboard"
+          className="workspace-view"
+          hidden={activeView !== "dashboard"}
+        >
+          <DashboardPanel
           activeTab={activeTab}
           busyAction={operation.busyAction}
           canRecord={canRecord}
@@ -287,9 +304,9 @@ function App() {
           recorderStatus={currentRecorderStatus}
           sessions={automation.sessions}
           stepLogs={runLog.stepLogs}
-        />
+          />
 
-        <RecordedDraftPanel
+          <RecordedDraftPanel
           busyAction={operation.busyAction}
           conflict={recorder.pendingConflict}
           draft={recorder.draft}
@@ -310,9 +327,15 @@ function App() {
             }
           }}
           status={currentRecorderStatus}
-        />
+          />
+        </section>
 
-        <PresetManagementPanel
+        <section
+          aria-label="Presets and editor"
+          className="workspace-view"
+          hidden={activeView !== "presets"}
+        >
+          <PresetManagementPanel
           busyAction={operation.busyAction}
           deleteConfirmationPresetId={presets.deleteConfirmationPresetId}
           deletingPresetId={presets.deletingPresetId}
@@ -337,9 +360,15 @@ function App() {
           pendingImport={presets.pendingImport}
           saveError={presets.saveError}
           selectedPresetId={presets.selectedPresetId}
-        />
+          />
+        </section>
 
-        <RunLogPanel
+        <section
+          aria-label="Run log"
+          className="workspace-view"
+          hidden={activeView !== "run-log"}
+        >
+          <RunLogPanel
           currentTabId={activeTab?.id}
           cycleLogs={runLog.cycleLogs}
           notices={runLog.notices}
@@ -348,10 +377,41 @@ function App() {
           }}
           recorderLogs={runLog.recorderLogs}
           stepLogs={runLog.stepLogs}
-        />
+          />
+        </section>
       </section>
     </main>
   );
+}
+
+type WorkspaceState =
+  | "Ready"
+  | "Running"
+  | "Waiting"
+  | "Recording"
+  | "Stopped"
+  | "Failed";
+
+export function getWorkspaceState(
+  manualState?: string,
+  recorderState?: string
+): WorkspaceState {
+  if (recorderState === "recording" || recorderState === "stopping") {
+    return "Recording";
+  }
+  if (recorderState === "failed") return "Failed";
+  if (manualState === "running") return "Running";
+  if (manualState === "waiting") return "Waiting";
+  if (manualState === "stopped") return "Stopped";
+  if (manualState === "failed") return "Failed";
+  return "Ready";
+}
+
+function workspaceTone(state: WorkspaceState): StatusTone {
+  if (state === "Ready") return "success";
+  if (state === "Running") return "info";
+  if (state === "Waiting" || state === "Stopped") return "warning";
+  return "error";
 }
 
 export { createPresetFilename } from "./features/presets";

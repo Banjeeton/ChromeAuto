@@ -24,6 +24,10 @@ describe("side panel accessibility and responsive style contracts", () => {
     expect(styles).toContain("width: min(100%, var(--panel-width))");
     expect(styles).toContain("@media (max-width: 420px)");
     expect(styles).toContain("grid-template-columns: 1fr");
+    expect(styles).toContain(".workspace-navigation");
+    expect(styles).toContain("repeat(3, minmax(0, 1fr))");
+    expect(styles).toContain("@media (min-width: 520px)");
+    expect(styles).toContain("grid-template-columns: 72px minmax(0, 1fr)");
   });
 
   it("protects cards and diagnostics from long unbroken content", () => {
@@ -33,5 +37,12 @@ describe("side panel accessibility and responsive style contracts", () => {
     expect(styles).toContain("overflow-wrap: anywhere");
     expect(styles).toContain("word-break: break-word");
     expect(styles).toContain("max-width: 100%");
+  });
+
+  it("keeps disabled and global stop actions readable", () => {
+    expect(components).toContain(".ui-button--danger:disabled");
+    expect(components).toContain("opacity: 0.68");
+    expect(styles).toContain(".stop-all-button");
+    expect(styles).toContain("width: 100%");
   });
 });
