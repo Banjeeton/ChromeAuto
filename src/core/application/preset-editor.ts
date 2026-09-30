@@ -45,7 +45,11 @@ export class PresetEditorController {
 
   async create(fields: PresetEditableFields): Promise<PresetV1> {
     const preset = createPresetV1(fields, this.#dependencies);
-    await this.#repository.save(preset);
+    if (!(await this.#repository.saveIfUnchanged(preset, null))) {
+      throw new Error(
+        `Preset id ${preset.id} was created concurrently. Try creating the preset again.`
+      );
+    }
     return structuredClone(preset);
   }
 
@@ -59,7 +63,11 @@ export class PresetEditorController {
     }
 
     const preset = updatePresetV1(existing, fields, this.#dependencies);
-    await this.#repository.save(preset);
+    if (!(await this.#repository.saveIfUnchanged(preset, existing.updatedAt))) {
+      throw new Error(
+        `Preset ${presetId} changed while it was being edited. Reopen it and apply your changes again.`
+      );
+    }
     return structuredClone(preset);
   }
 

@@ -6,11 +6,18 @@ import {
 } from "../../src/adapters/storage/chrome-storage";
 import type { PresetV1 } from "../../src/core/domain/preset";
 import {
+  exportPresetJson,
+  importPresetJsonSafely
+} from "../../src/adapters/storage/preset-import-export";
+import {
   PresetRepositoryConflictError,
-  PresetRepositoryDataError,
   PresetRepositoryReadError,
   PresetRepositoryWriteError
 } from "../../src/core/ports/preset-repository";
+import {
+  PRESET_QUARANTINE_STORAGE_KEY,
+  PRESET_STORAGE_KEY
+} from "../../src/shared/constants";
 
 const PRESET_ID = "550e8400-e29b-41d4-a716-446655440000";
 const SECOND_PRESET_ID = "550e8400-e29b-41d4-a716-446655440001";
@@ -212,31 +219,63 @@ describe("Chrome storage adapter", () => {
     await expect(repository.list()).resolves.toHaveLength(2);
   });
 
-  it("rejects stored collections with duplicate preset ids", async () => {
+  it("isolates duplicate preset ids and keeps the newest valid version", async () => {
     const storage = new MemoryChromeStorage();
-    storage.values["automation.presets.v1"] = [createPreset(), createPreset()];
+    const newer = createPreset({
+      name: "Newest",
+      updatedAt: "2026-09-28T12:00:00.000Z"
+    });
+    storage.values[PRESET_STORAGE_KEY] = [createPreset(), newer];
     const repository = new ChromePresetRepository(storage);
 
-    await expect(repository.list()).rejects.toMatchObject({
-      name: "PresetRepositoryDataError",
-      code: "duplicate_preset_id",
-      values: [PRESET_ID]
-    } satisfies Partial<PresetRepositoryDataError>);
+    await expect(repository.list()).resolves.toEqual([
+      expect.objectContaining({ id: PRESET_ID, name: "Newest" })
+    ]);
+    expect(storage.values[PRESET_QUARANTINE_STORAGE_KEY]).toEqual([
+      expect.objectContaining({ reason: "duplicate-preset-id" })
+    ]);
   });
 
-  it("rejects stored collections with duplicate active hostnames", async () => {
+  it("isolates duplicate active hostnames while preserving unrelated presets", async () => {
     const storage = new MemoryChromeStorage();
-    storage.values["automation.presets.v1"] = [
+    const unrelated = createPreset({
+      id: "550e8400-e29b-41d4-a716-446655440002",
+      site: { hostname: "shop.example.com", protocols: ["https"] }
+    });
+    storage.values[PRESET_STORAGE_KEY] = [
       createPreset(),
-      createPreset({ id: SECOND_PRESET_ID })
+      createPreset({
+        id: SECOND_PRESET_ID,
+        name: "New active assignment",
+        updatedAt: "2026-09-28T12:00:00.000Z"
+      }),
+      unrelated
     ];
     const repository = new ChromePresetRepository(storage);
 
-    await expect(repository.list()).rejects.toMatchObject({
-      name: "PresetRepositoryDataError",
-      code: "duplicate_active_hostname",
-      values: ["example.com"]
-    } satisfies Partial<PresetRepositoryDataError>);
+    await expect(repository.list()).resolves.toEqual([
+      expect.objectContaining({ id: SECOND_PRESET_ID }),
+      expect.objectContaining({ id: unrelated.id })
+    ]);
+    expect(storage.values[PRESET_QUARANTINE_STORAGE_KEY]).toEqual([
+      expect.objectContaining({ reason: "duplicate-active-hostname" })
+    ]);
+  });
+
+  it("quarantines malformed entries without hiding valid presets", async () => {
+    const storage = new MemoryChromeStorage();
+    storage.values[PRESET_STORAGE_KEY] = [
+      createPreset(),
+      { schemaVersion: 1, id: "broken", name: "Broken" }
+    ];
+
+    await expect(new ChromePresetRepository(storage).list()).resolves.toEqual([
+      expect.objectContaining({ id: PRESET_ID })
+    ]);
+    expect(storage.values[PRESET_STORAGE_KEY]).toHaveLength(1);
+    expect(storage.values[PRESET_QUARANTINE_STORAGE_KEY]).toEqual([
+      expect.objectContaining({ reason: "invalid-preset" })
+    ]);
   });
 
   it("returns detached values that cannot mutate storage", async () => {
@@ -287,6 +326,66 @@ describe("Chrome storage adapter", () => {
     await expect(
       new ChromePresetRepository(storage).list()
     ).resolves.toEqual([]);
+  });
+
+  it("reports quota exhaustion and preserves the previous collection", async () => {
+    const storage = new MemoryChromeStorage();
+    const repository = new ChromePresetRepository(storage);
+    const original = createPreset();
+    await repository.save(original);
+    storage.setError = new Error("QUOTA_BYTES quota exceeded");
+
+    await expect(repository.save(createPreset({ name: "Too large" })))
+      .rejects.toMatchObject({
+        name: "PresetRepositoryWriteError",
+        code: "quota-exceeded",
+        message: expect.stringContaining("Existing presets were not changed")
+      } satisfies Partial<PresetRepositoryWriteError>);
+
+    storage.setError = undefined;
+    await expect(repository.list()).resolves.toEqual([original]);
+  });
+
+  it("does not change stored data when an import is invalid", async () => {
+    const storage = new MemoryChromeStorage();
+    const repository = new ChromePresetRepository(storage);
+    const original = createPreset();
+    await repository.save(original);
+    const invalid = createPreset({ name: "" });
+
+    await expect(
+      importPresetJsonSafely(JSON.stringify(invalid), repository)
+    ).rejects.toMatchObject({ name: "PresetValidationError" });
+    await expect(repository.list()).resolves.toEqual([original]);
+  });
+
+  it("round-trips a portable preset between independent installations", async () => {
+    const sourceStorage = new MemoryChromeStorage();
+    const targetStorage = new MemoryChromeStorage();
+    const source = new ChromePresetRepository(sourceStorage);
+    const target = new ChromePresetRepository(targetStorage);
+    const preset = createPreset();
+    await source.save(preset);
+
+    const sourcePreset = await source.getById(preset.id);
+    expect(sourcePreset).toBeDefined();
+    const exported = exportPresetJson(sourcePreset!);
+    await expect(importPresetJsonSafely(exported, target)).resolves.toMatchObject({
+      status: "imported",
+      preset
+    });
+
+    expect(Object.keys(JSON.parse(exported))).toEqual([
+      "schemaVersion",
+      "id",
+      "name",
+      "createdAt",
+      "updatedAt",
+      "site",
+      "automation",
+      "siteSettings"
+    ]);
+    expect(targetStorage.values).toEqual({ [PRESET_STORAGE_KEY]: [preset] });
   });
 
   it("rejects an invalid preset before writing to storage", async () => {

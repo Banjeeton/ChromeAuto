@@ -1,6 +1,12 @@
 import type { PresetV1 } from "../../core/domain/preset";
-import { assertValidPreset } from "../../core/domain/preset-validator";
-import { PRESET_STORAGE_KEY } from "../../shared/constants";
+import {
+  assertValidPreset,
+  validatePreset
+} from "../../core/domain/preset-validator";
+import {
+  PRESET_QUARANTINE_STORAGE_KEY,
+  PRESET_STORAGE_KEY
+} from "../../shared/constants";
 import {
   type PresetRepository,
   PresetRepositoryDataError,
@@ -12,6 +18,16 @@ import {
 export interface ChromeStorageArea {
   get(key: string): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
+}
+
+export interface QuarantinedPresetRecord {
+  readonly reason:
+    | "invalid-collection"
+    | "invalid-preset"
+    | "duplicate-preset-id"
+    | "duplicate-active-hostname";
+  readonly capturedAt: string;
+  readonly value: unknown;
 }
 
 /** Stores portable preset v1 objects without introducing a database layer. */
@@ -161,7 +177,20 @@ export class ChromePresetRepository implements PresetRepository {
       throw new PresetRepositoryReadError(error);
     }
 
-    return decodePresetCollection(stored[this.#storageKey]);
+    const decoded = decodePresetCollection(stored[this.#storageKey]);
+    if (decoded.needsRepair) {
+      try {
+        await this.#storage.set({
+          [this.#storageKey]: structuredClone(decoded.presets),
+          [PRESET_QUARANTINE_STORAGE_KEY]: structuredClone(
+            decoded.quarantined.slice(-20)
+          )
+        });
+      } catch (error) {
+        throw new PresetRepositoryWriteError(error);
+      }
+    }
+    return decoded.presets;
   }
 
   async #writePresets(presets: readonly PresetV1[]): Promise<void> {
@@ -191,52 +220,71 @@ function normalizePreset(preset: PresetV1): PresetV1 {
   return normalized;
 }
 
-function decodePresetCollection(value: unknown): PresetV1[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!Array.isArray(value) || !value.every(isPresetV1)) {
-    throw new PresetRepositoryDataError(
-      "invalid_collection",
-      "Stored automation presets are not valid preset v1 objects."
-    );
-  }
-
-  const presets = structuredClone(value);
-  const duplicateIds = findDuplicates(presets.map((preset) => preset.id));
-  if (duplicateIds.length > 0) {
-    throw new PresetRepositoryDataError(
-      "duplicate_preset_id",
-      `Stored automation presets contain duplicate ids: ${duplicateIds.join(", ")}.`,
-      duplicateIds
-    );
-  }
-
-  const activeHostnames = presets
-    .filter((preset) => preset.siteSettings.enabled)
-    .map((preset) => preset.site.hostname.toLowerCase());
-  const duplicateHostnames = findDuplicates(activeHostnames);
-  if (duplicateHostnames.length > 0) {
-    throw new PresetRepositoryDataError(
-      "duplicate_active_hostname",
-      `Stored automation presets contain multiple active assignments for: ${duplicateHostnames.join(", ")}.`,
-      duplicateHostnames
-    );
-  }
-
-  return presets;
+interface DecodedPresetCollection {
+  readonly presets: PresetV1[];
+  readonly quarantined: QuarantinedPresetRecord[];
+  readonly needsRepair: boolean;
 }
 
-function findDuplicates(values: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const value of values) {
-    if (seen.has(value)) {
-      duplicates.add(value);
-    }
-    seen.add(value);
+function decodePresetCollection(value: unknown): DecodedPresetCollection {
+  if (value === undefined) {
+    return { presets: [], quarantined: [], needsRepair: false };
   }
-  return [...duplicates];
+  if (!Array.isArray(value)) {
+    return {
+      presets: [],
+      quarantined: [quarantine("invalid-collection", value)],
+      needsRepair: true
+    };
+  }
+
+  const quarantined: QuarantinedPresetRecord[] = [];
+  const valid: PresetV1[] = [];
+  for (const candidate of value) {
+    if (validatePreset(candidate).length > 0) {
+      quarantined.push(quarantine("invalid-preset", candidate));
+      continue;
+    }
+    valid.push(structuredClone(candidate as PresetV1));
+  }
+
+  const byId = new Map<string, PresetV1>();
+  for (const preset of valid) {
+    const existing = byId.get(preset.id);
+    if (existing === undefined) {
+      byId.set(preset.id, preset);
+      continue;
+    }
+    const [winner, loser] = newestPreset(existing, preset);
+    byId.set(preset.id, winner);
+    quarantined.push(quarantine("duplicate-preset-id", loser));
+  }
+
+  const accepted: PresetV1[] = [];
+  const activeIndexByHostname = new Map<string, number>();
+  for (const preset of byId.values()) {
+    if (!preset.siteSettings.enabled) {
+      accepted.push(preset);
+      continue;
+    }
+    const hostname = preset.site.hostname.toLowerCase();
+    const existingIndex = activeIndexByHostname.get(hostname);
+    if (existingIndex === undefined) {
+      activeIndexByHostname.set(hostname, accepted.length);
+      accepted.push(preset);
+      continue;
+    }
+    const existing = accepted[existingIndex];
+    const [winner, loser] = newestPreset(existing, preset);
+    accepted[existingIndex] = winner;
+    quarantined.push(quarantine("duplicate-active-hostname", loser));
+  }
+
+  return {
+    presets: accepted,
+    quarantined,
+    needsRepair: quarantined.length > 0
+  };
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
@@ -251,31 +299,19 @@ function nextUpdatedAt(previous: string, proposed: string): string {
   return new Date(next).toISOString();
 }
 
-function isPresetV1(value: unknown): value is PresetV1 {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const candidate = value as Partial<PresetV1>;
-  return (
-    candidate.schemaVersion === 1 &&
-    typeof candidate.id === "string" &&
-    typeof candidate.name === "string" &&
-    typeof candidate.createdAt === "string" &&
-    typeof candidate.updatedAt === "string" &&
-    (candidate.description === undefined ||
-      typeof candidate.description === "string") &&
-    typeof candidate.site === "object" &&
-    candidate.site !== null &&
-    typeof candidate.site.hostname === "string" &&
-    Array.isArray(candidate.site.protocols) &&
-    candidate.site.protocols.every(
-      (protocol) => protocol === "http" || protocol === "https"
-    ) &&
-    typeof candidate.automation === "object" &&
-    candidate.automation !== null &&
-    Array.isArray(candidate.automation.steps) &&
-    typeof candidate.siteSettings === "object" &&
-    candidate.siteSettings !== null &&
-    typeof candidate.siteSettings.enabled === "boolean"
-  );
+function newestPreset(left: PresetV1, right: PresetV1): [PresetV1, PresetV1] {
+  return Date.parse(right.updatedAt) > Date.parse(left.updatedAt)
+    ? [right, left]
+    : [left, right];
+}
+
+function quarantine(
+  reason: QuarantinedPresetRecord["reason"],
+  value: unknown
+): QuarantinedPresetRecord {
+  return {
+    reason,
+    capturedAt: new Date().toISOString(),
+    value: structuredClone(value)
+  };
 }

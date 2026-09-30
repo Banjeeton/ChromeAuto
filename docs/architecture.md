@@ -473,6 +473,9 @@ side panel -- manual Run --> RepeatCycleController --> AutomationRunner
 
 ## Создание и редактирование пресетов
 
+Подробные гарантии атомарности, quarantine, обработки quota и переносимости
+зафиксированы в [аудите целостности chrome.storage](storage-integrity.md).
+
 Side panel отправляет через `automation/runtime` только редактируемые поля
 пресета. `PresetEditorController` в background создаёт UUID и временные метки
 для нового пресета. При изменении он сначала читает существующую запись,

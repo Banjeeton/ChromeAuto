@@ -105,7 +105,12 @@ describe("preset editor application helpers", () => {
     fields.name = "Updated name";
     const updated = await controller.update(created.id, fields);
 
-    expect(repository.save).toHaveBeenCalledTimes(2);
+    expect(repository.saveIfUnchanged).toHaveBeenNthCalledWith(1, created, null);
+    expect(repository.saveIfUnchanged).toHaveBeenNthCalledWith(
+      2,
+      updated,
+      created.updatedAt
+    );
     expect(updated).toMatchObject({
       id: created.id,
       createdAt: created.createdAt,
@@ -139,7 +144,25 @@ describe("preset editor application helpers", () => {
         createPresetEditorDefaults("example.com")
       )
     ).rejects.toBeInstanceOf(PresetNotFoundError);
-    expect(repository.save).not.toHaveBeenCalled();
+    expect(repository.saveIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite a preset changed concurrently", async () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Original";
+    const original = createPresetV1(fields, {
+      createId: () => "550e8400-e29b-41d4-a716-446655440000",
+      now: () => new Date("2026-09-28T08:00:00.000Z")
+    });
+    const repository = createRepository(() => original, () => undefined);
+    vi.mocked(repository.saveIfUnchanged).mockResolvedValueOnce(false);
+    const controller = new PresetEditorController(repository);
+
+    fields.name = "Our edit";
+    await expect(controller.update(original.id, fields)).rejects.toThrow(
+      /changed while it was being edited/
+    );
+    expect(await repository.getById(original.id)).toEqual(original);
   });
 
   it("prepares a detached duplicate with the original steps and settings", () => {

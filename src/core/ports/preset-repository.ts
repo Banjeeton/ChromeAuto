@@ -44,13 +44,19 @@ export class PresetRepositoryReadError extends PresetRepositoryAccessError {
 }
 
 export class PresetRepositoryWriteError extends PresetRepositoryAccessError {
+  readonly code: "quota-exceeded" | "storage-write-failed";
+
   constructor(cause: unknown) {
+    const quotaExceeded = isStorageQuotaError(cause);
     super(
       "PresetRepositoryWriteError",
       "write",
-      "Unable to write automation presets to storage.",
+      quotaExceeded
+        ? "Chrome storage quota was exceeded. Delete unused presets or reduce large custom-code steps, then try again. Existing presets were not changed."
+        : "Unable to write automation presets to storage. Existing presets were not changed.",
       cause
     );
+    this.code = quotaExceeded ? "quota-exceeded" : "storage-write-failed";
   }
 }
 
@@ -87,4 +93,19 @@ export class PresetRepositoryConflictError extends Error {
     this.hostname = hostname;
     this.presetIds = Object.freeze([...presetIds]);
   }
+}
+
+function isStorageQuotaError(error: unknown): boolean {
+  const messages: string[] = [];
+  let current: unknown = error;
+  while (current instanceof Error) {
+    messages.push(current.message.toLowerCase());
+    current = current.cause;
+  }
+  const message = messages.join(" ");
+  return (
+    message.includes("quota") ||
+    message.includes("max_write") ||
+    message.includes("bytes_per_item")
+  );
 }
