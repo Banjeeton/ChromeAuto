@@ -338,7 +338,7 @@ h2 {
 }
 
 .automation-actions {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .target-heading {
@@ -1487,6 +1487,207 @@ button:disabled {
   margin-top: 14px;
 }
 
+.automation-session-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.automation-session-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #33404b;
+  border-radius: var(--radius-md);
+  background: #11181e;
+}
+
+.automation-session-card.running {
+  border-color: #31576a;
+}
+
+.automation-session-card.waiting {
+  border-color: #625633;
+}
+
+.automation-session-card.stopping {
+  border-color: #75484a;
+}
+
+.automation-session-heading,
+.automation-session-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.automation-session-heading {
+  justify-content: space-between;
+}
+
+.automation-session-heading strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-session-card.running .session-indicator {
+  background: #69d0e2;
+  box-shadow: 0 0 0 4px rgb(105 208 226 / 10%);
+  animation: recorder-pulse 1.5s ease-in-out infinite;
+}
+
+.automation-session-card.waiting .session-indicator {
+  background: #e7c676;
+}
+
+.automation-session-card.stopping .session-indicator {
+  background: #ff8d8d;
+}
+
+.automation-session-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.automation-session-details > div {
+  min-width: 0;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: #182027;
+}
+
+.automation-session-details dt {
+  color: var(--color-text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.automation-session-details dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-session-preset {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.current-step {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid #31576a;
+  border-radius: var(--radius-sm);
+  background: #14242c;
+}
+
+.current-step > span {
+  color: #88bfca;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.current-step > strong {
+  color: #d9f4f8;
+  font-size: 11px;
+}
+
+.current-step > small {
+  overflow: hidden;
+  color: #93a4b1;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-history {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #29343e;
+}
+
+.session-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.session-history-heading h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.session-history-heading > span {
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.session-history ol {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session-outcome {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 9px;
+  border-left: 3px solid #56636e;
+  border-radius: var(--radius-sm);
+  background: #11181e;
+}
+
+.session-outcome.completed {
+  border-left-color: #62dc98;
+}
+
+.session-outcome.stopped {
+  border-left-color: #e7c676;
+}
+
+.session-outcome.failed {
+  border-left-color: #ff8d8d;
+}
+
+.session-outcome > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.session-outcome strong {
+  color: var(--color-text);
+  font-size: 11px;
+}
+
+.session-outcome span {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .session-pill {
   display: inline-flex;
   align-items: center;
@@ -1660,5 +1861,10 @@ button:disabled {
   .structured-step-header::after {
     grid-row: 1;
     grid-column: 3;
+  }
+
+  .automation-session-details,
+  .current-step {
+    grid-template-columns: 1fr;
   }
 }

@@ -161,6 +161,26 @@ function App() {
     return () => clearInterval(interval);
   }, [activeTab?.id, recorder.status?.state, runLog.refresh]);
 
+  useEffect(() => {
+    const tabId = activeTab?.id;
+    const hasRunningAutomation =
+      operation.busyAction === "run" ||
+      automation.sessions.some(({ status }) => status !== "stopping") ||
+      automation.repeatCycles.some(({ state }) => state === "running");
+    if (tabId === undefined || !hasRunningAutomation) return;
+
+    const interval = setInterval(() => {
+      void refreshWorkspace(tabId).catch(() => undefined);
+    }, 750);
+    return () => clearInterval(interval);
+  }, [
+    activeTab?.id,
+    automation.repeatCycles,
+    automation.sessions,
+    operation.busyAction,
+    refreshWorkspace
+  ]);
+
   const runAutomation = () => {
     if (activeTab === undefined) {
       runLog.addNotice("error", "No active browser tab was found.");
@@ -173,6 +193,10 @@ function App() {
     if (activeTab !== undefined) {
       void automation.stop(activeTab, refreshWorkspace);
     }
+  };
+
+  const stopAutomationTab = (tabId: number) => {
+    void automation.stopByTabId(tabId, refreshWorkspace);
   };
 
   const startRecording = () => {
@@ -244,6 +268,7 @@ function App() {
           canRecord={canRecord}
           canRun={canRun}
           currentTabHasActiveCycle={currentTabHasActiveCycle}
+          cycleLogs={runLog.cycleLogs}
           manualStatus={currentManualStatus}
           onRecord={startRecording}
           onRefresh={() =>
@@ -253,6 +278,7 @@ function App() {
           }
           onRun={runAutomation}
           onStop={stopAutomation}
+          onStopTab={stopAutomationTab}
           onStopAll={() =>
             void automation.stopAll(activeTab, refreshWorkspace)
           }
@@ -260,6 +286,7 @@ function App() {
           repeatCycles={automation.repeatCycles}
           recorderStatus={currentRecorderStatus}
           sessions={automation.sessions}
+          stepLogs={runLog.stepLogs}
         />
 
         <RecordedDraftPanel

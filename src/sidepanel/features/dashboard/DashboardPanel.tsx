@@ -1,7 +1,9 @@
 import type { ManualRunStatus } from "../../../core/application/manual-run-controller";
 import type { RecorderPanelStatus } from "../../../core/application/recorder-panel-controller";
 import type { RepeatCycleStatusView } from "../../../core/application/repeat-cycle-status-controller";
+import type { RepeatCycleLogEntry } from "../../../core/domain/repeat-cycle-log-entry";
 import type { RunSession } from "../../../core/domain/run-session";
+import type { StepLogEntry } from "../../../core/domain/step-log-entry";
 import { Alert, Badge, Button, Card, type StatusTone } from "../../components";
 import type { ActiveTab } from "../../types";
 import { AutomationSessionsPanel } from "../automation";
@@ -24,10 +26,13 @@ export interface DashboardPanelProps {
   readonly currentTabHasActiveCycle: boolean;
   readonly sessions: readonly RunSession[];
   readonly repeatCycles: readonly RepeatCycleStatusView[];
+  readonly stepLogs?: readonly StepLogEntry[];
+  readonly cycleLogs?: readonly RepeatCycleLogEntry[];
   readonly onRefresh: () => void;
   readonly onRun: () => void;
   readonly onRecord: () => void;
   readonly onStop: () => void;
+  readonly onStopTab?: (tabId: number) => void;
   readonly onStopRecording: () => void;
   readonly onStopAll: () => void;
 }
@@ -42,10 +47,13 @@ export function DashboardPanel({
   currentTabHasActiveCycle,
   sessions,
   repeatCycles,
+  stepLogs,
+  cycleLogs,
   onRefresh,
   onRun,
   onRecord,
   onStop,
+  onStopTab,
   onStopRecording,
   onStopAll
 }: DashboardPanelProps) {
@@ -53,8 +61,6 @@ export function DashboardPanel({
   const currentRecorderStatus = statusForTab(activeTab, recorderStatus);
   const state = dashboardState(currentManualStatus, currentRecorderStatus);
   const location = tabLocation(activeTab?.url);
-  const hasAnyAutomation = sessions.length > 0 || repeatCycles.length > 0;
-
   return (
     <section className="dashboard" aria-labelledby="dashboard-title">
       <Card className="card dashboard-card">
@@ -122,28 +128,27 @@ export function DashboardPanel({
             {busyAction === "run" ? "Running…" : "Run"}
           </Button>
           <Button
-            disabled={!currentTabHasActiveCycle || busyAction !== undefined}
+            disabled={
+              !currentTabHasActiveCycle ||
+              busyAction === "stop" ||
+              busyAction === "stop-all"
+            }
             onClick={onStop}
             variant="secondary"
           >
             {busyAction === "stop" ? "Stopping…" : "Stop"}
-          </Button>
-          <Button
-            disabled={!hasAnyAutomation || busyAction !== undefined}
-            onClick={onStopAll}
-            variant="danger"
-          >
-            {busyAction === "stop-all" ? "Stopping…" : "Stop All"}
           </Button>
         </div>
       </Card>
 
       <AutomationSessionsPanel
         busyAction={busyAction}
+        cycleLogs={cycleLogs}
+        onStopTab={onStopTab}
         onStopAll={onStopAll}
         repeatCycles={repeatCycles}
         sessions={sessions}
-        showStopAll={false}
+        stepLogs={stepLogs}
       />
     </section>
   );

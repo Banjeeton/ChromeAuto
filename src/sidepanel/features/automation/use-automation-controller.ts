@@ -116,22 +116,22 @@ export function useAutomationController({
     [addNotice, operation]
   );
 
-  const stop = useCallback(
-    async (activeTab: ActiveTab, refreshWorkspace: RefreshWorkspace) => {
+  const stopByTabId = useCallback(
+    async (tabId: number, refreshWorkspace: RefreshWorkspace) => {
       operation.begin("stop");
       try {
         const response = await sendRuntimeMessage({
           type: AUTOMATION_RUNTIME_MESSAGE,
           action: "stop",
-          tabId: activeTab.id
+          tabId
         });
         if (!response.ok) throw runtimeResponseError(response);
         if (response.result.kind === "stop") {
           addNotice(
             "success",
             response.result.stop.stopped
-              ? "Automation stopped for the current tab."
-              : "The current tab has no active automation."
+              ? `Automation stopped for tab #${tabId}.`
+              : `Tab #${tabId} has no active automation.`
           );
         }
       } catch (error) {
@@ -142,10 +142,17 @@ export function useAutomationController({
         );
       } finally {
         operation.finish();
-        await refreshWorkspace(activeTab.id).catch(() => undefined);
+        await refreshWorkspace(tabId).catch(() => undefined);
       }
     },
     [addNotice, operation]
+  );
+
+  const stop = useCallback(
+    async (activeTab: ActiveTab, refreshWorkspace: RefreshWorkspace) => {
+      await stopByTabId(activeTab.id, refreshWorkspace);
+    },
+    [stopByTabId]
   );
 
   const stopAll = useCallback(
@@ -185,6 +192,7 @@ export function useAutomationController({
     run,
     sessions,
     stop,
+    stopByTabId,
     stopAll
   } as const;
 }

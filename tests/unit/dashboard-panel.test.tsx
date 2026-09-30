@@ -42,6 +42,7 @@ describe("current-site Dashboard", () => {
   it("renders Running, Waiting and Recording as distinct current-tab states", () => {
     const running = renderDashboard({
       activeTab: tab(21),
+      busyAction: "run",
       manualStatus: {
         state: "running",
         tabId: 21,
@@ -87,6 +88,7 @@ describe("current-site Dashboard", () => {
 
     expect(running).toContain("Running");
     expect(running).toContain("is running in this tab");
+    expect(running).toMatch(/<button(?![^>]*disabled)[^>]*>Stop<\/button>/);
     expect(waiting).toContain("Waiting");
     expect(waiting).toContain("waiting for its next run");
     expect(recording).toContain("Recording");

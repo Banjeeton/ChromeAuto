@@ -1,6 +1,8 @@
 export {
   AutomationSessionsPanel,
-  type AutomationSessionsPanelProps
+  buildRecentSessionOutcomes,
+  type AutomationSessionsPanelProps,
+  type SessionOutcomeView
 } from "./AutomationSessionsPanel";
 export {
   AutomationStatusPanel,

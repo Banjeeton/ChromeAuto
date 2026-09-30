@@ -49,6 +49,53 @@ function createRunner(engine = createEngine()) {
 }
 
 describe("AutomationRunner", () => {
+  it("publishes the currently executing step before it completes", async () => {
+    const engine = createEngine();
+    let finishStep: (() => void) | undefined;
+    vi.mocked(engine.executeStep).mockImplementationOnce(
+      (request) =>
+        new Promise((resolve) => {
+          finishStep = () => resolve({
+            sessionId: request.sessionId,
+            stepId: request.step.id,
+            stepIndex: request.stepIndex
+          });
+        })
+    );
+    const { runner, sessions } = createRunner(engine);
+    const running = runner.run({
+      presetId: "preset-1",
+      tabId: 42,
+      automation: {
+        defaults,
+        steps: [{
+          id: "submit",
+          name: "Submit order",
+          type: "click",
+          enabled: true,
+          target: {
+            primary: { type: "testId", value: "submit" },
+            fallbacks: []
+          },
+          button: "left",
+          clickCount: 1
+        }]
+      }
+    });
+
+    await vi.waitFor(() => expect(engine.executeStep).toHaveBeenCalledOnce());
+    expect(sessions.getByTabId(42)?.currentStep).toEqual({
+      stepId: "submit",
+      stepIndex: 0,
+      stepNumber: 1,
+      stepType: "click",
+      stepName: "Submit order"
+    });
+
+    finishStep?.();
+    await running;
+  });
+
   it("executes enabled steps sequentially and logs skipped steps", async () => {
     const { engine, log, runner } = createRunner();
     const automation: AutomationDefinition = {

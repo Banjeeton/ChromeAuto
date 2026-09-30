@@ -63,18 +63,69 @@ describe("side panel feature modules", () => {
     );
     const sessionsHtml = renderToStaticMarkup(
       <AutomationSessionsPanel
+        cycleLogs={[
+          {
+            id: "cycle-failed",
+            recordedAt: "2026-09-29T12:02:00.000Z",
+            tabId: 9,
+            presetId: "preset-failed",
+            event: "failed",
+            message: "Step #3 failed.",
+            error: "Submit button was not found"
+          },
+          {
+            id: "cycle-stopped",
+            recordedAt: "2026-09-29T12:01:00.000Z",
+            tabId: 10,
+            presetId: "preset-stopped",
+            event: "stopped",
+            message: "Cycle stopped by the user."
+          },
+          {
+            id: "cycle-completed",
+            recordedAt: "2026-09-29T12:00:00.000Z",
+            tabId: 11,
+            presetId: "preset-completed",
+            event: "completed",
+            message: "Cycle pass completed."
+          }
+        ]}
         onStopAll={() => undefined}
+        onStopTab={() => undefined}
         repeatCycles={[
           {
             tabId: 7,
             presetId: "preset-1",
             presetName: "Checkout",
+            hostname: "example.com",
             state: "waiting",
             intervalMinutes: 2,
             nextRunAt: Date.UTC(2026, 8, 29, 12, 0, 0)
+          },
+          {
+            tabId: 8,
+            presetId: "preset-2",
+            presetName: "Checkout runner",
+            hostname: "shop.example.com",
+            state: "running",
+            intervalMinutes: 5
           }
         ]}
-        sessions={[]}
+        sessions={[
+          {
+            sessionId: "session-8",
+            presetId: "preset-2",
+            tabId: 8,
+            status: "running",
+            currentStep: {
+              stepId: "submit-order",
+              stepIndex: 1,
+              stepNumber: 2,
+              stepType: "click",
+              stepName: "Submit order"
+            }
+          }
+        ]}
       />
     );
 
@@ -82,7 +133,17 @@ describe("side panel feature modules", () => {
     expect(statusHtml).toContain("Checkout");
     expect(statusHtml).toContain("Recorder is ready");
     expect(sessionsHtml).toContain("Waiting");
-    expect(sessionsHtml).toContain("every 2 min");
+    expect(sessionsHtml).toContain("example.com");
+    expect(sessionsHtml).toContain("2 min");
+    expect(sessionsHtml).toContain("Next run");
+    expect(sessionsHtml).toContain("Current step");
+    expect(sessionsHtml).toContain("#2 · click");
+    expect(sessionsHtml).toContain("Submit order");
+    expect(sessionsHtml).toContain("Stop tab #7");
+    expect(sessionsHtml).toContain("completed");
+    expect(sessionsHtml).toContain("stopped");
+    expect(sessionsHtml).toContain("failed");
+    expect(sessionsHtml).toContain("No next run was scheduled");
   });
 
   it("renders preset, recorder draft and log states in their own modules", () => {

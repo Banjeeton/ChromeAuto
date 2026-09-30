@@ -95,6 +95,31 @@ describe("TabSessionManager", () => {
     expect(manager.list()).toEqual([]);
   });
 
+  it("publishes the current step in an immutable session snapshot", async () => {
+    const manager = new TabSessionManager(createEngine(), {
+      createSessionId: createSessionIds("session-1")
+    });
+    const session = await manager.start({ presetId: "preset-1", tabId: 11 });
+
+    manager.setCurrentStep(session.sessionId, {
+      stepId: "fill-email",
+      stepIndex: 1,
+      stepNumber: 2,
+      stepType: "input",
+      stepName: "Enter email"
+    });
+
+    const snapshot = manager.getById(session.sessionId);
+    expect(snapshot?.currentStep).toEqual({
+      stepId: "fill-email",
+      stepIndex: 1,
+      stepNumber: 2,
+      stepType: "input",
+      stepName: "Enter email"
+    });
+    expect(Object.isFrozen(snapshot?.currentStep)).toBe(true);
+  });
+
   it("stops all sessions with one engine operation", async () => {
     const engine = createEngine();
     const manager = new TabSessionManager(engine, {
