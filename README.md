@@ -39,6 +39,7 @@ Individual checks are available through `npm run typecheck` and `npm test`.
 - [Architecture](docs/architecture.md)
 - [Side panel UX architecture](docs/side-panel-ux.md)
 - [Portable preset v1 format](docs/preset-format.md)
+- [Release Candidate requirements](docs/release-candidate.md)
 
 ## Technical spikes
 
