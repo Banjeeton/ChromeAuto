@@ -11,6 +11,7 @@ import type {
   PressKeyStep,
   SelectStep
 } from "../../../core/domain/automation-step";
+import { ConfirmationDialog } from "../../components";
 import { createStepTemplate } from "../presets/step-template";
 
 type ManualRecordedStepType =
@@ -61,6 +62,9 @@ export function RecordedStepsEditor({
     `Recorded automation for ${draft.hostname}`
   );
   const [presetDescription, setPresetDescription] = useState("");
+  const presetNameError = validationErrors.some((message) =>
+    message.startsWith("/name:")
+  );
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -222,11 +226,25 @@ export function RecordedStepsEditor({
         <label className="editor-field">
           <span>Preset name</span>
           <input
+            aria-describedby={
+              presetNameError ? "recorded-preset-name-error" : undefined
+            }
+            aria-invalid={presetNameError || undefined}
             maxLength={120}
             onChange={(event) => setPresetName(event.target.value)}
             required
             value={presetName}
           />
+          {presetNameError && (
+            <small
+              aria-live="polite"
+              className="field-error"
+              id="recorded-preset-name-error"
+              role="alert"
+            >
+              Preset name is required.
+            </small>
+          )}
         </label>
         <label className="editor-field">
           <span>Description</span>
@@ -278,6 +296,7 @@ export function RecordedStepsEditor({
                 <strong>{step.type}</strong>
                 <label>
                   <input
+                    aria-label={`Enable step ${index + 1}`}
                     checked={step.enabled}
                     onChange={(event) =>
                       updateStep(index, (current) => ({
@@ -324,6 +343,12 @@ export function RecordedStepsEditor({
                 <label className="editor-field">
                   <span>Locators JSON</span>
                   <textarea
+                    aria-describedby={
+                      targetErrors[step.id] === undefined
+                        ? undefined
+                        : `recorded-target-error-${step.id}`
+                    }
+                    aria-invalid={targetErrors[step.id] !== undefined || undefined}
                     className="locator-editor"
                     onChange={(event) =>
                       updateTarget(index, step.id, event.target.value)
@@ -335,7 +360,12 @@ export function RecordedStepsEditor({
                     }
                   />
                   {targetErrors[step.id] !== undefined && (
-                    <small className="field-error">
+                    <small
+                      aria-live="polite"
+                      className="field-error"
+                      id={`recorded-target-error-${step.id}`}
+                      role="alert"
+                    >
                       /automation/steps/{index}/target: {targetErrors[step.id]}
                     </small>
                   )}
@@ -419,6 +449,7 @@ export function RecordedStepsEditor({
                   ↓ Down
                 </button>
                 <button
+                  aria-label={`Delete step ${index + 1}`}
                   className="danger-text"
                   disabled={busy}
                   onClick={() => removeStep(index, step.id)}
@@ -443,31 +474,17 @@ export function RecordedStepsEditor({
         <p className="editor-error" role="alert">{saveError}</p>
       )}
 
-      {confirmDiscard && (
-        <div className="delete-confirmation recorder-discard-confirmation">
-          <p>
-            Discard this recording? All captured and edited steps will be lost.
-          </p>
-          <div>
-            <button
-              className="inline-button neutral"
-              disabled={busy}
-              onClick={() => setConfirmDiscard(false)}
-              type="button"
-            >
-              Keep draft
-            </button>
-            <button
-              className="inline-button destructive"
-              disabled={busy}
-              onClick={onDiscard}
-              type="button"
-            >
-              Discard draft
-            </button>
-          </div>
-        </div>
-      )}
+      <ConfirmationDialog
+        busy={busy}
+        cancelLabel="Keep draft"
+        confirmLabel="Discard draft"
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={onDiscard}
+        open={confirmDiscard}
+        title="Discard recording?"
+      >
+        All captured and edited steps will be lost.
+      </ConfirmationDialog>
 
       <div className="editor-actions recorded-editor-actions">
         <button

@@ -102,7 +102,12 @@ export function DashboardPanel({
           )}
         </div>
 
-        <Alert className="dashboard-status" tone={dashboardTone(state)}>
+        <Alert
+          aria-atomic="true"
+          aria-live="polite"
+          className="dashboard-status"
+          tone={dashboardTone(state)}
+        >
           {dashboardMessage(
             activeTab,
             currentManualStatus,

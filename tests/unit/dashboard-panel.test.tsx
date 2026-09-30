@@ -37,6 +37,8 @@ describe("current-site Dashboard", () => {
     expect(html).toContain(">Record<");
     expect(html).toContain(">Stop<");
     expect(html).toContain(">Stop All<");
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('aria-atomic="true"');
   });
 
   it("renders Running, Waiting and Recording as distinct current-tab states", () => {

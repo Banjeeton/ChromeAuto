@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { Button } from "./Button";
 import { classNames } from "./class-names";
@@ -25,6 +25,21 @@ export function Confirmation({
   onCancel,
   onConfirm
 }: ConfirmationProps) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : undefined;
+    cancelRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (previouslyFocused?.isConnected) {
+        previouslyFocused.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
   return (
     <div
       className={classNames(
@@ -36,7 +51,13 @@ export function Confirmation({
     >
       <p className="ui-confirmation__message">{children}</p>
       <div className="ui-confirmation__actions">
-        <Button disabled={busy} onClick={onCancel} size="small" variant="secondary">
+        <Button
+          disabled={busy}
+          onClick={onCancel}
+          ref={cancelRef}
+          size="small"
+          variant="secondary"
+        >
           {cancelLabel}
         </Button>
         <Button disabled={busy} onClick={onConfirm} size="small" variant="danger">
@@ -66,7 +87,13 @@ export function ConfirmationDialog({
     <Modal
       footer={
         <>
-          <Button disabled={busy} onClick={onCancel} size="small" variant="secondary">
+          <Button
+            data-modal-initial-focus
+            disabled={busy}
+            onClick={onCancel}
+            size="small"
+            variant="secondary"
+          >
             {cancelLabel}
           </Button>
           <Button disabled={busy} onClick={onConfirm} size="small" variant="danger">

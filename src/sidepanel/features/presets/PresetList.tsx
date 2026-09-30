@@ -171,8 +171,8 @@ function PresetCard({
           onClick={select}
           type="button"
         >
-          <strong>{preset.name}</strong>
-          <span>{preset.site.hostname}</span>
+          <strong title={preset.name}>{preset.name}</strong>
+          <span title={preset.site.hostname}>{preset.site.hostname}</span>
         </button>
         <Badge tone={preset.siteSettings.enabled ? "success" : "neutral"}>
           {preset.siteSettings.enabled ? "Enabled" : "Disabled"}

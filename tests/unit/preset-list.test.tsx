@@ -113,6 +113,24 @@ describe("PresetList", () => {
     expect(html).toContain("Cancel");
     expect(html).toContain("Delete permanently");
   });
+
+  it("keeps long preset names and hostnames available while the layout truncates them", () => {
+    const longName = "Checkout automation ".repeat(12).trim();
+    const longHostname = `${"very-long-subdomain-".repeat(8)}example.com`;
+    const html = render({
+      status: "ready",
+      presets: [
+        createPreset({
+          name: longName,
+          site: { hostname: longHostname, protocols: ["https"] }
+        })
+      ]
+    });
+
+    expect(html).toContain(`title="${longName}"`);
+    expect(html).toContain(`title="${longHostname}"`);
+    expect(html).toContain("preset-card-select");
+  });
 });
 
 function render(

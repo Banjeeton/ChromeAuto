@@ -245,6 +245,11 @@
   box-shadow: 0 24px 70px rgb(0 0 0 / 48%);
 }
 
+.ui-modal:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .ui-modal__header,
 .ui-modal__footer {
   display: flex;
@@ -316,4 +321,24 @@
   display: flex;
   justify-content: flex-end;
   gap: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button,
+  .ui-input,
+  .ui-select,
+  .ui-textarea {
+    transition: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .ui-card {
+    min-width: 0;
+    padding: var(--space-3);
+  }
+
+  .ui-modal__backdrop {
+    padding: var(--space-3);
+  }
 }

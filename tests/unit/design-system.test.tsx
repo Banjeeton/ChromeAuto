@@ -105,6 +105,9 @@ describe("side panel design system", () => {
     expect(hiddenModal).toBe("");
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('tabindex="-1"');
+    expect(html).toContain("data-modal-initial-focus");
+    expect(html).toContain('aria-label="Close dialog"');
     expect(html).toContain("ui-confirmation");
     expect(html).toContain("Delete this preset?");
     expect(html).toContain("Replace preset");

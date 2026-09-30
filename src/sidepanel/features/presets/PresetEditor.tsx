@@ -76,7 +76,9 @@ export function PresetEditor({
                 ? "Duplicate preset"
                 : "Editing preset"}
           </p>
-          <h3>{mode === "create" ? "Create preset" : fields.name}</h3>
+          <h3 title={mode === "create" ? undefined : fields.name}>
+            {mode === "create" ? "Create preset" : fields.name}
+          </h3>
         </div>
         <div className="editor-heading-actions">
           <Badge tone={validation.issues.length === 0 ? "success" : "warning"}>
@@ -111,6 +113,7 @@ export function PresetEditor({
         <label className="editor-field">
           <span>Name</span>
           <Input
+            {...fieldAccessibility(validation.issues, "/name")}
             autoFocus
             maxLength={120}
             onChange={(event) =>
@@ -128,6 +131,7 @@ export function PresetEditor({
         <label className="editor-field">
           <span>Description</span>
           <Textarea
+            {...fieldAccessibility(validation.issues, "/description")}
             onChange={(event) =>
               setFields((current) => ({
                 ...current,
@@ -155,6 +159,7 @@ export function PresetEditor({
         <label className="editor-field">
           <span>Hostname</span>
           <Input
+            {...fieldAccessibility(validation.issues, "/site/hostname")}
             autoCapitalize="none"
             onChange={(event) =>
               setFields((current) => ({
@@ -217,6 +222,10 @@ export function PresetEditor({
         <label className="editor-field compact-field">
           <span>Repeat interval, minutes</span>
           <Input
+            {...fieldAccessibility(
+              validation.issues,
+              "/siteSettings/repeat/intervalMinutes"
+            )}
             min={1}
             onChange={(event) =>
               setFields((current) => ({
@@ -398,6 +407,7 @@ function NumberField({ label, path, issues, min, value, onChange }: NumberFieldP
     <label className="editor-field compact-field">
       <span>{label}</span>
       <Input
+        {...fieldAccessibility(issues, path)}
         min={min}
         onChange={(event) => onChange(event.target.valueAsNumber)}
         required
@@ -419,10 +429,32 @@ function FieldIssues({
   const matches = issues.filter((issue) => issue.path === path);
   if (matches.length === 0) return null;
   return (
-    <span className="field-error" data-error-path={path}>
+    <span
+      aria-live="polite"
+      className="field-error"
+      data-error-path={path}
+      id={fieldIssueId(path)}
+      role="alert"
+    >
       {matches.map((issue) => issue.message).join(" ")}
     </span>
   );
+}
+
+function fieldAccessibility(
+  issues: readonly PresetValidationIssue[],
+  path: string
+) {
+  return issues.some((issue) => issue.path === path)
+    ? {
+        "aria-describedby": fieldIssueId(path),
+        "aria-invalid": true as const
+      }
+    : {};
+}
+
+function fieldIssueId(path: string): string {
+  return `preset-field-error-${path.replaceAll(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`;
 }
 
 export function isPresetEditorDirty(

@@ -541,7 +541,13 @@ function FieldIssues({ issues, path }: { readonly issues: readonly PresetValidat
   const matches = issues.filter((issue) => issue.path === path);
   if (matches.length === 0) return null;
   return (
-    <span className="field-error" data-error-path={path}>
+    <span
+      aria-live="polite"
+      className="field-error"
+      data-error-path={path}
+      id={`step-field-error-${path.replaceAll(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`}
+      role="alert"
+    >
       {matches.map((issue) => issue.message).join(" ")}
     </span>
   );

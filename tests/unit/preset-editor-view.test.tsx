@@ -58,6 +58,10 @@ describe("PresetEditor", () => {
 
     expect(html).toContain("Create preset");
     expect(html).toContain("Preset validation failed at /name.");
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain('aria-describedby="preset-field-error-name"');
+    expect(html).toContain('id="preset-field-error-name"');
+    expect(html).toContain('role="alert"');
   });
 
   it("explains the hostname requirement when duplicating", () => {
@@ -76,6 +80,25 @@ describe("PresetEditor", () => {
     expect(html).toContain("Duplicate preset");
     expect(html).toContain("Choose a different hostname");
     expect(html).toContain("Save duplicate");
+  });
+
+  it("constrains a 120-character preset name inside the editor heading", () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Long preset name ".repeat(8).slice(0, 120);
+
+    const html = renderToStaticMarkup(
+      <PresetEditor
+        initialFields={fields}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+        saving={false}
+      />
+    );
+
+    expect(fields.name).toHaveLength(120);
+    expect(html).toContain(`title="${fields.name}"`);
+    expect(html).toContain("editor-heading");
   });
 
   it("renders every preset v1 step as a structured card without Steps JSON", () => {

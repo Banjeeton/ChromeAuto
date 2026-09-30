@@ -30,6 +30,8 @@ describe("RecordedStepsEditor", () => {
     expect(html).toContain("JavaScript");
     expect(html).toContain("customCode");
     expect(html).toContain("Delete");
+    expect(html).toContain('aria-label="Enable step 1"');
+    expect(html).toContain('aria-label="Delete step 1"');
     expect(html).toContain("Cancel creation");
     expect(html).toContain("Save draft");
     expect(html).toContain("Create preset");
