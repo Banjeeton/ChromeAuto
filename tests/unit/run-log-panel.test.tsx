@@ -147,6 +147,16 @@ describe("RunLogPanel", () => {
     expect(html).toContain("[REDACTED]");
     expect(html).toContain("log-details");
   });
+
+  it("redacts token, authorization and cookie-like diagnostics", () => {
+    const text = redactRunLogText(
+      "token=secret-token authorization:Bearer-secret cookie=session-secret"
+    );
+    expect(text).not.toContain("secret-token");
+    expect(text).not.toContain("Bearer-secret");
+    expect(text).not.toContain("session-secret");
+    expect(text.match(/\[REDACTED\]/g)).toHaveLength(3);
+  });
 });
 
 function failedStep(): StepLogEntry {

@@ -116,6 +116,15 @@ export function DashboardPanel({
           )}
         </Alert>
 
+        {currentManualStatus !== undefined &&
+          "hasCustomCode" in currentManualStatus &&
+          currentManualStatus.hasCustomCode === true && (
+          <Alert className="dashboard-custom-code-warning" tone="warning">
+            This preset contains custom JavaScript. Running it gives that code
+            access to the current page. Run only code you trust.
+          </Alert>
+        )}
+
         <RecorderControls
           busyAction={busyAction}
           canRecord={canRecord}

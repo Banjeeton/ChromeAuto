@@ -118,7 +118,11 @@ export function redactRunLogText(value: string): string {
       "$1[REDACTED]$2"
     )
     .replace(
-      /((?:password|passwd|pwd)\s*[:=]\s*["']?)[^\s,"';}&]+/gi,
+      /((?:password|passwd|pwd)["']?\s*[:=]\s*["']?)[^\s,"';}&]+/gi,
+      "$1[REDACTED]"
+    )
+    .replace(
+      /((?:token|access_token|refresh_token|authorization|cookie|set-cookie)["']?\s*[:=]\s*["']?)[^\s,"';}&]+/gi,
       "$1[REDACTED]"
     );
 }

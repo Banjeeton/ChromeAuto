@@ -29,6 +29,7 @@ export type ManualRunStatus =
       readonly presetId: string;
       readonly presetName: string;
       readonly stepCount: number;
+      readonly hasCustomCode?: boolean;
     }
   | {
       readonly state: "running";
@@ -37,6 +38,7 @@ export type ManualRunStatus =
       readonly presetId: string;
       readonly presetName: string;
       readonly sessionId: string;
+      readonly hasCustomCode?: boolean;
     }
   | {
       readonly state: "waiting";
@@ -45,6 +47,7 @@ export type ManualRunStatus =
       readonly presetId: string;
       readonly presetName: string;
       readonly nextRunAt: number;
+      readonly hasCustomCode?: boolean;
     }
   | {
       readonly state: "unavailable";
@@ -162,7 +165,8 @@ export class ManualRunController {
           hostname: location.hostname,
           presetId: activeSession.presetId,
           presetName: sessionPreset?.name ?? activeSession.presetId,
-          sessionId: activeSession.sessionId
+          sessionId: activeSession.sessionId,
+          ...(presetHasCustomCode(sessionPreset) ? { hasCustomCode: true } : {})
         },
         preset: sessionPreset
       };
@@ -185,7 +189,8 @@ export class ManualRunController {
             hostname: location.hostname,
             presetId: repeatPreset.id,
             presetName: repeatPreset.name,
-            nextRunAt: repeatState.nextRunAt
+            nextRunAt: repeatState.nextRunAt,
+            ...(presetHasCustomCode(repeatPreset) ? { hasCustomCode: true } : {})
           },
           preset: repeatPreset
         };
@@ -243,11 +248,18 @@ export class ManualRunController {
         hostname: location.hostname,
         presetId: preset.id,
         presetName: preset.name,
-        stepCount: preset.automation.steps.length
+          stepCount: preset.automation.steps.length,
+          ...(presetHasCustomCode(preset) ? { hasCustomCode: true } : {})
       },
       preset
     };
   }
+}
+
+function presetHasCustomCode(preset: PresetV1 | undefined): boolean {
+  return preset?.automation.steps.some(
+    (step) => step.enabled && step.type === "customCode"
+  ) ?? false;
 }
 
 function parseHttpLocation(url: string): URL | undefined {

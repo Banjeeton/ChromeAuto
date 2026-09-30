@@ -142,6 +142,27 @@ describe("current-site Dashboard", () => {
     expect(prohibited).toContain("Automations can only run on HTTP or HTTPS pages");
   });
 
+  it("warns before running a preset containing custom JavaScript", () => {
+    const html = renderDashboard({
+      activeTab: tab(35),
+      manualStatus: {
+        state: "ready",
+        tabId: 35,
+        hostname: "example.com",
+        presetId: "custom-preset",
+        presetName: "Trusted custom preset",
+        stepCount: 1,
+        hasCustomCode: true
+      },
+      recorderStatus: idleRecorder(35),
+      canRun: true
+    });
+
+    expect(html).toContain("This preset contains custom JavaScript");
+    expect(html).toContain("Run only code you trust");
+    expect(html).toContain("dashboard-custom-code-warning");
+  });
+
   it("does not mix status from a previously active tab", () => {
     const html = renderDashboard({
       activeTab: {

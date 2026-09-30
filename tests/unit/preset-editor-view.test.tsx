@@ -64,6 +64,25 @@ describe("PresetEditor", () => {
     expect(html).toContain('role="alert"');
   });
 
+  it("warns when a custom JavaScript step is edited", () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Custom code preset";
+    fields.automation.steps = [createStepTemplate("customCode", "custom-1")];
+
+    const html = renderToStaticMarkup(
+      <PresetEditor
+        initialFields={fields}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+        saving={false}
+      />
+    );
+
+    expect(html).toContain("Custom JavaScript runs with access to the current page");
+    expect(html).toContain("Do not include passwords, cookies or tokens");
+  });
+
   it("explains the hostname requirement when duplicating", () => {
     const fields = createPresetEditorDefaults();
     fields.name = "Example automation copy";

@@ -108,6 +108,30 @@ describe("custom JavaScript executor", () => {
     });
   });
 
+  it("redacts current password field values from logs, results and errors", async () => {
+    const secret = "page-password-secret";
+    vi.stubGlobal("document", {
+      querySelectorAll: () => [{ value: secret }]
+    });
+    const page = createEvaluatingPage();
+
+    await expect(executeCustomJavaScript(page, createStep(`
+      automation.log({ password: "${secret}", nested: "value=${secret}" });
+      return "${secret}";
+    `), 1_000)).resolves.toEqual({
+      logs: [{ password: "[REDACTED]", nested: "value=[REDACTED]" }],
+      value: "[REDACTED]"
+    });
+
+    await expect(executeCustomJavaScript(page, createStep(`
+      throw new Error("failed with ${secret}");
+    `), 1_000)).rejects.toMatchObject({
+      message: expect.not.stringContaining(secret),
+      cause: { message: "failed with [REDACTED]" }
+    });
+    vi.unstubAllGlobals();
+  });
+
   it("exposes distinct error classes for application-level handling", () => {
     expect(new CustomJavaScriptStopError("done", [])).toBeInstanceOf(Error);
     expect(new CustomJavaScriptTimeoutError(100, [])).toBeInstanceOf(Error);

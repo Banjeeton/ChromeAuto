@@ -24,11 +24,13 @@ export function createRuntimeErrorDetails(
   return {
     action,
     name: error.name,
-    message: error.message,
+    message: redactDiagnosticText(error.message),
     ...(typeof candidate.code === "string" ? { code: candidate.code } : {}),
     ...(cause === undefined ? {} : { cause }),
     ...(data === undefined ? {} : { data }),
-    ...(error.stack === undefined ? {} : { stack: error.stack.slice(0, 8_000) })
+    ...(error.stack === undefined
+      ? {}
+      : { stack: redactDiagnosticText(error.stack).slice(0, 8_000) })
   };
 }
 
@@ -57,8 +59,8 @@ function describeCause(cause: unknown): string | undefined {
     return undefined;
   }
   return cause instanceof Error
-    ? `${cause.name}: ${cause.message}`
-    : String(cause);
+    ? `${cause.name}: ${redactDiagnosticText(cause.message)}`
+    : redactDiagnosticText(String(cause));
 }
 
 function safeSerialize(value: unknown): string | undefined {
@@ -66,8 +68,17 @@ function safeSerialize(value: unknown): string | undefined {
     return undefined;
   }
   try {
-    return JSON.stringify(value).slice(0, 4_000);
+    return redactDiagnosticText(JSON.stringify(value)).slice(0, 4_000);
   } catch {
     return "[unserializable diagnostic data]";
   }
+}
+
+function redactDiagnosticText(value: string): string {
+  return value
+    .replace(/(https?:\/\/[^\s?#]+)[?#][^\s)\]}]*/gi, "$1?[REDACTED]")
+    .replace(
+      /((?:password|passwd|pwd|token|access_token|refresh_token|authorization|cookie|set-cookie)["']?\s*[:=]\s*["']?)[^\s,"';}&]+/gi,
+      "$1[REDACTED]"
+    );
 }

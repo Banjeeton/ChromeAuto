@@ -254,6 +254,9 @@ npm run verify:all
 
 ## Ограничения Manifest V3
 
+Обоснование каждого manifest permission и модель доверия custom JavaScript
+описаны в [security-аудите](security-audit.md).
+
 - Background является service worker и может быть остановлен Chrome между
   событиями.
 - Долгосрочное планирование выполняется только через `chrome.alarms`, а не через

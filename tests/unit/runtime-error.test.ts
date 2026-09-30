@@ -42,4 +42,20 @@ describe("automation runtime error diagnostics", () => {
       message: "connection closed"
     });
   });
+
+  it("redacts credentials and URL query data from technical errors", () => {
+    const error = Object.assign(
+      new Error(
+        "Request failed at https://example.com/account?token=url-secret password=form-secret"
+      ),
+      { authorization: "Bearer-secret", cookie: "session-secret" }
+    );
+
+    const serialized = JSON.stringify(createRuntimeErrorDetails("run", error));
+    expect(serialized).not.toContain("url-secret");
+    expect(serialized).not.toContain("form-secret");
+    expect(serialized).not.toContain("Bearer-secret");
+    expect(serialized).not.toContain("session-secret");
+    expect(serialized).toContain("[REDACTED]");
+  });
 });

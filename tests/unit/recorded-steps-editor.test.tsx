@@ -29,6 +29,8 @@ describe("RecordedStepsEditor", () => {
     expect(html).toContain("Wait duration, ms");
     expect(html).toContain("JavaScript");
     expect(html).toContain("customCode");
+    expect(html).toContain("Custom JavaScript runs with access to the current page");
+    expect(html).toContain("Do not include passwords, cookies or tokens");
     expect(html).toContain("Delete");
     expect(html).toContain('aria-label="Enable step 1"');
     expect(html).toContain('aria-label="Delete step 1"');

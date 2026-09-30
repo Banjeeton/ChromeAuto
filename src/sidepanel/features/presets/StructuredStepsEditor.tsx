@@ -11,7 +11,7 @@ import type {
   WaitStep
 } from "../../../core/domain/automation-step";
 import type { PresetValidationIssue } from "../../../core/domain/preset-validator";
-import { Badge, Button, Checkbox, Select } from "../../components";
+import { Alert, Badge, Button, Checkbox, Select } from "../../components";
 import { createStepTemplate, STEP_TYPES } from "./step-template";
 
 export interface StructuredStepsEditorProps {
@@ -372,18 +372,24 @@ function ActionFields({
       );
     case "customCode":
       return (
-        <label className="editor-field">
-          <span>JavaScript</span>
-          <textarea
-            className="code-editor structured-code-editor"
-            disabled={disabled}
-            onChange={(event) => onChange({ ...step, source: event.target.value })}
-            rows={8}
-            spellCheck={false}
-            value={step.source}
-          />
-          <FieldIssues issues={issues} path={`${path}/source`} />
-        </label>
+        <>
+          <Alert tone="warning">
+            Custom JavaScript runs with access to the current page. Add and run
+            only code you trust. Do not include passwords, cookies or tokens.
+          </Alert>
+          <label className="editor-field">
+            <span>JavaScript</span>
+            <textarea
+              className="code-editor structured-code-editor"
+              disabled={disabled}
+              onChange={(event) => onChange({ ...step, source: event.target.value })}
+              rows={8}
+              spellCheck={false}
+              value={step.source}
+            />
+            <FieldIssues issues={issues} path={`${path}/source`} />
+          </label>
+        </>
       );
   }
 }

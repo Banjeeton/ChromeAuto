@@ -332,6 +332,9 @@ function stepErrorReason(
   error: AutomationEngineError,
   step: AutomationStep
 ): string {
+  if (step.type === "customCode") {
+    return "Custom JavaScript execution failed. Page-provided error details were omitted.";
+  }
   const cause = error.cause;
   const reason =
     cause instanceof Error
@@ -351,7 +354,7 @@ function formatStepTechnicalDetails(
     `Error: ${error.name} [${error.code}]: ${redactStepValue(error.message, step)}`,
     `Reason: ${stepErrorReason(error, step)}`
   ];
-  if (error.stack !== undefined) {
+  if (step.type !== "customCode" && error.stack !== undefined) {
     lines.push(`Stack:\n${redactStepValue(error.stack, step).slice(0, 8_000)}`);
   }
   return lines.join("\n");
@@ -373,6 +376,11 @@ function sanitizeEngineError(
 }
 
 function sanitizeCause(error: unknown, step: AutomationStep): unknown {
+  if (step.type === "customCode") {
+    return new Error(
+      "Custom JavaScript execution failed. Page-provided error details were omitted."
+    );
+  }
   if (step.type !== "input" || step.value.length === 0) {
     return error;
   }
@@ -388,6 +396,9 @@ function sanitizeCause(error: unknown, step: AutomationStep): unknown {
 }
 
 function redactStepValue(value: string, step: AutomationStep): string {
+  if (step.type === "customCode") {
+    return "Custom JavaScript execution failed. Review the code in this step.";
+  }
   return step.type === "input" && step.value.length > 0
     ? value.replaceAll(step.value, "[REDACTED]")
     : value;

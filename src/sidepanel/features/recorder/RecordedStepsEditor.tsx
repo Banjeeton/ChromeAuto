@@ -11,7 +11,7 @@ import type {
   PressKeyStep,
   SelectStep
 } from "../../../core/domain/automation-step";
-import { Button, ConfirmationDialog } from "../../components";
+import { Alert, Button, ConfirmationDialog } from "../../components";
 import { createStepTemplate } from "../presets/step-template";
 
 type ManualRecordedStepType =
@@ -413,22 +413,29 @@ export function RecordedStepsEditor({
               )}
 
               {step.type === "customCode" && (
-                <label className="editor-field">
-                  <span>JavaScript</span>
-                  <textarea
-                    className="code-editor recorded-code-editor"
-                    onChange={(event) =>
-                      updateStep(index, (current) =>
-                        current.type === "customCode"
-                          ? { ...current, source: event.target.value }
-                          : current
-                      )
-                    }
-                    rows={8}
-                    spellCheck={false}
-                    value={step.source}
-                  />
-                </label>
+                <>
+                  <Alert tone="warning">
+                    Custom JavaScript runs with access to the current page. Add
+                    and run only code you trust. Do not include passwords,
+                    cookies or tokens.
+                  </Alert>
+                  <label className="editor-field">
+                    <span>JavaScript</span>
+                    <textarea
+                      className="code-editor recorded-code-editor"
+                      onChange={(event) =>
+                        updateStep(index, (current) =>
+                          current.type === "customCode"
+                            ? { ...current, source: event.target.value }
+                            : current
+                        )
+                      }
+                      rows={8}
+                      spellCheck={false}
+                      value={step.source}
+                    />
+                  </label>
+                </>
               )}
 
               <div className="step-order-actions recorded-step-actions">

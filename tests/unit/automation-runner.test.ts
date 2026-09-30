@@ -408,6 +408,43 @@ describe("AutomationRunner", () => {
     expect(serializedLog).toContain('input[type=\\\"password\\\"]');
   });
 
+  it("omits page-provided custom-code errors from exceptions and Run log", async () => {
+    const pageData = "private-page-content-123";
+    const engine = createEngine();
+    vi.mocked(engine.executeStep).mockRejectedValueOnce(
+      new AutomationEngineError(
+        "step-failed",
+        `Custom JavaScript failed: ${pageData}`,
+        { cause: new Error(`DOM snapshot: ${pageData}`) }
+      )
+    );
+    const { log, runner } = createRunner(engine);
+
+    await expect(runner.run({
+      presetId: "preset-1",
+      tabId: 42,
+      automation: {
+        defaults,
+        steps: [{
+          id: "custom-sensitive-error",
+          type: "customCode",
+          enabled: true,
+          language: "javascript",
+          apiVersion: 1,
+          executionContext: "page",
+          source: "throw new Error(document.body.innerText);"
+        }]
+      }
+    })).rejects.toMatchObject({
+      message: "Custom JavaScript execution failed. Review the code in this step."
+    });
+
+    const serialized = JSON.stringify(await log.list());
+    expect(serialized).not.toContain(pageData);
+    expect(serialized).not.toContain("DOM snapshot");
+    expect(serialized).toContain("Page-provided error details were omitted");
+  });
+
   it("distinguishes a requested stop from a failed step", async () => {
     const engine = createEngine();
     const stopped = new AutomationEngineError(

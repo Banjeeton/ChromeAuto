@@ -122,9 +122,40 @@ function buildCustomJavaScriptExpression(
     }
   };
 
+  const __automationPasswordValues = () => {
+    if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return [];
+    return Array.from(document.querySelectorAll('input[type="password"]'))
+      .map((input) => typeof input.value === "string" ? input.value : "")
+      .filter((value) => value.length > 0);
+  };
+
+  const __automationRedactText = (value) => {
+    let redacted = String(value);
+    for (const secret of __automationPasswordValues()) {
+      redacted = redacted.split(secret).join("[REDACTED]");
+    }
+    return redacted;
+  };
+
+  const __automationRedactValue = (value) => {
+    const safe = __automationSafeValue(value);
+    const visit = (item) => {
+      if (typeof item === "string") return __automationRedactText(item);
+      if (Array.isArray(item)) return item.map(visit);
+      if (item && typeof item === "object") {
+        return Object.fromEntries(Object.entries(item).map(([key, child]) => [
+          key,
+          /password|passwd|pwd/i.test(key) ? "[REDACTED]" : visit(child)
+        ]));
+      }
+      return item;
+    };
+    return visit(safe);
+  };
+
   const automation = Object.freeze({
     log(value) {
-      __automationLogs.push(__automationSafeValue(value));
+      __automationLogs.push(__automationRedactValue(value));
     },
     sleep(milliseconds) {
       const delay = Number(milliseconds);
@@ -158,11 +189,11 @@ ${step.source}
     return {
       status: "completed",
       logs: __automationLogs,
-      value: __automationSafeValue(__automationValue)
+      value: __automationRedactValue(__automationValue)
     };
   } catch (error) {
     if (error === __automationStopSignal) {
-      return { status: "stopped", logs: __automationLogs, reason: __automationStopReason };
+      return { status: "stopped", logs: __automationLogs, reason: __automationRedactText(__automationStopReason) };
     }
     if (error === __automationTimeoutSignal) {
       return { status: "timed-out", logs: __automationLogs };
@@ -172,8 +203,8 @@ ${step.source}
       logs: __automationLogs,
       error: {
         name: error && typeof error.name === "string" ? error.name : "Error",
-        message: error && typeof error.message === "string" ? error.message : String(error),
-        stack: error && typeof error.stack === "string" ? error.stack : undefined
+        message: __automationRedactText(error && typeof error.message === "string" ? error.message : String(error)),
+        stack: error && typeof error.stack === "string" ? __automationRedactText(error.stack) : undefined
       }
     };
   } finally {
