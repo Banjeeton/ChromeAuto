@@ -27,6 +27,7 @@ describe("RepeatCycleStatusController", () => {
         tabId: 1,
         presetId: preset.id,
         presetName: preset.name,
+        hostname: "example.com",
         state: "running",
         intervalMinutes: 5
       },
@@ -34,6 +35,7 @@ describe("RepeatCycleStatusController", () => {
         tabId: 2,
         presetId: preset.id,
         presetName: preset.name,
+        hostname: "example.com",
         state: "waiting",
         intervalMinutes: 5,
         nextRunAt: 1_800_000_000_000

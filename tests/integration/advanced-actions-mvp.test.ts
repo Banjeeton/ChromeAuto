@@ -36,7 +36,7 @@ const PAGE_URL = "https://advanced.example/fixture";
 const PRESET_ID = "550e8400-e29b-41d4-a716-446655440088";
 
 describe("Advanced Automation Actions MVP integration", () => {
-  it("records, edits, saves and runs advanced actions including an HTML modal", async () => {
+  it("covers Create → Record → Edit → Save → Run including an HTML modal", async () => {
     const storage = new MemoryStorage();
     const registry = new ChromeRecorderSessionRegistry(storage);
     const bridge = new FakeContentBridge();

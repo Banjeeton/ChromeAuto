@@ -91,6 +91,37 @@ describe("recorder diagnostics integration", () => {
     );
   });
 
+  it("logs an unsupported action without changing the existing draft", async () => {
+    const registry = new ChromeRecorderSessionRegistry(new MemoryStorage());
+    const log = new InMemoryRecorderLog();
+    const bridge = new FakeBridge();
+    await registry.save(activeRecord(6));
+    const navigation = createNavigation(registry, bridge, log);
+
+    await navigation.record(clickEvent(6, "session-6", "event-1"));
+    const unsupported = clickEvent(6, "session-6", "event-2");
+    await expect(
+      navigation.record({
+        ...unsupported,
+        payload: { ...unsupported.payload, modifiers: ["Alt"] }
+      })
+    ).resolves.toBe("ignored");
+
+    await expect(registry.getByTabId(6)).resolves.toMatchObject({
+      session: { state: "recording", recordedEventCount: 2 },
+      draftSteps: [{ id: "step-event-1", type: "click" }]
+    });
+    await expect(log.list()).resolves.toContainEqual(
+      expect.objectContaining({
+        event: "action-skipped",
+        action: "skip click",
+        recorderEventId: "event-2",
+        stepCount: 1,
+        message: expect.stringContaining("existing draft was preserved")
+      })
+    );
+  });
+
   it("reports hostname changes and tab closure as distinct stop reasons", async () => {
     const registry = new ChromeRecorderSessionRegistry(new MemoryStorage());
     const log = new InMemoryRecorderLog();

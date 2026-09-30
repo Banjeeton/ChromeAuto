@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { PresetV1 } from "../../src/core/domain/preset";
-import { PresetList } from "../../src/sidepanel/features/presets";
+import {
+  filterPresets,
+  PresetList
+} from "../../src/sidepanel/features/presets";
 
 describe("PresetList", () => {
   it("renders loading, empty and error states", () => {
@@ -15,7 +18,7 @@ describe("PresetList", () => {
     ).toContain("Storage is unavailable.");
   });
 
-  it("shows preset identity and enabled state", () => {
+  it("shows compact card metadata and enabled state", () => {
     const html = render({
       status: "ready",
       presets: [createPreset(), createPreset({
@@ -35,9 +38,12 @@ describe("PresetList", () => {
     expect(html).toContain("Disabled shop preset");
     expect(html).toContain("shop.example.com");
     expect(html).toContain("Disabled");
+    expect(html).toContain("Protocol");
+    expect(html).toContain("HTTPS");
+    expect(html).toContain("Steps");
   });
 
-  it("shows details for the selected preset", () => {
+  it("exposes all management actions directly from the selected card", () => {
     const preset = createPreset({
       siteSettings: {
         enabled: true,
@@ -49,13 +55,50 @@ describe("PresetList", () => {
       preset.id
     );
 
-    expect(html).toContain("Selected preset");
-    expect(html).toContain("Steps");
-    expect(html).toContain("Every 5 min");
     expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain(">Edit<");
     expect(html).toContain("Duplicate");
-    expect(html).toContain("Export JSON");
+    expect(html).toContain(">Export<");
     expect(html).toContain("Delete");
+  });
+
+  it("searches by name and hostname and filters by enabled state", () => {
+    const enabled = createPreset();
+    const disabled = createPreset({
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      name: "Disabled shop preset",
+      site: { hostname: "shop.example.com", protocols: ["https", "http"] },
+      siteSettings: {
+        enabled: false,
+        repeat: { enabled: false, intervalMinutes: 1 }
+      }
+    });
+    const presets = [enabled, disabled];
+
+    expect(filterPresets(presets, "EXAMPLE AUTO", "all")).toEqual([enabled]);
+    expect(filterPresets(presets, "shop.example", "all")).toEqual([disabled]);
+    expect(filterPresets(presets, "", "enabled")).toEqual([enabled]);
+    expect(filterPresets(presets, "", "disabled")).toEqual([disabled]);
+
+    const html = render(
+      { status: "ready", presets },
+      undefined,
+      { query: "shop", filter: "disabled" }
+    );
+    expect(html).toContain("Disabled shop preset");
+    expect(html).not.toContain("Example automation");
+    expect(html).toContain("HTTPS / HTTP");
+  });
+
+  it("shows a consistent empty result when filters have no matches", () => {
+    const html = render(
+      { status: "ready", presets: [createPreset()] },
+      undefined,
+      { query: "missing-host", filter: "enabled" }
+    );
+
+    expect(html).toContain("No presets match your search");
+    expect(html).toContain("Try another name, hostname or status filter");
   });
 
   it("requires explicit confirmation before deletion", () => {
@@ -69,6 +112,24 @@ describe("PresetList", () => {
     expect(html).toContain("This cannot be undone.");
     expect(html).toContain("Cancel");
     expect(html).toContain("Delete permanently");
+  });
+
+  it("keeps long preset names and hostnames available while the layout truncates them", () => {
+    const longName = "Checkout automation ".repeat(12).trim();
+    const longHostname = `${"very-long-subdomain-".repeat(8)}example.com`;
+    const html = render({
+      status: "ready",
+      presets: [
+        createPreset({
+          name: longName,
+          site: { hostname: longHostname, protocols: ["https"] }
+        })
+      ]
+    });
+
+    expect(html).toContain(`title="${longName}"`);
+    expect(html).toContain(`title="${longHostname}"`);
+    expect(html).toContain("preset-card-select");
   });
 });
 

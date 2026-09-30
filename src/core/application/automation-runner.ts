@@ -64,6 +64,14 @@ export class AutomationRunner {
       for (const [stepIndex, step] of request.automation.steps.entries()) {
         this.#throwIfStopped(signal, session.sessionId, request.tabId);
 
+        this.#sessions.setCurrentStep(session.sessionId, {
+          stepId: step.id,
+          stepIndex,
+          stepNumber: stepIndex + 1,
+          stepType: step.type,
+          ...(step.name === undefined ? {} : { stepName: step.name })
+        });
+
         if (!step.enabled) {
           skippedSteps += 1;
           await this.#appendStepEntry({

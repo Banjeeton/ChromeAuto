@@ -1,0 +1,62 @@
+:root {
+  color-scheme: dark;
+
+  /* Color */
+  --color-bg-canvas: #0c1015;
+  --color-bg-surface: #151a20;
+  --color-bg-subtle: #10161b;
+  --color-bg-elevated: #1b222a;
+  --color-border-default: #27303a;
+  --color-border-strong: #34414d;
+  --color-text-primary: #e8edf3;
+  --color-text-secondary: #bdc7d0;
+  --color-text-muted: #84919e;
+  --color-accent: #69d0e2;
+  --color-accent-hover: #84dceb;
+  --color-accent-contrast: #061013;
+  --color-success: #62dc98;
+  --color-success-surface: #142a22;
+  --color-warning: #e7c676;
+  --color-warning-surface: #2c2415;
+  --color-error: #ff8d8d;
+  --color-error-surface: #28191a;
+  --color-info: #78d6e8;
+  --color-info-surface: #122329;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Sizing and shape */
+  --control-height-sm: 30px;
+  --control-height-md: 42px;
+  --control-height-lg: 48px;
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --panel-width: 460px;
+
+  /* Typography */
+  --font-family-sans: Inter, ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  --font-size-xs: 10px;
+  --font-size-sm: 11px;
+  --font-size-md: 13px;
+  --font-size-lg: 16px;
+  --font-size-title: 22px;
+  --font-weight-medium: 650;
+  --font-weight-semibold: 750;
+  --font-weight-bold: 800;
+  --line-height-body: 1.5;
+
+  /* Interaction and elevation */
+  --focus-ring: 0 0 0 2px rgb(105 208 226 / 20%);
+  --shadow-card: 0 12px 35px rgb(0 0 0 / 16%);
+  --transition-fast: 120ms ease;
+}

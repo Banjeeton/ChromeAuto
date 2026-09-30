@@ -1,4 +1,7 @@
-import type { RecorderState } from "../domain/recorder-session";
+import type {
+  RecorderState,
+  RecorderStopReason
+} from "../domain/recorder-session";
 import { RecorderError } from "../domain/recorder-error";
 import type { Recorder } from "../ports/recorder";
 import type { RecorderSessionRegistry } from "../ports/recorder-session-registry";
@@ -13,6 +16,8 @@ export interface RecorderPanelStatus {
   readonly canStop: boolean;
   readonly message: string;
   readonly sessionId?: string;
+  readonly hostname?: string;
+  readonly stopReason?: RecorderStopReason;
   readonly unavailableReason?: RecorderPanelUnavailableReason;
 }
 
@@ -42,6 +47,10 @@ export class RecorderPanelController {
     }
 
     const state = record.session.state;
+    const stopReason =
+      state === "stopping" || state === "stopped"
+        ? record.session.stopReason
+        : undefined;
     return {
       tabId,
       state,
@@ -49,8 +58,15 @@ export class RecorderPanelController {
       canRecord:
         supported && state !== "recording" && state !== "stopping",
       canStop: state === "recording" || state === "stopping",
-      message: recorderStateMessage(state, record.draftSteps.length),
+      message: recorderStateMessage(
+        state,
+        record.draftSteps.length,
+        record.session.context.hostname,
+        stopReason
+      ),
       sessionId: record.session.sessionId,
+      hostname: record.session.context.hostname,
+      ...(stopReason === undefined ? {} : { stopReason }),
       ...(supported ? {} : { unavailableReason: "unsupported-url" as const })
     };
   }
@@ -100,13 +116,24 @@ function unsupportedStatus(tabId: number): RecorderPanelStatus {
   };
 }
 
-function recorderStateMessage(state: RecorderState, stepCount: number): string {
+function recorderStateMessage(
+  state: RecorderState,
+  stepCount: number,
+  hostname: string,
+  stopReason?: RecorderStopReason
+): string {
   switch (state) {
     case "recording":
-      return `Recording ${stepCount} ${stepCount === 1 ? "step" : "steps"}.`;
+      return `Recording ${hostname}: ${stepCount} ${stepCount === 1 ? "step" : "steps"}.`;
     case "stopping":
       return "Stopping recording…";
     case "stopped":
+      if (stopReason === "tab-context-changed") {
+        return `Recording stopped because the tab left ${hostname}. The ${stepCount}-step draft was preserved.`;
+      }
+      if (stopReason === "tab-closed") {
+        return `Recording stopped because the tab was closed. The ${stepCount}-step draft was preserved.`;
+      }
       return `Recording stopped with ${stepCount} ${stepCount === 1 ? "step" : "steps"}.`;
     case "failed":
       return "Recording failed. The captured draft was preserved.";

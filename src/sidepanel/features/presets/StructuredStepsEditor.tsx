@@ -11,6 +11,7 @@ import type {
   WaitStep
 } from "../../../core/domain/automation-step";
 import type { PresetValidationIssue } from "../../../core/domain/preset-validator";
+import { Badge, Button, Checkbox, Select } from "../../components";
 import { createStepTemplate, STEP_TYPES } from "./step-template";
 
 export interface StructuredStepsEditorProps {
@@ -28,6 +29,9 @@ export function StructuredStepsEditor({
 }: StructuredStepsEditorProps) {
   const [newStepType, setNewStepType] =
     useState<AutomationStep["type"]>("click");
+  const [expandedStepIds, setExpandedStepIds] = useState<ReadonlySet<string>>(
+    () => new Set(steps[0] === undefined ? [] : [steps[0].id])
+  );
 
   const updateStep = (
     index: number,
@@ -56,10 +60,24 @@ export function StructuredStepsEditor({
     );
   };
 
+  const addStep = () => {
+    const step = createStepTemplate(newStepType);
+    setExpandedStepIds((current) => new Set([...current, step.id]));
+    onChange([...structuredClone(steps), step]);
+  };
+
+  const duplicateStep = (index: number) => {
+    const duplicate = duplicateAutomationStep(steps[index]);
+    const updated = structuredClone(steps) as AutomationStep[];
+    updated.splice(index + 1, 0, duplicate);
+    setExpandedStepIds((current) => new Set([...current, duplicate.id]));
+    onChange(updated);
+  };
+
   return (
     <div className="structured-steps-editor">
       <div className="step-toolbar">
-        <select
+        <Select
           aria-label="New step type"
           disabled={disabled}
           onChange={(event) =>
@@ -70,15 +88,16 @@ export function StructuredStepsEditor({
           {STEP_TYPES.map((type) => (
             <option key={type} value={type}>{stepTypeLabel(type)}</option>
           ))}
-        </select>
-        <button
+        </Select>
+        <Button
           className="inline-button neutral"
           disabled={disabled}
-          onClick={() => onChange([...structuredClone(steps), createStepTemplate(newStepType)])}
-          type="button"
+          onClick={addStep}
+          size="small"
+          variant="secondary"
         >
           Add step
-        </button>
+        </Button>
       </div>
 
       {steps.length === 0 ? (
@@ -90,79 +109,110 @@ export function StructuredStepsEditor({
               issue.path.startsWith(`/automation/steps/${index}`)
             );
             return (
-              <li className="structured-step-card" key={step.id}>
-                <div className="structured-step-header">
-                  <span>{index + 1}</span>
-                  <div className="structured-step-title">
-                    <strong>{step.name || stepTypeLabel(step.type)}</strong>
-                    <small>{step.id}</small>
-                  </div>
-                  <em>{step.type}</em>
-                  <label>
-                    <input
+              <li key={step.id}>
+                <details
+                  className={`structured-step-card${stepIssues.length > 0 ? " has-errors" : ""}`}
+                  onToggle={(event) => {
+                    const open = event.currentTarget.open;
+                    setExpandedStepIds((current) => {
+                      const updated = new Set(current);
+                      if (open) updated.add(step.id);
+                      else updated.delete(step.id);
+                      return updated;
+                    });
+                  }}
+                  open={expandedStepIds.has(step.id)}
+                >
+                  <summary className="structured-step-header">
+                    <span>{index + 1}</span>
+                    <div className="structured-step-title">
+                      <strong>{step.name || stepTypeLabel(step.type)}</strong>
+                      <small>{step.id}</small>
+                    </div>
+                    <div className="structured-step-badges">
+                      <Badge tone="info">{stepTypeLabel(step.type)}</Badge>
+                      <Badge tone={step.enabled ? "success" : "neutral"}>
+                        {step.enabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                      {stepIssues.length > 0 && (
+                        <Badge tone="error">
+                          {stepIssues.length} {stepIssues.length === 1 ? "issue" : "issues"}
+                        </Badge>
+                      )}
+                    </div>
+                  </summary>
+
+                  <div className="structured-step-body">
+                    <Checkbox
                       checked={step.enabled}
                       disabled={disabled}
+                      label="Step enabled"
                       onChange={(event) =>
                         updateStep(index, (current) => ({
                           ...current,
                           enabled: event.target.checked
                         }))
                       }
-                      type="checkbox"
                     />
-                    Enabled
-                  </label>
-                </div>
 
-                <CommonStepFields
-                  disabled={disabled}
-                  onChange={(updated) => updateStep(index, () => updated)}
-                  step={step}
-                />
-                <ActionFields
-                  disabled={disabled}
-                  onChange={(updated) => updateStep(index, () => updated)}
-                  path={`/automation/steps/${index}`}
-                  step={step}
-                />
+                    <CommonStepFields
+                      disabled={disabled}
+                      issues={stepIssues}
+                      onChange={(updated) => updateStep(index, () => updated)}
+                      path={`/automation/steps/${index}`}
+                      step={step}
+                    />
+                    <ActionFields
+                      disabled={disabled}
+                      issues={stepIssues}
+                      onChange={(updated) => updateStep(index, () => updated)}
+                      path={`/automation/steps/${index}`}
+                      step={step}
+                    />
 
-                {stepIssues.length > 0 && (
-                  <div className="step-validation-errors" role="alert">
-                    {stepIssues.map((issue, issueIndex) => (
-                      <p key={`${issue.path}-${issue.code}-${issueIndex}`}>
-                        <code>{issue.path}</code>: {issue.message}
-                      </p>
-                    ))}
+                    {stepIssues.length > 0 && (
+                      <div className="step-validation-summary" role="alert">
+                        Review the highlighted fields in this step.
+                      </div>
+                    )}
+
+                    <div className="step-order-actions structured-step-actions">
+                      <button
+                        aria-label={`Move step ${index + 1} up`}
+                        disabled={disabled || index === 0}
+                        onClick={() => moveStep(index, -1)}
+                        type="button"
+                      >
+                        ↑ Up
+                      </button>
+                      <button
+                        aria-label={`Duplicate step ${index + 1}`}
+                        disabled={disabled}
+                        onClick={() => duplicateStep(index)}
+                        type="button"
+                      >
+                        Duplicate
+                      </button>
+                      <button
+                        aria-label={`Move step ${index + 1} down`}
+                        disabled={disabled || index === steps.length - 1}
+                        onClick={() => moveStep(index, 1)}
+                        type="button"
+                      >
+                        ↓ Down
+                      </button>
+                      <button
+                        aria-label={`Delete step ${index + 1}`}
+                        className="danger-text"
+                        disabled={disabled}
+                        onClick={() => removeStep(index)}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                )}
-
-                <div className="step-order-actions structured-step-actions">
-                  <button
-                    aria-label={`Move step ${index + 1} up`}
-                    disabled={disabled || index === 0}
-                    onClick={() => moveStep(index, -1)}
-                    type="button"
-                  >
-                    ↑ Up
-                  </button>
-                  <button
-                    aria-label={`Move step ${index + 1} down`}
-                    disabled={disabled || index === steps.length - 1}
-                    onClick={() => moveStep(index, 1)}
-                    type="button"
-                  >
-                    ↓ Down
-                  </button>
-                  <button
-                    aria-label={`Delete step ${index + 1}`}
-                    className="danger-text"
-                    disabled={disabled}
-                    onClick={() => removeStep(index)}
-                    type="button"
-                  >
-                    Delete
-                  </button>
-                </div>
+                </details>
               </li>
             );
           })}
@@ -174,10 +224,14 @@ export function StructuredStepsEditor({
 
 function CommonStepFields({
   step,
+  path,
+  issues,
   disabled,
   onChange
 }: {
   readonly step: AutomationStep;
+  readonly path: string;
+  readonly issues: readonly PresetValidationIssue[];
   readonly disabled: boolean;
   readonly onChange: (step: AutomationStep) => void;
 }) {
@@ -199,22 +253,27 @@ function CommonStepFields({
           placeholder="Describe this step"
           value={step.name ?? ""}
         />
+        <FieldIssues issues={issues} path={`${path}/name`} />
       </label>
       <div className="optional-number-grid">
         <OptionalNumberField
           disabled={disabled}
+          issues={issues}
           label="Timeout override, ms"
           min={1}
           onChange={(value) => onChange(withOptionalNumber(step, "timeoutMs", value))}
+          path={`${path}/timeoutMs`}
           value={step.timeoutMs}
         />
         <OptionalNumberField
           disabled={disabled}
+          issues={issues}
           label="Post-action delay, ms"
           min={0}
           onChange={(value) =>
             onChange(withOptionalNumber(step, "postActionDelayMs", value))
           }
+          path={`${path}/postActionDelayMs`}
           value={step.postActionDelayMs}
         />
       </div>
@@ -225,11 +284,13 @@ function CommonStepFields({
 function ActionFields({
   step,
   path,
+  issues,
   disabled,
   onChange
 }: {
   readonly step: AutomationStep;
   readonly path: string;
+  readonly issues: readonly PresetValidationIssue[];
   readonly disabled: boolean;
   readonly onChange: (step: AutomationStep) => void;
 }) {
@@ -239,6 +300,7 @@ function ActionFields({
         <>
           <TargetEditor
             disabled={disabled}
+            issues={issues}
             onChange={(target) => onChange({ ...step, target })}
             path={`${path}/target`}
             target={step.target}
@@ -257,35 +319,39 @@ function ActionFields({
                 <option value="right">Right</option>
                 <option value="middle">Middle</option>
               </select>
+              <FieldIssues issues={issues} path={`${path}/button`} />
             </label>
             <NumberInput
               disabled={disabled}
+              issues={issues}
               label="Click count"
               min={1}
               onChange={(clickCount) => onChange({ ...step, clickCount })}
+              path={`${path}/clickCount`}
               value={step.clickCount}
             />
           </div>
         </>
       );
     case "input":
-      return <InputFields disabled={disabled} onChange={onChange} path={path} step={step} />;
+      return <InputFields disabled={disabled} issues={issues} onChange={onChange} path={path} step={step} />;
     case "select":
-      return <SelectFields disabled={disabled} onChange={onChange} path={path} step={step} />;
+      return <SelectFields disabled={disabled} issues={issues} onChange={onChange} path={path} step={step} />;
     case "check":
     case "uncheck":
       return (
         <TargetEditor
           disabled={disabled}
+          issues={issues}
           onChange={(target) => onChange({ ...step, target })}
           path={`${path}/target`}
           target={step.target}
         />
       );
     case "pressKey":
-      return <PressKeyFields disabled={disabled} onChange={onChange} path={path} step={step} />;
+      return <PressKeyFields disabled={disabled} issues={issues} onChange={onChange} path={path} step={step} />;
     case "wait":
-      return <WaitFields disabled={disabled} onChange={onChange} path={path} step={step} />;
+      return <WaitFields disabled={disabled} issues={issues} onChange={onChange} path={path} step={step} />;
     case "reload":
       return (
         <label className="editor-field">
@@ -302,6 +368,7 @@ function ActionFields({
             <option value="networkidle">Network idle</option>
             <option value="none">Do not wait</option>
           </select>
+          <FieldIssues issues={issues} path={`${path}/waitUntil`} />
         </label>
       );
     case "customCode":
@@ -316,23 +383,26 @@ function ActionFields({
             spellCheck={false}
             value={step.source}
           />
+          <FieldIssues issues={issues} path={`${path}/source`} />
         </label>
       );
   }
 }
 
-function InputFields({ step, path, disabled, onChange }: {
+function InputFields({ step, path, issues, disabled, onChange }: {
   readonly step: InputStep;
   readonly path: string;
+  readonly issues: readonly PresetValidationIssue[];
   readonly disabled: boolean;
   readonly onChange: (step: AutomationStep) => void;
 }) {
   return (
     <>
-      <TargetEditor disabled={disabled} onChange={(target) => onChange({ ...step, target })} path={`${path}/target`} target={step.target} />
+      <TargetEditor disabled={disabled} issues={issues} onChange={(target) => onChange({ ...step, target })} path={`${path}/target`} target={step.target} />
       <label className="editor-field">
         <span>Input value</span>
         <textarea disabled={disabled} onChange={(event) => onChange({ ...step, value: event.target.value })} rows={3} value={step.value} />
+        <FieldIssues issues={issues} path={`${path}/value`} />
       </label>
       <div className="editor-check-row">
         <label><input checked={step.clearFirst} disabled={disabled} onChange={(event) => onChange({ ...step, clearFirst: event.target.checked })} type="checkbox" />Clear before input</label>
@@ -343,28 +413,30 @@ function InputFields({ step, path, disabled, onChange }: {
             <option value="instant">Instant</option>
             <option value="human">Human</option>
           </select>
+          <FieldIssues issues={issues} path={`${path}/inputMode`} />
         </label>
         <label><input checked={step.humanInput !== undefined} disabled={disabled} onChange={(event) => onChange(event.target.checked ? { ...step, humanInput: { minDelayMs: 40, maxDelayMs: 120 } } : withoutProperty(step, "humanInput"))} type="checkbox" />Override human delays</label>
       </div>
       {step.humanInput !== undefined && (
         <div className="editor-number-grid">
-          <NumberInput disabled={disabled} label="Min typing delay, ms" min={0} onChange={(minDelayMs) => onChange({ ...step, humanInput: { ...step.humanInput!, minDelayMs } })} value={step.humanInput.minDelayMs} />
-          <NumberInput disabled={disabled} label="Max typing delay, ms" min={0} onChange={(maxDelayMs) => onChange({ ...step, humanInput: { ...step.humanInput!, maxDelayMs } })} value={step.humanInput.maxDelayMs} />
+          <NumberInput disabled={disabled} issues={issues} label="Min typing delay, ms" min={0} onChange={(minDelayMs) => onChange({ ...step, humanInput: { ...step.humanInput!, minDelayMs } })} path={`${path}/humanInput/minDelayMs`} value={step.humanInput.minDelayMs} />
+          <NumberInput disabled={disabled} issues={issues} label="Max typing delay, ms" min={0} onChange={(maxDelayMs) => onChange({ ...step, humanInput: { ...step.humanInput!, maxDelayMs } })} path={`${path}/humanInput/maxDelayMs`} value={step.humanInput.maxDelayMs} />
         </div>
       )}
     </>
   );
 }
 
-function SelectFields({ step, path, disabled, onChange }: {
+function SelectFields({ step, path, issues, disabled, onChange }: {
   readonly step: SelectStep;
   readonly path: string;
+  readonly issues: readonly PresetValidationIssue[];
   readonly disabled: boolean;
   readonly onChange: (step: AutomationStep) => void;
 }) {
   return (
     <>
-      <TargetEditor disabled={disabled} onChange={(target) => onChange({ ...step, target })} path={`${path}/target`} target={step.target} />
+      <TargetEditor disabled={disabled} issues={issues} onChange={(target) => onChange({ ...step, target })} path={`${path}/target`} target={step.target} />
       <div className="editor-number-grid">
         <label className="editor-field">
           <span>Selection method</span>
@@ -374,31 +446,32 @@ function SelectFields({ step, path, disabled, onChange }: {
           }} value={step.option.by}>
             <option value="value">Value</option><option value="label">Visible label</option><option value="index">Index</option>
           </select>
+          <FieldIssues issues={issues} path={`${path}/option/by`} />
         </label>
-        <NumberOrTextOption disabled={disabled} onChange={onChange} step={step} />
+        <NumberOrTextOption disabled={disabled} issues={issues} onChange={onChange} path={`${path}/option/value`} step={step} />
       </div>
     </>
   );
 }
 
-function NumberOrTextOption({ step, disabled, onChange }: { readonly step: SelectStep; readonly disabled: boolean; readonly onChange: (step: AutomationStep) => void }) {
+function NumberOrTextOption({ step, path, issues, disabled, onChange }: { readonly step: SelectStep; readonly path: string; readonly issues: readonly PresetValidationIssue[]; readonly disabled: boolean; readonly onChange: (step: AutomationStep) => void }) {
   const label = step.option.by === "index" ? "Option index" : step.option.by === "label" ? "Option label" : "Option value";
   return (
-    <label className="editor-field"><span>{label}</span><input disabled={disabled} min={step.option.by === "index" ? 0 : undefined} onChange={(event) => onChange({ ...step, option: step.option.by === "index" ? { by: "index", value: event.target.valueAsNumber } : { ...step.option, value: event.target.value } })} type={step.option.by === "index" ? "number" : "text"} value={step.option.value} /></label>
+    <label className="editor-field"><span>{label}</span><input disabled={disabled} min={step.option.by === "index" ? 0 : undefined} onChange={(event) => onChange({ ...step, option: step.option.by === "index" ? { by: "index", value: event.target.valueAsNumber } : { ...step.option, value: event.target.value } })} type={step.option.by === "index" ? "number" : "text"} value={step.option.value} /><FieldIssues issues={issues} path={path} /></label>
   );
 }
 
-function PressKeyFields({ step, path, disabled, onChange }: { readonly step: PressKeyStep; readonly path: string; readonly disabled: boolean; readonly onChange: (step: AutomationStep) => void }) {
+function PressKeyFields({ step, path, issues, disabled, onChange }: { readonly step: PressKeyStep; readonly path: string; readonly issues: readonly PresetValidationIssue[]; readonly disabled: boolean; readonly onChange: (step: AutomationStep) => void }) {
   return (
     <>
-      <label className="editor-field"><span>Key or shortcut</span><input disabled={disabled} onChange={(event) => onChange({ ...step, key: event.target.value })} placeholder="Enter or Control+Enter" value={step.key} /></label>
+      <label className="editor-field"><span>Key or shortcut</span><input disabled={disabled} onChange={(event) => onChange({ ...step, key: event.target.value })} placeholder="Enter or Control+Enter" value={step.key} /><FieldIssues issues={issues} path={`${path}/key`} /></label>
       <label className="editor-checkbox-field"><input checked={step.target !== undefined} disabled={disabled} onChange={(event) => onChange(event.target.checked ? { ...step, target: defaultTarget() } : withoutProperty(step, "target"))} type="checkbox" />Target a specific element</label>
-      {step.target !== undefined && <TargetEditor disabled={disabled} onChange={(target) => onChange({ ...step, target })} path={`${path}/target`} target={step.target} />}
+      {step.target !== undefined && <TargetEditor disabled={disabled} issues={issues} onChange={(target) => onChange({ ...step, target })} path={`${path}/target`} target={step.target} />}
     </>
   );
 }
 
-function WaitFields({ step, path, disabled, onChange }: { readonly step: WaitStep; readonly path: string; readonly disabled: boolean; readonly onChange: (step: AutomationStep) => void }) {
+function WaitFields({ step, path, issues, disabled, onChange }: { readonly step: WaitStep; readonly path: string; readonly issues: readonly PresetValidationIssue[]; readonly disabled: boolean; readonly onChange: (step: AutomationStep) => void }) {
   const condition = step.condition;
   return (
     <>
@@ -407,25 +480,26 @@ function WaitFields({ step, path, disabled, onChange }: { readonly step: WaitSte
         <select disabled={disabled} onChange={(event) => onChange({ ...step, condition: createWaitCondition(event.target.value as WaitCondition["type"]) })} value={condition.type}>
           <option value="timeout">Duration</option><option value="element">Element state</option><option value="url">URL</option><option value="pageLoad">Page load</option>
         </select>
+        <FieldIssues issues={issues} path={`${path}/condition/type`} />
       </label>
-      {condition.type === "timeout" && <NumberInput disabled={disabled} label="Duration, ms" min={0} onChange={(durationMs) => onChange({ ...step, condition: { type: "timeout", durationMs } })} value={condition.durationMs} />}
+      {condition.type === "timeout" && <NumberInput disabled={disabled} issues={issues} label="Duration, ms" min={0} onChange={(durationMs) => onChange({ ...step, condition: { type: "timeout", durationMs } })} path={`${path}/condition/durationMs`} value={condition.durationMs} />}
       {condition.type === "element" && (
-        <><label className="editor-field"><span>Element state</span><select disabled={disabled} onChange={(event) => onChange({ ...step, condition: { ...condition, state: event.target.value as typeof condition.state } })} value={condition.state}><option value="attached">Attached</option><option value="detached">Detached</option><option value="visible">Visible</option><option value="hidden">Hidden</option></select></label><TargetEditor disabled={disabled} onChange={(target) => onChange({ ...step, condition: { ...condition, target } })} path={`${path}/condition/target`} target={condition.target} /></>
+        <><label className="editor-field"><span>Element state</span><select disabled={disabled} onChange={(event) => onChange({ ...step, condition: { ...condition, state: event.target.value as typeof condition.state } })} value={condition.state}><option value="attached">Attached</option><option value="detached">Detached</option><option value="visible">Visible</option><option value="hidden">Hidden</option></select><FieldIssues issues={issues} path={`${path}/condition/state`} /></label><TargetEditor disabled={disabled} issues={issues} onChange={(target) => onChange({ ...step, condition: { ...condition, target } })} path={`${path}/condition/target`} target={condition.target} /></>
       )}
-      {condition.type === "url" && <div className="editor-number-grid"><label className="editor-field"><span>URL match</span><select disabled={disabled} onChange={(event) => onChange({ ...step, condition: { ...condition, match: event.target.value as typeof condition.match } })} value={condition.match}><option value="exact">Exact</option><option value="contains">Contains</option><option value="regex">Regular expression</option></select></label><label className="editor-field"><span>URL value</span><input disabled={disabled} onChange={(event) => onChange({ ...step, condition: { ...condition, value: event.target.value } })} value={condition.value} /></label></div>}
-      {condition.type === "pageLoad" && <label className="editor-field"><span>Load state</span><select disabled={disabled} onChange={(event) => onChange({ ...step, condition: { type: "pageLoad", state: event.target.value as typeof condition.state } })} value={condition.state}><option value="domcontentloaded">DOM content loaded</option><option value="load">Page loaded</option><option value="networkidle">Network idle</option></select></label>}
+      {condition.type === "url" && <div className="editor-number-grid"><label className="editor-field"><span>URL match</span><select disabled={disabled} onChange={(event) => onChange({ ...step, condition: { ...condition, match: event.target.value as typeof condition.match } })} value={condition.match}><option value="exact">Exact</option><option value="contains">Contains</option><option value="regex">Regular expression</option></select><FieldIssues issues={issues} path={`${path}/condition/match`} /></label><label className="editor-field"><span>URL value</span><input disabled={disabled} onChange={(event) => onChange({ ...step, condition: { ...condition, value: event.target.value } })} value={condition.value} /><FieldIssues issues={issues} path={`${path}/condition/value`} /></label></div>}
+      {condition.type === "pageLoad" && <label className="editor-field"><span>Load state</span><select disabled={disabled} onChange={(event) => onChange({ ...step, condition: { type: "pageLoad", state: event.target.value as typeof condition.state } })} value={condition.state}><option value="domcontentloaded">DOM content loaded</option><option value="load">Page loaded</option><option value="networkidle">Network idle</option></select><FieldIssues issues={issues} path={`${path}/condition/state`} /></label>}
     </>
   );
 }
 
-function TargetEditor({ target, path, disabled, onChange }: { readonly target: ElementTarget; readonly path: string; readonly disabled: boolean; readonly onChange: (target: ElementTarget) => void }) {
+function TargetEditor({ target, path, issues, disabled, onChange }: { readonly target: ElementTarget; readonly path: string; readonly issues: readonly PresetValidationIssue[]; readonly disabled: boolean; readonly onChange: (target: ElementTarget) => void }) {
   return (
     <fieldset className="target-editor">
       <legend>Target locators</legend>
-      <LocatorEditor disabled={disabled} label="Primary locator" locator={target.primary} onChange={(primary) => onChange({ ...target, primary })} path={`${path}/primary`} />
+      <LocatorEditor disabled={disabled} issues={issues} label="Primary locator" locator={target.primary} onChange={(primary) => onChange({ ...target, primary })} path={`${path}/primary`} />
       {target.fallbacks.map((locator, index) => (
         <div className="fallback-locator" key={`${index}-${locator.type}`}>
-          <LocatorEditor disabled={disabled} label={`Fallback ${index + 1}`} locator={locator} onChange={(updated) => onChange({ ...target, fallbacks: target.fallbacks.map((current, fallbackIndex) => fallbackIndex === index ? updated : current) })} path={`${path}/fallbacks/${index}`} />
+          <LocatorEditor disabled={disabled} issues={issues} label={`Fallback ${index + 1}`} locator={locator} onChange={(updated) => onChange({ ...target, fallbacks: target.fallbacks.map((current, fallbackIndex) => fallbackIndex === index ? updated : current) })} path={`${path}/fallbacks/${index}`} />
           <button className="danger-text locator-remove-button" disabled={disabled} onClick={() => onChange({ ...target, fallbacks: target.fallbacks.filter((_, fallbackIndex) => fallbackIndex !== index) })} type="button">Remove fallback</button>
         </div>
       ))}
@@ -434,15 +508,15 @@ function TargetEditor({ target, path, disabled, onChange }: { readonly target: E
   );
 }
 
-function LocatorEditor({ locator, label, path, disabled, onChange }: { readonly locator: ElementLocator; readonly label: string; readonly path: string; readonly disabled: boolean; readonly onChange: (locator: ElementLocator) => void }) {
+function LocatorEditor({ locator, label, path, issues, disabled, onChange }: { readonly locator: ElementLocator; readonly label: string; readonly path: string; readonly issues: readonly PresetValidationIssue[]; readonly disabled: boolean; readonly onChange: (locator: ElementLocator) => void }) {
   return (
     <div className="locator-fields" data-path={path}>
       <strong>{label}</strong>
-      <label className="editor-field"><span>Locator type</span><select aria-label={`${label} type`} disabled={disabled} onChange={(event) => onChange(createLocator(event.target.value as ElementLocator["type"]))} value={locator.type}>{LOCATOR_TYPES.map((type) => <option key={type} value={type}>{locatorTypeLabel(type)}</option>)}</select></label>
+      <label className="editor-field"><span>Locator type</span><select aria-label={`${label} type`} disabled={disabled} onChange={(event) => onChange(createLocator(event.target.value as ElementLocator["type"]))} value={locator.type}>{LOCATOR_TYPES.map((type) => <option key={type} value={type}>{locatorTypeLabel(type)}</option>)}</select><FieldIssues issues={issues} path={`${path}/type`} /></label>
       {locator.type === "role" ? (
-        <><label className="editor-field"><span>ARIA role</span><input disabled={disabled} onChange={(event) => onChange({ ...locator, role: event.target.value })} value={locator.role} /></label><label className="editor-field"><span>Accessible name</span><input disabled={disabled} onChange={(event) => onChange({ ...locator, name: event.target.value })} value={locator.name} /></label><ExactField disabled={disabled} exact={locator.exact} onChange={(exact) => onChange({ ...locator, exact })} /></>
+        <><label className="editor-field"><span>ARIA role</span><input disabled={disabled} onChange={(event) => onChange({ ...locator, role: event.target.value })} value={locator.role} /><FieldIssues issues={issues} path={`${path}/role`} /></label><label className="editor-field"><span>Accessible name</span><input disabled={disabled} onChange={(event) => onChange({ ...locator, name: event.target.value })} value={locator.name} /><FieldIssues issues={issues} path={`${path}/name`} /></label><ExactField disabled={disabled} exact={locator.exact} onChange={(exact) => onChange({ ...locator, exact })} /></>
       ) : (
-        <><label className="editor-field"><span>{locatorValueLabel(locator.type)}</span><input disabled={disabled} onChange={(event) => onChange({ ...locator, value: event.target.value })} spellCheck={false} value={locator.value} /></label>{"exact" in locator && <ExactField disabled={disabled} exact={locator.exact} onChange={(exact) => onChange({ ...locator, exact })} />}</>
+        <><label className="editor-field"><span>{locatorValueLabel(locator.type)}</span><input disabled={disabled} onChange={(event) => onChange({ ...locator, value: event.target.value })} spellCheck={false} value={locator.value} /><FieldIssues issues={issues} path={`${path}/value`} /></label>{"exact" in locator && <ExactField disabled={disabled} exact={locator.exact} onChange={(exact) => onChange({ ...locator, exact })} />}</>
       )}
     </div>
   );
@@ -452,15 +526,31 @@ function ExactField({ exact, disabled, onChange }: { readonly exact: boolean; re
   return <label className="editor-checkbox-field"><input checked={exact} disabled={disabled} onChange={(event) => onChange(event.target.checked)} type="checkbox" />Exact match</label>;
 }
 
-function OptionalNumberField({ label, value, min, disabled, onChange }: { readonly label: string; readonly value?: number; readonly min: number; readonly disabled: boolean; readonly onChange: (value: number | undefined) => void }) {
+function OptionalNumberField({ label, value, path, issues, min, disabled, onChange }: { readonly label: string; readonly value?: number; readonly path: string; readonly issues: readonly PresetValidationIssue[]; readonly min: number; readonly disabled: boolean; readonly onChange: (value: number | undefined) => void }) {
   const enabled = value !== undefined;
   return (
-    <div className="optional-number-field"><label className="editor-checkbox-field"><input checked={enabled} disabled={disabled} onChange={(event) => onChange(event.target.checked ? min : undefined)} type="checkbox" />{label}</label>{enabled && <input aria-label={label} disabled={disabled} min={min} onChange={(event) => onChange(event.target.valueAsNumber)} type="number" value={value} />}</div>
+    <div className="optional-number-field"><label className="editor-checkbox-field"><input checked={enabled} disabled={disabled} onChange={(event) => onChange(event.target.checked ? min : undefined)} type="checkbox" />{label}</label>{enabled && <input aria-label={label} disabled={disabled} min={min} onChange={(event) => onChange(event.target.valueAsNumber)} type="number" value={value} />}<FieldIssues issues={issues} path={path} /></div>
   );
 }
 
-function NumberInput({ label, value, min, disabled, onChange }: { readonly label: string; readonly value: number; readonly min: number; readonly disabled: boolean; readonly onChange: (value: number) => void }) {
-  return <label className="editor-field compact-field"><span>{label}</span><input disabled={disabled} min={min} onChange={(event) => onChange(event.target.valueAsNumber)} required type="number" value={value} /></label>;
+function NumberInput({ label, value, path, issues, min, disabled, onChange }: { readonly label: string; readonly value: number; readonly path: string; readonly issues: readonly PresetValidationIssue[]; readonly min: number; readonly disabled: boolean; readonly onChange: (value: number) => void }) {
+  return <label className="editor-field compact-field"><span>{label}</span><input disabled={disabled} min={min} onChange={(event) => onChange(event.target.valueAsNumber)} required type="number" value={value} /><FieldIssues issues={issues} path={path} /></label>;
+}
+
+function FieldIssues({ issues, path }: { readonly issues: readonly PresetValidationIssue[]; readonly path: string }) {
+  const matches = issues.filter((issue) => issue.path === path);
+  if (matches.length === 0) return null;
+  return (
+    <span
+      aria-live="polite"
+      className="field-error"
+      data-error-path={path}
+      id={`step-field-error-${path.replaceAll(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`}
+      role="alert"
+    >
+      {matches.map((issue) => issue.message).join(" ")}
+    </span>
+  );
 }
 
 const LOCATOR_TYPES = ["css", "xpath", "testId", "text", "label", "placeholder", "role"] as const satisfies readonly ElementLocator["type"][];
@@ -485,6 +575,13 @@ function createWaitCondition(type: WaitCondition["type"]): WaitCondition {
 function withOptionalNumber(step: AutomationStep, key: "timeoutMs" | "postActionDelayMs", value: number | undefined): AutomationStep {
   if (value === undefined) return withoutProperty(step, key) as AutomationStep;
   return { ...step, [key]: value };
+}
+
+export function duplicateAutomationStep(
+  step: AutomationStep,
+  createId: () => string = () => `step-${crypto.randomUUID()}`
+): AutomationStep {
+  return { ...structuredClone(step), id: createId() };
 }
 
 function withoutProperty<T extends object, K extends keyof T>(value: T, key: K): Omit<T, K> {

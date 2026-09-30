@@ -5,6 +5,7 @@ import type { RecorderStopReason } from "./recorder-session";
 export type RecorderLogEvent =
   | "started"
   | "action-recorded"
+  | "action-skipped"
   | "stopped"
   | "context-changed"
   | "tab-closed"

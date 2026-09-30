@@ -5,6 +5,7 @@ export interface RepeatCycleStatusView {
   readonly tabId: number;
   readonly presetId: string;
   readonly presetName: string;
+  readonly hostname: string;
   readonly state: "running" | "waiting";
   readonly intervalMinutes: number;
   readonly nextRunAt?: number;
@@ -37,6 +38,7 @@ export class RepeatCycleStatusController {
             tabId: state.tabId,
             presetId: state.presetId,
             presetName: preset.name,
+            hostname: preset.site.hostname,
             state: state.state,
             intervalMinutes: preset.siteSettings.repeat.intervalMinutes,
             ...(state.nextRunAt === undefined

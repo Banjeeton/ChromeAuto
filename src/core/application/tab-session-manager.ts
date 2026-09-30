@@ -3,6 +3,7 @@ import type {
   AutomationSessionId,
   AutomationStopReason,
   RunSession,
+  RunSessionStep,
   RunSessionStatus
 } from "../domain/run-session";
 import type { AutomationEngine } from "../ports/automation-engine";
@@ -22,6 +23,7 @@ interface ManagedSession {
   readonly tabId: number;
   readonly abortController: AbortController;
   status: RunSessionStatus;
+  currentStep?: RunSessionStep;
   stopReason?: AutomationStopReason;
   ready: Promise<void>;
   termination?: Promise<void>;
@@ -121,6 +123,14 @@ export class TabSessionManager {
 
   cancellationSignal(sessionId: AutomationSessionId): AbortSignal {
     return this.#requireSession(sessionId).abortController.signal;
+  }
+
+  setCurrentStep(
+    sessionId: AutomationSessionId,
+    step: RunSessionStep
+  ): void {
+    const session = this.#requireSession(sessionId);
+    session.currentStep = Object.freeze(structuredClone(step));
   }
 
   async complete(sessionId: AutomationSessionId): Promise<void> {
@@ -326,6 +336,9 @@ export class TabSessionManager {
       presetId: session.presetId,
       tabId: session.tabId,
       status: session.status,
+      ...(session.currentStep === undefined
+        ? {}
+        : { currentStep: Object.freeze(structuredClone(session.currentStep)) }),
       ...(session.stopReason === undefined
         ? {}
         : { stopReason: session.stopReason })

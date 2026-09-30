@@ -7,6 +7,8 @@ import {
 } from "../../src/core/application/preset-editor";
 import { assertValidPreset } from "../../src/core/domain/preset-validator";
 import {
+  duplicateAutomationStep,
+  isPresetEditorDirty,
   PresetEditor,
   validatePresetEditorFields
 } from "../../src/sidepanel/features/presets";
@@ -56,6 +58,10 @@ describe("PresetEditor", () => {
 
     expect(html).toContain("Create preset");
     expect(html).toContain("Preset validation failed at /name.");
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain('aria-describedby="preset-field-error-name"');
+    expect(html).toContain('id="preset-field-error-name"');
+    expect(html).toContain('role="alert"');
   });
 
   it("explains the hostname requirement when duplicating", () => {
@@ -74,6 +80,25 @@ describe("PresetEditor", () => {
     expect(html).toContain("Duplicate preset");
     expect(html).toContain("Choose a different hostname");
     expect(html).toContain("Save duplicate");
+  });
+
+  it("constrains a 120-character preset name inside the editor heading", () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Long preset name ".repeat(8).slice(0, 120);
+
+    const html = renderToStaticMarkup(
+      <PresetEditor
+        initialFields={fields}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+        saving={false}
+      />
+    );
+
+    expect(fields.name).toHaveLength(120);
+    expect(html).toContain(`title="${fields.name}"`);
+    expect(html).toContain("editor-heading");
   });
 
   it("renders every preset v1 step as a structured card without Steps JSON", () => {
@@ -95,6 +120,8 @@ describe("PresetEditor", () => {
 
     expect(html).not.toContain("Steps JSON");
     expect(html.match(/structured-step-card/g)).toHaveLength(STEP_TYPES.length);
+    expect(html.match(/<details/g)).toHaveLength(STEP_TYPES.length);
+    expect(html).toContain("Enabled");
     expect(html).toContain("Mouse button");
     expect(html).toContain("Input value");
     expect(html).toContain("Selection method");
@@ -105,6 +132,7 @@ describe("PresetEditor", () => {
     expect(html).toContain("Timeout override, ms");
     expect(html).toContain("Post-action delay, ms");
     expect(html).toContain("Delete step 9");
+    expect(html).toContain("Duplicate step 9");
   });
 
   it("opens existing primary and fallback locators as structured fields", () => {
@@ -264,6 +292,40 @@ describe("PresetEditor", () => {
       ])
     );
   });
+
+  it("shows preset validity and field errors next to the invalid step field", () => {
+    const fields = createPresetEditorDefaults("example.com");
+    fields.name = "Invalid shortcut";
+    fields.automation.steps = [{
+      ...createStepTemplate("pressKey", "invalid-key"),
+      key: "Control+DefinitelyNotAKey"
+    }];
+
+    const html = renderToStaticMarkup(
+      <PresetEditor
+        initialFields={fields}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+        saving={false}
+      />
+    );
+
+    expect(html).toContain("1 issue");
+    expect(html).toContain("Resolve 1 validation issue before saving.");
+    expect(html).toContain('data-error-path="/automation/steps/0/key"');
+    expect(html).toContain("DefinitelyNotAKey");
+  });
+
+  it("detects whether the editor contains unsaved changes", () => {
+    const initial = createPresetEditorDefaults("example.com");
+    const unchanged = structuredClone(initial);
+    const changed = structuredClone(initial);
+    changed.name = "Changed name";
+
+    expect(isPresetEditorDirty(initial, unchanged)).toBe(false);
+    expect(isPresetEditorDirty(initial, changed)).toBe(true);
+  });
 });
 
 describe("preset step templates", () => {
@@ -284,5 +346,32 @@ describe("preset step templates", () => {
       now: () => new Date("2026-09-28T08:00:00.000Z")
     });
     expect(() => assertValidPreset(preset)).not.toThrow();
+  });
+
+  it("duplicates a step deeply while assigning a new id", () => {
+    const original = {
+      ...createStepTemplate("click", "source-step"),
+      name: "Submit order",
+      target: {
+        primary: { type: "testId" as const, value: "submit-order" },
+        fallbacks: [{ type: "css" as const, value: "button.submit" }]
+      }
+    };
+
+    const duplicate = duplicateAutomationStep(original, () => "duplicate-step");
+
+    expect(duplicate).toEqual({ ...original, id: "duplicate-step" });
+    expect(duplicate).not.toBe(original);
+    if (duplicate.type === "click") {
+      duplicate.target.fallbacks[0] = {
+        type: "text",
+        value: "Changed",
+        exact: true
+      };
+    }
+    expect(original.target.fallbacks[0]).toEqual({
+      type: "css",
+      value: "button.submit"
+    });
   });
 });

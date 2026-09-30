@@ -48,7 +48,7 @@ describe("recorder side panel integration", () => {
       stepCount: 1,
       canRecord: false,
       canStop: true,
-      message: "Recording 1 step."
+      message: "Recording example.com: 1 step."
     });
 
     await expect(
@@ -102,6 +102,38 @@ describe("recorder side panel integration", () => {
     await expect(
       harness.panel.start(32, "https://example.com")
     ).resolves.toMatchObject({ state: "recording", tabId: 32 });
+  });
+
+  it("surfaces hostname changes and tab closure as clear preserved-draft states", async () => {
+    const harness = createHarness();
+
+    await harness.panel.start(41, "https://example.com/form");
+    await harness.navigation.handleNavigationCommitted({
+      tabId: 41,
+      url: "https://other.example/form",
+      documentId: "other-document",
+      navigationId: "other-navigation",
+      transitionType: "link"
+    });
+    await expect(
+      harness.panel.status(41, "https://other.example/form")
+    ).resolves.toMatchObject({
+      state: "stopped",
+      hostname: "example.com",
+      stopReason: "tab-context-changed",
+      message: expect.stringContaining("left example.com")
+    });
+
+    await harness.panel.start(42, "https://example.com/form");
+    await harness.navigation.handleTabRemoved(42);
+    await expect(
+      harness.panel.status(42, "https://example.com/form")
+    ).resolves.toMatchObject({
+      state: "stopped",
+      hostname: "example.com",
+      stopReason: "tab-closed",
+      message: expect.stringContaining("tab was closed")
+    });
   });
 });
 

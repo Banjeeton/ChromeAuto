@@ -565,14 +565,14 @@ async function handleAutomationRuntimeMessage(
       return {
         kind: "logs",
         entries: await executionLog.list({ tabId: message.tabId }),
-        cycleEntries: await repeatCycleLog.list(),
-        recorderEntries: await recorderLog.list()
+        cycleEntries: await repeatCycleLog.list({ tabId: message.tabId }),
+        recorderEntries: await recorderLog.list({ tabId: message.tabId })
       };
     case "clear-logs":
       await Promise.all([
         executionLog.clear({ tabId: message.tabId }),
-        repeatCycleLog.clear(),
-        recorderLog.clear()
+        repeatCycleLog.clear({ tabId: message.tabId }),
+        recorderLog.clear({ tabId: message.tabId })
       ]);
       return { kind: "clear-logs" };
   }
