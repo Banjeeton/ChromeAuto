@@ -28,6 +28,7 @@ export type ManualRunStatus =
       readonly hostname: string;
       readonly presetId: string;
       readonly presetName: string;
+      readonly presetDescription?: string;
       readonly stepCount: number;
       readonly hasCustomCode?: boolean;
     }
@@ -37,6 +38,8 @@ export type ManualRunStatus =
       readonly hostname: string;
       readonly presetId: string;
       readonly presetName: string;
+      readonly presetDescription?: string;
+      readonly stepCount?: number;
       readonly sessionId: string;
       readonly hasCustomCode?: boolean;
     }
@@ -46,6 +49,8 @@ export type ManualRunStatus =
       readonly hostname: string;
       readonly presetId: string;
       readonly presetName: string;
+      readonly presetDescription?: string;
+      readonly stepCount?: number;
       readonly nextRunAt: number;
       readonly hasCustomCode?: boolean;
     }
@@ -55,6 +60,8 @@ export type ManualRunStatus =
       readonly hostname?: string;
       readonly presetId?: string;
       readonly presetName?: string;
+      readonly presetDescription?: string;
+      readonly stepCount?: number;
       readonly reason: ManualRunUnavailableReason;
       readonly message: string;
     };
@@ -165,6 +172,7 @@ export class ManualRunController {
           hostname: location.hostname,
           presetId: activeSession.presetId,
           presetName: sessionPreset?.name ?? activeSession.presetId,
+          ...(sessionPreset === undefined ? {} : presetSummary(sessionPreset)),
           sessionId: activeSession.sessionId,
           ...(presetHasCustomCode(sessionPreset) ? { hasCustomCode: true } : {})
         },
@@ -189,6 +197,7 @@ export class ManualRunController {
             hostname: location.hostname,
             presetId: repeatPreset.id,
             presetName: repeatPreset.name,
+            ...presetSummary(repeatPreset),
             nextRunAt: repeatState.nextRunAt,
             ...(presetHasCustomCode(repeatPreset) ? { hasCustomCode: true } : {})
           },
@@ -217,6 +226,7 @@ export class ManualRunController {
           hostname: location.hostname,
           presetId: preset.id,
           presetName: preset.name,
+          ...presetSummary(preset),
           reason: "preset-disabled",
           message: `Automation “${preset.name}” is disabled for this site.`
         },
@@ -234,6 +244,7 @@ export class ManualRunController {
           hostname: location.hostname,
           presetId: preset.id,
           presetName: preset.name,
+          ...presetSummary(preset),
           reason: "invalid-preset",
           message: `${issue.path}: ${issue.message}`
         },
@@ -248,8 +259,8 @@ export class ManualRunController {
         hostname: location.hostname,
         presetId: preset.id,
         presetName: preset.name,
-          stepCount: preset.automation.steps.length,
-          ...(presetHasCustomCode(preset) ? { hasCustomCode: true } : {})
+        ...presetSummary(preset),
+        ...(presetHasCustomCode(preset) ? { hasCustomCode: true } : {})
       },
       preset
     };
@@ -260,6 +271,17 @@ function presetHasCustomCode(preset: PresetV1 | undefined): boolean {
   return preset?.automation.steps.some(
     (step) => step.enabled && step.type === "customCode"
   ) ?? false;
+}
+
+function presetSummary(
+  preset: PresetV1
+): { readonly presetDescription?: string; readonly stepCount: number } {
+  return {
+    ...(preset.description === undefined || preset.description.trim().length === 0
+      ? {}
+      : { presetDescription: preset.description }),
+    stepCount: preset.automation.steps.length
+  };
 }
 
 function parseHttpLocation(url: string): URL | undefined {

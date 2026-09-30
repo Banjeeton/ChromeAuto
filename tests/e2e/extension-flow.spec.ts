@@ -109,6 +109,94 @@ test.describe("unpacked extension release flows", () => {
     await expect(panel.getByText("Custom code", { exact: true })).toBeVisible();
   });
 
+  test("shows the exact-hostname disabled preset on Run and opens its editor", async ({
+    environment
+  }) => {
+    const { fixture, panel } = environment;
+    const fields = presetFields("Disabled contextual preset", "localhost", false, [
+      waitStep("context-wait", 10)
+    ]);
+    await sendRuntime(panel, {
+      type: runtimeMessageType,
+      action: "create-preset",
+      fields: {
+        ...fields,
+        description: "Visible only for the exact localhost context.",
+        siteSettings: { ...fields.siteSettings, enabled: false }
+      }
+    });
+
+    await fixture.bringToFront();
+    await panel.reload();
+    await fixture.bringToFront();
+    const dashboard = panel.getByRole("region", { name: "Dashboard" });
+    await expect(
+      dashboard.getByText("Disabled contextual preset", { exact: true })
+    ).toBeVisible();
+    await expect(
+      panel.getByText("Visible only for the exact localhost context.", {
+        exact: true
+      })
+    ).toBeVisible();
+    await expect(panel.getByText("Disabled", { exact: true }).first()).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Run", exact: true })).toBeDisabled();
+
+    await panel.getByRole("button", { name: "Edit preset" }).click();
+    await expect(panel.getByText("Editing preset", { exact: true })).toBeVisible();
+    await expect(
+      panel.getByRole("heading", { name: "Disabled contextual preset" })
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("button", {
+        name: /Disabled contextual preset localhost/
+      })
+    ).toBeVisible();
+  });
+
+  test("updates the Run preset when the active tab hostname changes", async ({
+    environment
+  }) => {
+    const { context, fixture, panel } = environment;
+    await sendRuntime(panel, {
+      type: runtimeMessageType,
+      action: "create-preset",
+      fields: presetFields("Localhost context", "localhost", false, [
+        waitStep("localhost-wait", 10)
+      ])
+    });
+    await sendRuntime(panel, {
+      type: runtimeMessageType,
+      action: "create-preset",
+      fields: presetFields("Loopback context", "127.0.0.1", false, [
+        waitStep("loopback-wait", 10)
+      ])
+    });
+    const loopbackTab = await context.newPage();
+    await loopbackTab.goto(secondHttpFixture);
+    const dashboard = panel.getByRole("region", { name: "Dashboard" });
+
+    await fixture.bringToFront();
+    await expect(
+      dashboard.getByText("Localhost context", { exact: true })
+    ).toBeVisible();
+    await expect(
+      dashboard.getByText("Loopback context", { exact: true })
+    ).toHaveCount(0);
+
+    await loopbackTab.bringToFront();
+    await expect(
+      dashboard.getByText("Loopback context", { exact: true })
+    ).toBeVisible();
+    await expect(
+      dashboard.getByText("Localhost context", { exact: true })
+    ).toHaveCount(0);
+
+    await fixture.bringToFront();
+    await expect(
+      dashboard.getByText("Localhost context", { exact: true })
+    ).toBeVisible();
+  });
+
   test("completes Record -> reload -> HTML modal -> Edit -> Save -> Run", async ({
     environment
   }) => {
@@ -117,7 +205,7 @@ test.describe("unpacked extension release flows", () => {
     await fixture.bringToFront();
     await expect(panel.getByText("127.0.0.1", { exact: true }).first()).toBeVisible();
 
-    await panel.getByRole("button", { name: "Record", exact: true }).click();
+    await panel.getByRole("button", { name: "Record actions", exact: true }).click();
     await expect(panel.getByText("Recording", { exact: true }).first()).toBeVisible();
 
     await fixture.locator("[data-recorder-main-input]").fill("Before reload");
@@ -138,7 +226,10 @@ test.describe("unpacked extension release flows", () => {
     await firstStep.getByLabel("Step name").fill("Edited E2E recorded step");
     await panel.getByRole("button", { name: "Save draft" }).click();
     await expect(panel.getByRole("button", { name: "Save draft" })).toBeEnabled();
-    await panel.getByRole("button", { name: "Create preset" }).click();
+    await panel
+      .locator(".recorded-steps-editor")
+      .getByRole("button", { name: "Create preset" })
+      .click();
 
     await expect
       .poll(async () =>
@@ -313,6 +404,27 @@ test.describe("unpacked extension release flows", () => {
     await expect(panel.getByText("No automations are running.")).toBeVisible();
     await expect(fixture).toHaveURL(httpFixture);
     await expect(secondTab).toHaveURL(secondHttpFixture);
+  });
+
+  test("keeps the Figma shell usable from 320px through the design width", async ({
+    environment
+  }) => {
+    const { panel } = environment;
+
+    for (const width of [520, 320]) {
+      await panel.setViewportSize({ width, height: 820 });
+      await expect(panel.getByRole("navigation", { name: "Side panel sections" })).toBeVisible();
+      await expect(
+        panel.getByRole("heading", { name: "Automation", exact: true })
+      ).toBeVisible();
+      await expect(panel.getByRole("heading", { name: "Current site" })).toBeVisible();
+      expect(
+        await panel.evaluate(() => ({
+          clientWidth: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth
+        }))
+      ).toEqual({ clientWidth: width, scrollWidth: width });
+    }
   });
 });
 

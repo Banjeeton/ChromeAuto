@@ -9,6 +9,10 @@ const components = readFileSync(
   new URL("../../src/sidepanel/design-system/components.css", import.meta.url),
   "utf8"
 );
+const tokens = readFileSync(
+  new URL("../../src/sidepanel/design-system/tokens.css", import.meta.url),
+  "utf8"
+);
 
 describe("side panel accessibility and responsive style contracts", () => {
   it("keeps a visible keyboard focus indicator for native controls", () => {
@@ -44,5 +48,16 @@ describe("side panel accessibility and responsive style contracts", () => {
     expect(components).toContain("opacity: 0.68");
     expect(styles).toContain(".stop-all-button");
     expect(styles).toContain("width: 100%");
+  });
+
+  it("implements the approved light Figma shell and vertical navigation", () => {
+    expect(tokens).toContain("color-scheme: light");
+    expect(tokens).toContain("--color-accent: #4c3df0");
+    expect(styles).toContain("/* Figma high-fidelity side panel");
+    expect(styles).toContain("grid-template-columns: 76px minmax(0, 1fr)");
+    expect(styles).toContain("flex-direction: column");
+    expect(styles).toContain("min-height: 70px");
+    expect(styles).toContain(".current-site-card");
+    expect(styles).toContain(".automation-card");
   });
 });

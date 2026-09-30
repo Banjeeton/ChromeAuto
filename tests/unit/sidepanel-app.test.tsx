@@ -30,6 +30,9 @@ describe("side panel React entry", () => {
     expect(html).toContain("Automation status");
     expect(html).toContain(">Stop<");
     expect(html).toContain("Stop All");
+    expect(html).toContain("workspace-main");
+    expect(html).toContain("workspace-brand__mark");
+    expect(html).toContain("workspace-settings");
   });
 
   it("maps all approved workspace states without mixing runtime contexts", () => {
@@ -40,6 +43,12 @@ describe("side panel React entry", () => {
     expect(getWorkspaceState("failed", "idle")).toBe("Failed");
     expect(getWorkspaceState("ready", "recording")).toBe("Recording");
     expect(getWorkspaceState("running", "failed")).toBe("Failed");
+    expect(getWorkspaceState("unavailable", "idle", "preset-disabled")).toBe(
+      "Disabled"
+    );
+    expect(getWorkspaceState("unavailable", "idle", "no-preset")).toBe(
+      "Unavailable"
+    );
   });
 
   it("creates a safe portable preset filename", () => {

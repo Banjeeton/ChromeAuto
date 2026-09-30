@@ -14,6 +14,7 @@ export type DashboardState =
   | "Running"
   | "Waiting"
   | "Recording"
+  | "Disabled"
   | "Unavailable";
 
 export interface DashboardPanelProps {
@@ -29,6 +30,8 @@ export interface DashboardPanelProps {
   readonly stepLogs?: readonly StepLogEntry[];
   readonly cycleLogs?: readonly RepeatCycleLogEntry[];
   readonly onRefresh: () => void;
+  readonly onCreatePreset: () => void;
+  readonly onEditPreset: (presetId: string) => void;
   readonly onRun: () => void;
   readonly onRecord: () => void;
   readonly onStop: () => void;
@@ -50,6 +53,8 @@ export function DashboardPanel({
   stepLogs,
   cycleLogs,
   onRefresh,
+  onCreatePreset,
+  onEditPreset,
   onRun,
   onRecord,
   onStop,
@@ -61,13 +66,30 @@ export function DashboardPanel({
   const currentRecorderStatus = statusForTab(activeTab, recorderStatus);
   const state = dashboardState(currentManualStatus, currentRecorderStatus);
   const location = tabLocation(activeTab?.url);
+  const contextPreset =
+    currentManualStatus?.presetId === undefined ? undefined : currentManualStatus;
+  const contextPresetId = contextPreset?.presetId;
+  const hasNoPreset =
+    currentManualStatus?.state === "unavailable" &&
+    currentManualStatus.reason === "no-preset";
   return (
     <section className="dashboard" aria-labelledby="dashboard-title">
-      <Card className="card dashboard-card">
+      <Card className="card current-site-card">
         <div className="section-heading dashboard-heading">
           <div>
-            <p className="section-label">Dashboard</p>
-            <h2 id="dashboard-title">Current site</h2>
+            <p className="section-label">Current site</p>
+            <h2
+              aria-label="Current site"
+              id="dashboard-title"
+              title={currentManualStatus?.hostname ?? location.hostname}
+            >
+              {currentManualStatus?.hostname ?? location.hostname}
+            </h2>
+            <p className="current-site-summary">
+              {currentManualStatus?.presetName === undefined
+                ? "No automation assigned"
+                : "1 automation assigned"}
+            </p>
           </div>
           <div className="dashboard-heading-actions">
             <Badge tone={dashboardTone(state)}>{state}</Badge>
@@ -78,10 +100,6 @@ export function DashboardPanel({
         </div>
 
         <dl className="dashboard-site-details">
-          <div className="dashboard-hostname">
-            <dt>Hostname</dt>
-            <dd>{currentManualStatus?.hostname ?? location.hostname}</dd>
-          </div>
           <div>
             <dt>Protocol</dt>
             <dd>{location.protocol}</dd>
@@ -91,16 +109,29 @@ export function DashboardPanel({
             <dd title={activeTab?.title}>{activeTab?.title ?? "No active tab"}</dd>
           </div>
         </dl>
+      </Card>
 
-        <div className="dashboard-preset" aria-label="Assigned preset">
-          <span>Assigned preset</span>
-          <strong>
-            {currentManualStatus?.presetName ?? presetFallback(currentManualStatus)}
-          </strong>
-          {currentManualStatus?.state === "ready" && (
-            <small>{currentManualStatus.stepCount} steps</small>
-          )}
-        </div>
+      <Card className="card dashboard-card automation-card">
+        <p className="section-label">Automation</p>
+        {contextPreset !== undefined ? (
+          <div className="dashboard-preset" aria-label="Assigned preset">
+            <div className="dashboard-preset-copy">
+              <strong>{contextPreset.presetName}</strong>
+              <span>
+                {contextPreset.presetDescription ??
+                  "No description provided."}
+              </span>
+            </div>
+            {contextPreset.stepCount !== undefined && (
+              <small>{contextPreset.stepCount} steps</small>
+            )}
+            <Badge tone={dashboardTone(state)}>{state}</Badge>
+          </div>
+        ) : !hasNoPreset ? (
+          <div className="dashboard-preset" aria-label="Assigned preset">
+            <strong>{presetFallback(currentManualStatus)}</strong>
+          </div>
+        ) : null}
 
         <Alert
           aria-atomic="true"
@@ -125,34 +156,65 @@ export function DashboardPanel({
           </Alert>
         )}
 
-        <RecorderControls
-          busyAction={busyAction}
-          canRecord={canRecord}
-          hostname={location.hostname}
-          onRecord={onRecord}
-          onStopRecording={onStopRecording}
-          status={currentRecorderStatus}
-        />
+        {hasNoPreset ? (
+          <div className="context-preset-empty" role="status">
+            <div>
+              <strong>No automation for {location.hostname}</strong>
+              <span>Create a preset or record actions on this page.</span>
+            </div>
+            <div className="context-preset-empty__actions">
+              <Button onClick={onCreatePreset}>Create preset</Button>
+              <Button
+                disabled={!canRecord}
+                onClick={onRecord}
+                variant="secondary"
+              >
+                Record actions
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div
+              className="dashboard-actions automation-actions"
+              aria-label="Automation actions"
+            >
+              <Button disabled={!canRun} onClick={onRun}>
+                {busyAction === "run" ? "Running…" : "Run"}
+              </Button>
+              <Button
+                disabled={
+                  !currentTabHasActiveCycle ||
+                  busyAction === "stop" ||
+                  busyAction === "stop-all"
+                }
+                onClick={onStop}
+                variant="secondary"
+              >
+                {busyAction === "stop" ? "Stopping…" : "Stop"}
+              </Button>
+            </div>
 
-        <div
-          className="dashboard-actions automation-actions"
-          aria-label="Automation actions"
-        >
-          <Button disabled={!canRun} onClick={onRun}>
-            {busyAction === "run" ? "Running…" : "Run"}
-          </Button>
-          <Button
-            disabled={
-              !currentTabHasActiveCycle ||
-              busyAction === "stop" ||
-              busyAction === "stop-all"
-            }
-            onClick={onStop}
-            variant="secondary"
-          >
-            {busyAction === "stop" ? "Stopping…" : "Stop"}
-          </Button>
-        </div>
+            {contextPresetId !== undefined && (
+              <Button
+                className="context-preset-edit"
+                onClick={() => onEditPreset(contextPresetId)}
+                variant="secondary"
+              >
+                Edit preset
+              </Button>
+            )}
+
+            <RecorderControls
+              busyAction={busyAction}
+              canRecord={canRecord}
+              hostname={location.hostname}
+              onRecord={onRecord}
+              onStopRecording={onStopRecording}
+              status={currentRecorderStatus}
+            />
+          </>
+        )}
       </Card>
 
       <AutomationSessionsPanel
@@ -191,6 +253,12 @@ function dashboardState(
   if (manualStatus?.state === "ready") return "Ready";
   if (manualStatus?.state === "running") return "Running";
   if (manualStatus?.state === "waiting") return "Waiting";
+  if (
+    manualStatus?.state === "unavailable" &&
+    manualStatus.reason === "preset-disabled"
+  ) {
+    return "Disabled";
+  }
   return "Unavailable";
 }
 
@@ -199,6 +267,7 @@ function dashboardTone(state: DashboardState): StatusTone {
   if (state === "Running") return "info";
   if (state === "Waiting") return "warning";
   if (state === "Recording") return "error";
+  if (state === "Disabled") return "neutral";
   return "neutral";
 }
 

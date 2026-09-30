@@ -354,3 +354,122 @@
     padding: var(--space-3);
   }
 }
+
+/* Figma prototype theme */
+.ui-button--secondary {
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+  background: #fff;
+}
+
+.ui-button--secondary:not(:disabled):hover {
+  border-color: #aeb6c5;
+  background: #f7f8fb;
+}
+
+.ui-button--danger {
+  border-color: var(--color-error);
+  color: var(--color-error);
+  background: #fff;
+}
+
+.ui-button--danger:not(:disabled):hover {
+  color: #fff;
+  background: var(--color-error);
+}
+
+.ui-button:disabled {
+  border-color: var(--color-border-strong);
+  color: #9aa2b2;
+  background: #f1f3f6;
+}
+
+.ui-button--danger:disabled {
+  border-color: #ef9baa;
+  color: #d77a89;
+  background: #fff7f8;
+  opacity: 0.68;
+}
+
+.ui-input,
+.ui-select,
+.ui-textarea {
+  color: var(--color-text-primary);
+  background: #fff;
+}
+
+.ui-input:not(:disabled):hover,
+.ui-select:not(:disabled):hover,
+.ui-textarea:not(:disabled):hover {
+  border-color: #9ca6b8;
+}
+
+.ui-badge--neutral {
+  color: #5e687b;
+  background: #eceff4;
+}
+
+.ui-badge--success {
+  color: #148541;
+  background: #dcf7e6;
+}
+
+.ui-badge--warning {
+  color: #a66300;
+}
+
+.ui-badge--error {
+  color: #c71836;
+  background: #ffe6eb;
+}
+
+.ui-badge--info {
+  color: #4334d6;
+  background: #e9e7ff;
+}
+
+.ui-alert--success {
+  border-color: #a9e4bd;
+  color: #16743d;
+}
+
+.ui-alert--warning {
+  border-color: #f2d18a;
+  color: #8e5a00;
+}
+
+.ui-alert--error {
+  border-color: #efb0bb;
+  color: #ad1730;
+}
+
+.ui-alert--info {
+  border-color: #c8c2ff;
+  color: #4033b5;
+}
+
+.ui-alert--neutral {
+  border-color: #d8dde6;
+  color: #5f697d;
+  background: #f6f7fa;
+}
+
+.ui-modal__backdrop {
+  background: rgb(24 31 49 / 42%);
+}
+
+.ui-modal {
+  box-shadow: 0 24px 70px rgb(32 39 57 / 28%);
+}
+
+.ui-confirmation {
+  border-color: #efb0bb;
+  color: #ad1730;
+  background: #fff0f3;
+}
+
+.ui-confirmation--warning {
+  border-color: #f2d18a;
+  color: #8e5a00;
+  background: #fff7df;
+}

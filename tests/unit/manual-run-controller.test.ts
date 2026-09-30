@@ -105,6 +105,7 @@ describe("ManualRunController", () => {
       hostname: "example.com",
       presetId: PRESET_ID,
       presetName: "Example automation",
+      stepCount: 1,
       nextRunAt: 1_800_000_000_000
     });
   });
@@ -144,6 +145,7 @@ describe("ManualRunController", () => {
 
   it("blocks disabled and empty presets before starting a session", async () => {
     const disabled = createPreset({
+      description: "Disabled checkout automation",
       siteSettings: {
         enabled: false,
         repeat: { enabled: false, intervalMinutes: 1 }
@@ -154,7 +156,10 @@ describe("ManualRunController", () => {
       disabledController.status(42, "https://example.com")
     ).resolves.toMatchObject({
       state: "unavailable",
-      reason: "preset-disabled"
+      reason: "preset-disabled",
+      presetName: "Example automation",
+      presetDescription: "Disabled checkout automation",
+      stepCount: 1
     });
 
     const empty = createPreset({

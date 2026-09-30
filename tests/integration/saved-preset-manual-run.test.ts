@@ -16,6 +16,9 @@ import type {
 
 const MAIN_PRESET_ID = "550e8400-e29b-41d4-a716-446655440000";
 const SHOP_PRESET_ID = "550e8400-e29b-41d4-a716-446655440001";
+const WWW_PRESET_ID = "550e8400-e29b-41d4-a716-446655440002";
+const LOCALHOST_PRESET_ID = "550e8400-e29b-41d4-a716-446655440003";
+const LOOPBACK_PRESET_ID = "550e8400-e29b-41d4-a716-446655440004";
 
 describe("saved preset manual run integration", () => {
   it("does not start until requested and explains an unmatched hostname", async () => {
@@ -31,13 +34,13 @@ describe("saved preset manual run integration", () => {
     expect(harness.engine.start).not.toHaveBeenCalled();
 
     await expect(
-      harness.controller.status(12, "https://www.example.com")
+      harness.controller.status(12, "https://api.example.com")
     ).resolves.toEqual({
       state: "unavailable",
       tabId: 12,
-      hostname: "www.example.com",
+      hostname: "api.example.com",
       reason: "no-preset",
-      message: "No automation is assigned to www.example.com."
+      message: "No automation is assigned to api.example.com."
     });
     expect(harness.engine.start).not.toHaveBeenCalled();
   });
@@ -74,6 +77,23 @@ describe("saved preset manual run integration", () => {
     expect(harness.sessions.list()).toEqual([]);
     expect(harness.engine.complete).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps example, www, localhost and 127.0.0.1 as separate contexts", async () => {
+    const harness = await createHarness();
+
+    await expect(
+      harness.controller.status(31, "https://example.com/page")
+    ).resolves.toMatchObject({ presetId: MAIN_PRESET_ID, tabId: 31 });
+    await expect(
+      harness.controller.status(32, "https://www.example.com/page")
+    ).resolves.toMatchObject({ presetId: WWW_PRESET_ID, tabId: 32 });
+    await expect(
+      harness.controller.status(33, "http://localhost:4173/page")
+    ).resolves.toMatchObject({ presetId: LOCALHOST_PRESET_ID, tabId: 33 });
+    await expect(
+      harness.controller.status(34, "http://127.0.0.1:4173/page")
+    ).resolves.toMatchObject({ presetId: LOOPBACK_PRESET_ID, tabId: 34 });
+  });
 });
 
 async function createHarness(): Promise<{
@@ -100,6 +120,27 @@ async function createHarness(): Promise<{
           }
         ]
       }
+    })
+  );
+  await repository.save(
+    createPreset({
+      id: WWW_PRESET_ID,
+      name: "WWW automation",
+      site: { hostname: "www.example.com", protocols: ["https"] }
+    })
+  );
+  await repository.save(
+    createPreset({
+      id: LOCALHOST_PRESET_ID,
+      name: "Localhost automation",
+      site: { hostname: "localhost", protocols: ["http"] }
+    })
+  );
+  await repository.save(
+    createPreset({
+      id: LOOPBACK_PRESET_ID,
+      name: "Loopback automation",
+      site: { hostname: "127.0.0.1", protocols: ["http"] }
     })
   );
 

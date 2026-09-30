@@ -20,6 +20,7 @@ describe("current-site Dashboard", () => {
         hostname: "shop.example.com",
         presetId: "checkout",
         presetName: "Checkout automation",
+        presetDescription: "Completes the checkout form.",
         stepCount: 4
       },
       recorderStatus: idleRecorder(11),
@@ -32,6 +33,7 @@ describe("current-site Dashboard", () => {
     expect(html).toContain("HTTPS");
     expect(html).toContain("Checkout fixture");
     expect(html).toContain("Checkout automation");
+    expect(html).toContain("Completes the checkout form.");
     expect(html).toContain("4 steps");
     expect(html).toContain(">Run<");
     expect(html).toContain(">Record<");
@@ -39,6 +41,53 @@ describe("current-site Dashboard", () => {
     expect(html).toContain(">Stop All<");
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('aria-atomic="true"');
+    expect(html).toContain("current-site-card");
+    expect(html).toContain("automation-card");
+    expect(html).toContain('aria-label="Current site"');
+  });
+
+  it("shows a disabled exact-hostname preset with an edit action", () => {
+    const html = renderDashboard({
+      activeTab: tab(36),
+      manualStatus: {
+        state: "unavailable",
+        tabId: 36,
+        hostname: "example.com",
+        presetId: "disabled-preset",
+        presetName: "Paused checkout",
+        presetDescription: "Currently disabled by the user.",
+        stepCount: 3,
+        reason: "preset-disabled",
+        message: "Automation “Paused checkout” is disabled for this site."
+      }
+    });
+
+    expect(html).toContain("Paused checkout");
+    expect(html).toContain("Currently disabled by the user.");
+    expect(html).toContain("3 steps");
+    expect(html).toContain("Disabled");
+    expect(html).toContain(">Edit preset<");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Run<\/button>/);
+  });
+
+  it("offers creation and recording only when the exact hostname has no preset", () => {
+    const html = renderDashboard({
+      activeTab: tab(37),
+      manualStatus: {
+        state: "unavailable",
+        tabId: 37,
+        hostname: "example.com",
+        reason: "no-preset",
+        message: "No automation is assigned to example.com."
+      },
+      recorderStatus: idleRecorder(37),
+      canRecord: true
+    });
+
+    expect(html).toContain("No automation for example.com");
+    expect(html).toContain(">Create preset<");
+    expect(html).toContain(">Record actions<");
+    expect(html).not.toContain(">Edit preset<");
   });
 
   it("renders Running, Waiting and Recording as distinct current-tab states", () => {
@@ -135,7 +184,7 @@ describe("current-site Dashboard", () => {
     });
 
     expect(noPreset).toContain("Unavailable");
-    expect(noPreset).toContain("No preset assigned");
+    expect(noPreset).toContain("No automation for example.com");
     expect(noPreset).toContain("No automation is assigned to example.com");
     expect(prohibited).toContain("CHROME");
     expect(prohibited).toContain("Extensions");
@@ -209,6 +258,8 @@ function renderDashboard(
     sessions: [],
     repeatCycles: [],
     onRefresh: () => undefined,
+    onCreatePreset: () => undefined,
+    onEditPreset: () => undefined,
     onRun: () => undefined,
     onRecord: () => undefined,
     onStop: () => undefined,

@@ -23,6 +23,8 @@ describe("side panel workspace navigation", () => {
       expect(html).toContain('aria-label="Presets and editor"');
       expect(html).toContain('aria-label="Run log"');
       expect(html).toContain(`workspace-navigation__icon--${activeView}`);
+      expect(html).toContain("<svg");
+      expect(html).toContain('viewBox="0 0 24 24"');
     }
   );
 });
