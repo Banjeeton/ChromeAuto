@@ -266,6 +266,12 @@ npm run verify:all
   bundles должны использовать статические imports.
 - In-memory журнал может быть потерян при полном перезапуске service worker;
   portable-пресеты в `chrome.storage.local` при этом сохраняются.
+- Recorder и ожидающие repeat-циклы восстанавливаются из
+  `chrome.storage.session`; текущий Playwright-проход остаётся in-memory и не
+  перезапускается автоматически после принудительного reload расширения.
+- Side panel повторяет только транспортный разрыв message-port. Если background
+  не ответил до timeout, пользователь должен reload extension через
+  `chrome://extensions`, заново открыть side panel и повторить действие.
 - Обновление unpacked extension прекращает активные выполнения. После обновления
   пользователь обязан повторно открыть страницу и запускать автоматизацию
   вручную.

@@ -12,6 +12,7 @@ import { InMemoryRecorderLog } from "../adapters/logging/in-memory-recorder-log"
 import { ChromeRepeatCycleRegistry } from "../adapters/storage/chrome-repeat-cycle-registry";
 import { ChromePresetRepository } from "../adapters/storage/chrome-storage";
 import { ChromeRecorderSessionRegistry } from "../adapters/storage/chrome-recorder-session-registry";
+import { ChromeRuntimeRequestJournal } from "../adapters/storage/chrome-runtime-request-journal";
 import {
   exportPresetJson,
   importPresetJsonSafely
@@ -32,6 +33,7 @@ import { RecordedStepMapper } from "../core/application/recorded-step-mapper";
 import { RecorderNavigationController } from "../core/application/recorder-navigation-controller";
 import { RecorderPanelController } from "../core/application/recorder-panel-controller";
 import { RecorderDraftController } from "../core/application/recorder-draft-controller";
+import { RecorderRecoveryController } from "../core/application/recorder-recovery-controller";
 import { RecordedPresetController } from "../core/application/recorded-preset-controller";
 import { TabSessionManager } from "../core/application/tab-session-manager";
 import {
@@ -65,6 +67,7 @@ const presetRepository = new ChromePresetRepository(chrome.storage.local);
 const presetEditorController = new PresetEditorController(presetRepository);
 const recorderSessionRegistry = new ChromeRecorderSessionRegistry();
 const recorderContentBridge = new ChromeRecorderContentBridge();
+const recorderDocumentProvider = new ChromeRecorderDocumentProvider();
 const recorderNavigationController = new RecorderNavigationController(
   recorderSessionRegistry,
   new RecordedStepMapper(),
@@ -81,7 +84,7 @@ const repeatCycleRegistry = new ChromeRepeatCycleRegistry();
 const automationRecorder = new AutomationRecorder(
   recorderSessionRegistry,
   recorderContentBridge,
-  new ChromeRecorderDocumentProvider(),
+  recorderDocumentProvider,
   {
     isAutomationActive: async (tabId) => {
       if (tabSessionManager.getByTabId(tabId) !== undefined) {
@@ -133,6 +136,28 @@ const manualRunController = new ManualRunController(
   repeatCycleRegistry,
   recorderSessionRegistry
 );
+const recorderRecoveryController = new RecorderRecoveryController(
+  recorderSessionRegistry,
+  recorderContentBridge,
+  recorderDocumentProvider
+);
+const runtimeRequestJournal = new ChromeRuntimeRequestJournal();
+
+// Chrome can deliver alarms and side-panel requests immediately while a new
+// worker is booting, so all runtime entry points share the same barrier.
+const startupRecovery = Promise.all([
+  repeatCycleRecoveryController.recover(),
+  recorderRecoveryController.recover()
+]).catch((error: unknown) => {
+  console.error(
+    "Unable to restore runtime state after service worker startup.",
+    error
+  );
+  throw new Error(
+    "Runtime recovery did not complete. Reload the extension from chrome://extensions, reopen the side panel, and try again.",
+    { cause: error }
+  );
+});
 
 chrome.runtime.onInstalled.addListener(() => {
   void chrome.sidePanel
@@ -148,8 +173,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     return;
   }
 
-  void repeatCycleRecoveryController
-    .handleAlarm({ ...identity, scheduledFor: alarm.scheduledTime })
+  void startupRecovery
+    .then(() => repeatCycleRecoveryController.handleAlarm({
+      ...identity,
+      scheduledFor: alarm.scheduledTime
+    }))
     .catch((error: unknown) => {
       console.error(
         `Scheduled repeat cycle for tab ${identity.tabId} failed.`,
@@ -163,21 +191,21 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     return;
   }
 
-  void stopCycleForChangedTab(tabId, changeInfo.url).catch(
-    (error: unknown) => {
+  void startupRecovery
+    .then(() => stopCycleForChangedTab(tabId, changeInfo.url!))
+    .catch((error: unknown) => {
       console.error(
         `Unable to validate the repeat cycle after tab ${tabId} navigation.`,
         error
       );
-    }
-  );
+    });
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  void Promise.all([
+  void startupRecovery.then(() => Promise.all([
     stopCycleForRemovedTab(tabId),
     recorderNavigationController.handleTabRemoved(tabId)
-  ]).catch((error: unknown) => {
+  ])).catch((error: unknown) => {
     console.error(`Unable to clean up tab ${tabId} runtime state.`, error);
   });
 });
@@ -186,14 +214,14 @@ chrome.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId !== 0) {
     return;
   }
-  void recorderNavigationController
-    .handleNavigationCommitted({
+  void startupRecovery
+    .then(() => recorderNavigationController.handleNavigationCommitted({
       tabId: details.tabId,
       url: details.url,
       documentId: details.documentId,
       navigationId: details.documentId,
       transitionType: details.transitionType
-    })
+    }))
     .catch((error: unknown) => {
       console.error(
         `Unable to process recorder navigation in tab ${details.tabId}.`,
@@ -206,27 +234,19 @@ chrome.webNavigation.onDOMContentLoaded.addListener((details) => {
   if (details.frameId !== 0) {
     return;
   }
-  void recorderNavigationController
-    .handlePageReady({
+  void startupRecovery
+    .then(() => recorderNavigationController.handlePageReady({
       tabId: details.tabId,
       url: details.url,
       documentId: details.documentId,
       navigationId: details.documentId
-    })
+    }))
     .catch((error: unknown) => {
       console.error(
         `Unable to restore recorder capture in tab ${details.tabId}.`,
         error
       );
     });
-});
-
-// Top-level recovery runs whenever Manifest V3 recreates this service worker.
-void repeatCycleRecoveryController.recover().catch((error: unknown) => {
-  console.error(
-    "Unable to restore repeat cycles after service worker startup.",
-    error
-  );
 });
 
 chrome.runtime.onMessage.addListener(
@@ -336,6 +356,14 @@ function isAutomationRuntimeMessage(
   }
 
   if (
+    "requestId" in candidate &&
+    candidate.requestId !== undefined &&
+    (typeof candidate.requestId !== "string" || candidate.requestId.length === 0)
+  ) {
+    return false;
+  }
+
+  if (
     candidate.action === "stop-all" ||
     candidate.action === "sessions" ||
       candidate.action === "presets" ||
@@ -437,6 +465,23 @@ function isAutomationRuntimeMessage(
 }
 
 async function handleAutomationRuntimeMessage(
+  message: AutomationRuntimeMessage
+): Promise<AutomationRuntimeResult> {
+  await startupRecovery;
+  if (
+    message.requestId !== undefined &&
+    isIdempotentControlAction(message.action)
+  ) {
+    return await runtimeRequestJournal.execute(
+      message.requestId,
+      message.action,
+      () => handleAutomationRuntimeCommand(message)
+    );
+  }
+  return await handleAutomationRuntimeCommand(message);
+}
+
+async function handleAutomationRuntimeCommand(
   message: AutomationRuntimeMessage
 ): Promise<AutomationRuntimeResult> {
   switch (message.action) {
@@ -576,6 +621,17 @@ async function handleAutomationRuntimeMessage(
       ]);
       return { kind: "clear-logs" };
   }
+}
+
+function isIdempotentControlAction(
+  action: AutomationRuntimeMessage["action"]
+): boolean {
+  return (
+    action === "run" ||
+    action === "record" ||
+    action === "stop" ||
+    action === "stop-all"
+  );
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

@@ -18,7 +18,7 @@ import type {
 
 export const AUTOMATION_RUNTIME_MESSAGE = "automation/runtime" as const;
 
-export type AutomationRuntimeMessage =
+type AutomationRuntimeCommand =
   | {
       readonly type: typeof AUTOMATION_RUNTIME_MESSAGE;
       readonly action:
@@ -91,6 +91,11 @@ export type AutomationRuntimeMessage =
       readonly action: "export-preset";
       readonly presetId: string;
     };
+
+export type AutomationRuntimeMessage = AutomationRuntimeCommand & {
+  /** Stable across a transport retry so background can coalesce the command. */
+  readonly requestId?: string;
+};
 
 export type AutomationRuntimeResult =
   | { readonly kind: "manual-status"; readonly status: ManualRunStatus }

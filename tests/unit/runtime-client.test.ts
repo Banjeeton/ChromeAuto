@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   RuntimeRequestError,
@@ -30,7 +30,27 @@ describe("side panel runtime client", () => {
         { type: AUTOMATION_RUNTIME_MESSAGE, action: "sessions" },
         { timeoutMs: 5, sender: () => new Promise(() => undefined) }
       )
-    ).rejects.toThrow(/Background did not respond to .*sessions.* within 5 ms/);
+    ).rejects.toThrow(/Background did not respond to .*sessions.* within 5 ms.*chrome:\/\/extensions/);
+  });
+
+  it("reconnects once after a transient service-worker disconnect using the same request id", async () => {
+    const sender = vi.fn()
+      .mockRejectedValueOnce(new Error("Could not establish connection. Receiving end does not exist."))
+      .mockResolvedValueOnce({
+        ok: true,
+        result: { kind: "stop", stop: { stopped: false, tabId: 7 } }
+      });
+
+    await expect(sendRuntimeMessage(
+      { type: AUTOMATION_RUNTIME_MESSAGE, action: "stop", tabId: 7 },
+      { sender, retryDelayMs: 0, timeoutMs: 50 }
+    )).resolves.toMatchObject({ ok: true });
+
+    expect(sender).toHaveBeenCalledTimes(2);
+    expect(sender.mock.calls[0][0].requestId).toBeTruthy();
+    expect(sender.mock.calls[1][0].requestId).toBe(
+      sender.mock.calls[0][0].requestId
+    );
   });
 
   it("preserves structured background error details for the run log", () => {
