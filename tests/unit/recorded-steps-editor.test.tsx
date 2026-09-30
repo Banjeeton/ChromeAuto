@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { RecorderDraftView } from "../../src/core/application/recorder-draft-controller";
-import { RecordedStepsEditor } from "../../src/sidepanel/features/recorder";
+import {
+  RecordedDraftPanel,
+  RecordedStepsEditor
+} from "../../src/sidepanel/features/recorder";
 
 describe("RecordedStepsEditor", () => {
   it("renders controls for reviewing and editing a stopped draft", () => {
@@ -31,6 +34,16 @@ describe("RecordedStepsEditor", () => {
     expect(html).toContain("Save draft");
     expect(html).toContain("Create preset");
     expect(html).toContain("do not modify saved presets");
+    expect(html).toContain("order they were captured");
+
+    const clickPosition = html.indexOf("<strong>click</strong>");
+    const inputPosition = html.indexOf("<strong>input</strong>");
+    const waitPosition = html.indexOf("<strong>wait</strong>");
+    const codePosition = html.indexOf("<strong>customCode</strong>");
+    expect(clickPosition).toBeGreaterThan(-1);
+    expect(inputPosition).toBeGreaterThan(clickPosition);
+    expect(waitPosition).toBeGreaterThan(inputPosition);
+    expect(codePosition).toBeGreaterThan(waitPosition);
   });
 
   it("renders a validation error returned by background", () => {
@@ -89,6 +102,33 @@ describe("RecordedStepsEditor", () => {
 
     expect(html).toContain("/automation/steps/3/key");
     expect(html).toContain("unsupported shortcut");
+  });
+
+  it("opens the preserved draft with an understandable hostname-change reason", () => {
+    const html = renderToStaticMarkup(
+      <RecordedDraftPanel
+        draft={draftView()}
+        loading={false}
+        onCancelConflict={vi.fn()}
+        onCreatePreset={vi.fn()}
+        onDiscard={vi.fn()}
+        onSave={vi.fn()}
+        status={{
+          tabId: 7,
+          state: "stopped",
+          stepCount: 4,
+          canRecord: true,
+          canStop: false,
+          hostname: "example.com",
+          stopReason: "tab-context-changed",
+          message: "Recording stopped because the hostname changed."
+        }}
+      />
+    );
+
+    expect(html).toContain('data-recorder-editor-state="open"');
+    expect(html).toContain("left example.com");
+    expect(html).toContain("draft was preserved");
   });
 });
 

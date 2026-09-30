@@ -5,6 +5,7 @@ import type { RunSession } from "../../../core/domain/run-session";
 import { Alert, Badge, Button, Card, type StatusTone } from "../../components";
 import type { ActiveTab } from "../../types";
 import { AutomationSessionsPanel } from "../automation";
+import { RecorderControls } from "../recorder";
 
 export type DashboardState =
   | "Ready"
@@ -52,10 +53,6 @@ export function DashboardPanel({
   const currentRecorderStatus = statusForTab(activeTab, recorderStatus);
   const state = dashboardState(currentManualStatus, currentRecorderStatus);
   const location = tabLocation(activeTab?.url);
-  const recorderIsActive =
-    currentRecorderStatus?.state === "recording" ||
-    currentRecorderStatus?.state === "stopping";
-  const canStop = currentTabHasActiveCycle || currentRecorderStatus?.canStop === true;
   const hasAnyAutomation = sessions.length > 0 || repeatCycles.length > 0;
 
   return (
@@ -108,21 +105,28 @@ export function DashboardPanel({
           )}
         </Alert>
 
-        <div className="dashboard-actions" aria-label="Current site actions">
+        <RecorderControls
+          busyAction={busyAction}
+          canRecord={canRecord}
+          hostname={location.hostname}
+          onRecord={onRecord}
+          onStopRecording={onStopRecording}
+          status={currentRecorderStatus}
+        />
+
+        <div
+          className="dashboard-actions automation-actions"
+          aria-label="Automation actions"
+        >
           <Button disabled={!canRun} onClick={onRun}>
             {busyAction === "run" ? "Running…" : "Run"}
           </Button>
-          <Button disabled={!canRecord} onClick={onRecord} variant="secondary">
-            {busyAction === "record" ? "Starting…" : "Record"}
-          </Button>
           <Button
-            disabled={!canStop || busyAction !== undefined}
-            onClick={recorderIsActive ? onStopRecording : onStop}
+            disabled={!currentTabHasActiveCycle || busyAction !== undefined}
+            onClick={onStop}
             variant="secondary"
           >
-            {busyAction === "stop" || busyAction === "stop-recording"
-              ? "Stopping…"
-              : "Stop"}
+            {busyAction === "stop" ? "Stopping…" : "Stop"}
           </Button>
           <Button
             disabled={!hasAnyAutomation || busyAction !== undefined}

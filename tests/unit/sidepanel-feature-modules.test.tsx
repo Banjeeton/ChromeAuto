@@ -128,7 +128,17 @@ describe("side panel feature modules", () => {
           { id: 1, status: "success", text: "Automation finished." }
         ]}
         onClear={() => undefined}
-        recorderLogs={[]}
+        recorderLogs={[
+          {
+            id: "recorder-skip-1",
+            recordedAt: "2026-09-30T08:00:00.000Z",
+            tabId: 7,
+            sessionId: "recorder-7",
+            event: "action-skipped",
+            action: "skip click",
+            message: "Click was not added to the draft. The draft was preserved."
+          }
+        ]}
         stepLogs={[]}
       />
     );
@@ -136,6 +146,8 @@ describe("side panel feature modules", () => {
     expect(presetsHtml).toContain("No saved presets yet");
     expect(draftHtml).toContain("Loading recorded steps");
     expect(logHtml).toContain("Automation finished");
+    expect(logHtml).toContain("SKIPPED");
+    expect(logHtml).toContain("draft was preserved");
   });
 });
 

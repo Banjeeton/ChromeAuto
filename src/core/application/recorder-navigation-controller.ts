@@ -1,4 +1,7 @@
-import { RecordedStepMapper } from "./recorded-step-mapper";
+import {
+  RecordedStepMapper,
+  type SkippedRecordedEvent
+} from "./recorded-step-mapper";
 import type { AutomationStep } from "../domain/automation-step";
 import type {
   RecorderEvent,
@@ -72,7 +75,20 @@ export class RecorderNavigationController {
         ) {
           return "duplicate";
         }
-        const updated = await this.#append(record, event);
+        const { record: updated, skipped } = await this.#append(record, event);
+        if (skipped !== undefined) {
+          await this.#appendLog({
+            tabId: event.tabId,
+            sessionId: event.sessionId,
+            event: "action-skipped",
+            action: `skip ${event.kind}`,
+            message: `${recorderEventLabel(event.kind)} was not added to the draft (${skipReasonLabel(skipped.reason)}). The existing draft was preserved.`,
+            recorderEventId: event.eventId,
+            recorderEventKind: event.kind,
+            stepCount: updated.draftSteps.length
+          });
+          return "ignored";
+        }
         await this.#appendLog({
           tabId: event.tabId,
           sessionId: event.sessionId,
@@ -145,7 +161,7 @@ export class RecorderNavigationController {
           waitUntil: "domcontentloaded"
         }
       };
-      const updated = await this.#append(moved, reload);
+      const { record: updated } = await this.#append(moved, reload);
       await this.#appendLog({
         tabId: event.tabId,
         sessionId: record.session.sessionId,
@@ -192,7 +208,7 @@ export class RecorderNavigationController {
             state: "domcontentloaded"
           }
         };
-        current = await this.#append(current, pageReady);
+        current = (await this.#append(current, pageReady)).record;
       } else if (
         current.documentId !== record.documentId ||
         current.currentUrl !== record.currentUrl
@@ -242,7 +258,10 @@ export class RecorderNavigationController {
   async #append(
     record: RecorderSessionRecord,
     event: RecorderEvent
-  ): Promise<RecorderSessionRecord> {
+  ): Promise<{
+    readonly record: RecorderSessionRecord;
+    readonly skipped?: SkippedRecordedEvent;
+  }> {
     const recordedEvents = [...record.recordedEvents, event];
     const mapped = this.mapper.map(recordedEvents);
     const draftSteps = preserveExistingStepIds(record.draftSteps, mapped.steps);
@@ -256,7 +275,13 @@ export class RecorderNavigationController {
       draftSteps
     };
     await this.registry.save(updated);
-    return updated;
+    const skipped = mapped.skipped.find(
+      (candidate) => candidate.eventId === event.eventId
+    );
+    return {
+      record: updated,
+      ...(skipped === undefined ? {} : { skipped })
+    };
   }
 
   async #stopForContextChange(
@@ -362,6 +387,23 @@ function recorderEventLabel(kind: RecorderEvent["kind"]): string {
       return "Reload";
     case "pageReady":
       return "Page-ready event";
+  }
+}
+
+function skipReasonLabel(reason: SkippedRecordedEvent["reason"]): string {
+  switch (reason) {
+    case "unsupported-event-kind":
+      return "unsupported action";
+    case "unsupported-click-modifiers":
+      return "unsupported click modifiers";
+    case "duplicate-control-click":
+      return "duplicate control click";
+    case "duplicate-navigation":
+      return "duplicate navigation";
+    case "invalid-generated-step":
+      return "invalid generated step";
+    case "invalid-event":
+      return "invalid recorder event";
   }
 }
 

@@ -213,7 +213,8 @@ export function RecordedStepsEditor({
       </div>
 
       <p className="editor-help">
-        Changes stay in this draft and do not modify saved presets.
+        Steps are shown in the order they were captured. Changes stay in this
+        draft and do not modify saved presets.
       </p>
 
       <fieldset className="editor-section recorded-preset-fields">

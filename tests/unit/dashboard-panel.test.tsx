@@ -91,6 +91,11 @@ describe("current-site Dashboard", () => {
     expect(waiting).toContain("waiting for its next run");
     expect(recording).toContain("Recording");
     expect(recording).toContain("Recording 3 steps");
+    expect(recording).toContain("Recording example.com");
+    expect(recording).toContain("recorder-step-counter");
+    expect(recording).toContain("<strong>3</strong><span>steps</span>");
+    expect(recording).toContain("record-button");
+    expect(recording).toContain(">Stop recording<");
   });
 
   it("explains missing presets and prohibited pages", () => {

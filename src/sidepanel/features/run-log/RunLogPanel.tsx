@@ -98,6 +98,7 @@ function cycleLogTone(entry: RepeatCycleLogEntry): string {
 }
 
 function recorderLogTone(entry: RecorderLogEntry): string {
+  if (entry.event === "action-skipped") return "skipped";
   return entry.event === "failed" ? "failed" : entry.event === "stopped" ||
     entry.event === "context-changed" || entry.event === "tab-closed"
     ? "stopped"
@@ -106,6 +107,7 @@ function recorderLogTone(entry: RecorderLogEntry): string {
 
 function recorderLogLabel(entry: RecorderLogEntry): string {
   if (entry.event === "action-recorded") return "RECORDED";
+  if (entry.event === "action-skipped") return "SKIPPED";
   if (entry.event === "context-changed" || entry.event === "tab-closed") {
     return "STOPPED";
   }

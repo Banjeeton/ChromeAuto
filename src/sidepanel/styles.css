@@ -228,8 +228,15 @@ h2 {
 
 .recorder-controls {
   margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid #29343e;
+  padding: 12px;
+  border: 1px solid #303b46;
+  border-radius: var(--radius-md);
+  background: #11181e;
+}
+
+.recorder-controls.is-recording {
+  border-color: #784047;
+  background: linear-gradient(135deg, #25191c, #12191f 70%);
 }
 
 .recorder-summary {
@@ -243,13 +250,46 @@ h2 {
 
 .recorder-summary > div {
   display: inline-flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   color: #dce4eb;
 }
 
-.recorder-summary > span:last-child {
-  text-align: right;
+.recorder-summary-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.recorder-summary-copy > strong,
+.recorder-summary-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recorder-summary-copy > span {
+  color: #8795a2;
+  font-size: 10px;
+}
+
+.recorder-step-counter {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 4px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #ffb7b7;
+  background: rgb(255 103 103 / 10%);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.recorder-step-counter strong {
+  color: #fff1f1;
+  font-size: 13px;
 }
 
 .recorder-state {
@@ -283,8 +323,22 @@ h2 {
   background: #b94349;
 }
 
+.action-button.record-button::before {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+}
+
 .action-button.record-button:not(:disabled):hover {
   background: #ce5359;
+}
+
+.automation-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .target-heading {
@@ -1267,6 +1321,18 @@ button:disabled {
   display: grid;
   gap: 12px;
   margin-top: 14px;
+}
+
+.recorded-draft-anchor {
+  scroll-margin-top: var(--space-4);
+}
+
+.recorded-draft-anchor:focus {
+  outline: none;
+}
+
+.recorded-draft-reason {
+  margin-top: var(--space-3);
 }
 
 .recorded-step-count {

@@ -3,6 +3,7 @@ import { Button } from "../../components";
 
 export interface RecorderControlsProps {
   readonly status?: RecorderPanelStatus;
+  readonly hostname?: string;
   readonly busyAction?: string;
   readonly canRecord: boolean;
   readonly onRecord: () => void;
@@ -11,19 +12,31 @@ export interface RecorderControlsProps {
 
 export function RecorderControls({
   status,
+  hostname,
   busyAction,
   canRecord,
   onRecord,
   onStopRecording
 }: RecorderControlsProps) {
+  const active = status?.state === "recording" || status?.state === "stopping";
+  const displayedHostname = status?.hostname ?? hostname ?? "this site";
+
   return (
-    <div className="recorder-controls">
+    <div className={`recorder-controls${active ? " is-recording" : ""}`}>
       <div className="recorder-summary" aria-live="polite">
         <div>
           <span className={`recorder-state ${status?.state ?? "idle"}`} />
-          <strong>Recorder</strong>
+          <div className="recorder-summary-copy">
+            <strong>{active ? `Recording ${displayedHostname}` : "Automation Recorder"}</strong>
+            <span>{status?.message ?? "Checking recorder state…"}</span>
+          </div>
         </div>
-        <span>{status?.message ?? "Checking recorder state…"}</span>
+        {active && (
+          <span className="recorder-step-counter">
+            <strong>{status?.stepCount ?? 0}</strong>
+            <span>{status?.stepCount === 1 ? "step" : "steps"}</span>
+          </span>
+        )}
       </div>
       <div className="button-grid recorder-actions">
         <Button
@@ -36,9 +49,9 @@ export function RecorderControls({
         </Button>
         <Button
           className="action-button secondary"
-          disabled={status?.canStop !== true || busyAction !== undefined}
+          disabled={status?.canStop !== true || busyAction === "stop-recording"}
           onClick={onStopRecording}
-          variant="secondary"
+          variant={active ? "danger" : "secondary"}
         >
           {busyAction === "stop-recording" ? "Stopping…" : "Stop recording"}
         </Button>
