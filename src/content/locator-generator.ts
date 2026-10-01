@@ -14,6 +14,7 @@ export interface LocatorElement {
 
 export interface LocatorEnvironment {
   allElements(): readonly LocatorElement[];
+  isVisible(element: LocatorElement): boolean;
   queryCss(selector: string): readonly LocatorElement[];
 }
 
@@ -49,8 +50,11 @@ export function generateStableLocatorTarget(
   const verified = candidates
     .map((locator): EvaluatedLocator | undefined => {
       const matches = resolveLocator(locator, environment);
-      return matches.length === 1 && matches[0] === element
-        ? { locator, matchCount: matches.length }
+      const visibleMatches = matches.filter((match) =>
+        environment.isVisible(match)
+      );
+      return visibleMatches.length === 1 && visibleMatches[0] === element
+        ? { locator, matchCount: visibleMatches.length }
         : undefined;
     })
     .filter((candidate): candidate is EvaluatedLocator => candidate !== undefined);
@@ -96,6 +100,7 @@ export function createDomLocatorEnvironment(
   return {
     allElements: () =>
       [...root.querySelectorAll("*")] as unknown as LocatorElement[],
+    isVisible: (element) => isDomElementVisible(element as unknown as Element),
     queryCss: (selector) => {
       try {
         return [...root.querySelectorAll(selector)] as unknown as LocatorElement[];
@@ -104,6 +109,21 @@ export function createDomLocatorEnvironment(
       }
     }
   };
+}
+
+function isDomElementVisible(element: Element): boolean {
+  if (!element.isConnected || element.getClientRects().length === 0) {
+    return false;
+  }
+
+  const view = element.ownerDocument.defaultView;
+  if (view === null) {
+    return true;
+  }
+  const style = view.getComputedStyle(element);
+  return style.display !== "none" &&
+    style.visibility !== "hidden" &&
+    style.visibility !== "collapse";
 }
 
 function testIdCandidates(element: LocatorElement): ElementLocator[] {
@@ -255,9 +275,26 @@ function resolveLocator(
       );
     case "text":
       return environment.allElements().filter(
-        (candidate) => normalizedText(candidate.textContent) === locator.value
+        (candidate) =>
+          normalizedText(candidate.textContent) === locator.value &&
+          !hasDescendantWithExactText(candidate, locator.value)
       );
   }
+}
+
+function hasDescendantWithExactText(
+  element: LocatorElement,
+  value: string
+): boolean {
+  for (const child of Array.from(element.children)) {
+    if (
+      normalizedText(child.textContent) === value ||
+      hasDescendantWithExactText(child, value)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function explicitOrImplicitRole(element: LocatorElement): string | undefined {

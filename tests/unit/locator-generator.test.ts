@@ -110,6 +110,40 @@ describe("stable locator generator", () => {
     });
   });
 
+  it("prefers text for the visible dropdown option when hidden copies exist", () => {
+    const hiddenItem = new FakeElement(
+      "li",
+      { class: "el-select-dropdown__item" },
+      "No"
+    ).hide();
+    const hiddenOption = new FakeElement("span", {}, "No");
+    hiddenItem.append(hiddenOption);
+    const visibleItem = new FakeElement(
+      "li",
+      { class: "el-select-dropdown__item" },
+      "No"
+    );
+    const visibleOption = new FakeElement("span", {}, "No");
+    visibleItem.append(visibleOption);
+    const environment = new FakeLocatorEnvironment([
+      hiddenItem,
+      hiddenOption,
+      visibleItem,
+      visibleOption
+    ]).resolve(
+      "span:nth-of-type(2)",
+      visibleOption
+    );
+
+    const target = generateStableLocatorTarget(visibleOption, environment);
+
+    expect(target.locators[0]).toEqual({
+      type: "text",
+      value: "No",
+      exact: true
+    });
+  });
+
   it("limits fallback locators and rejects invalid limits", () => {
     const button = new FakeElement(
       "button",
@@ -174,6 +208,7 @@ class FakeElement implements LocatorElement {
   readonly children: FakeElement[] = [];
   parentElement: FakeElement | null = null;
   textContent: string;
+  visible = true;
 
   constructor(
     tagName: string,
@@ -190,6 +225,11 @@ class FakeElement implements LocatorElement {
       child.parentElement = this;
       this.children.push(child);
     }
+  }
+
+  hide(): this {
+    this.visible = false;
+    return this;
   }
 
   getAttribute(name: string): string | null {
@@ -212,6 +252,17 @@ class FakeLocatorEnvironment implements LocatorEnvironment {
 
   allElements(): readonly LocatorElement[] {
     return this.#elements;
+  }
+
+  isVisible(element: LocatorElement): boolean {
+    let current: LocatorElement | null = element;
+    while (current !== null) {
+      if (current instanceof FakeElement && !current.visible) {
+        return false;
+      }
+      current = current.parentElement;
+    }
+    return true;
   }
 
   queryCss(selector: string): readonly LocatorElement[] {

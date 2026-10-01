@@ -260,24 +260,24 @@ async function resolveTarget(
   target: ElementTarget,
   visibility: TargetVisibility = "visible"
 ): Promise<Locator> {
-  const locators = [target.primary, ...target.fallbacks].map((locator) => {
-    const candidate = createLocator(page, locator);
+  const locators = [target.primary, ...target.fallbacks].flatMap((locator) =>
+    createLocatorVariants(page, locator).map((candidate) => {
+      // Custom dropdowns commonly keep a hidden copy of the selected value in
+      // the DOM while rendering the open option list in an overlay. Selecting
+      // `.first()` before filtering can therefore bind a click to the hidden
+      // copy. The DOM order of those copies may change between renders, which
+      // makes the failure appear intermittent. A visible locator is re-evaluated
+      // by Playwright while it auto-waits, so delayed overlay animations remain
+      // deterministic as well.
+      const supportsVisibilityFilter =
+        typeof (candidate as Partial<Locator>).filter === "function";
 
-    // Custom dropdowns commonly keep a hidden copy of the selected value in
-    // the DOM while rendering the open option list in an overlay. Selecting
-    // `.first()` before filtering can therefore bind a click to the hidden
-    // copy. The DOM order of those copies may change between renders, which
-    // makes the failure appear intermittent. A visible locator is re-evaluated
-    // by Playwright while it auto-waits, so delayed overlay animations remain
-    // deterministic as well.
-    const supportsVisibilityFilter =
-      typeof (candidate as Partial<Locator>).filter === "function";
-
-    return (visibility === "visible" && supportsVisibilityFilter
-      ? candidate.filter({ visible: true })
-      : candidate
-    ).first();
-  });
+      return (visibility === "visible" && supportsVisibilityFilter
+        ? candidate.filter({ visible: true })
+        : candidate
+      ).first();
+    })
+  );
 
   for (const locator of locators) {
     try {
@@ -298,6 +298,48 @@ async function resolveTarget(
     .slice(1)
     .reduce((combined, locator) => combined.or(locator), locators[0])
     .first();
+}
+
+function createLocatorVariants(
+  page: Page,
+  locator: ElementLocator
+): readonly Locator[] {
+  const variants = [createLocator(page, locator)];
+  if (locator.type !== "css") {
+    return variants;
+  }
+
+  for (const relaxedSelector of relaxedStructuralSelectors(locator.value)) {
+    variants.push(page.locator(relaxedSelector));
+  }
+  return variants;
+}
+
+function relaxedStructuralSelectors(selector: string): readonly string[] {
+  const nthPattern = /:nth-of-type\(\d+\)/gu;
+  const matches = [...selector.matchAll(nthPattern)];
+  if (matches.length === 0 || !/[.#][a-z_-]/iu.test(selector)) {
+    return [];
+  }
+
+  const variants: string[] = [];
+  if (matches.length > 1) {
+    const lastIndex = matches.at(-1)?.index;
+    let occurrence = 0;
+    const keepLast = selector.replace(nthPattern, (match, offset: number) => {
+      occurrence += 1;
+      return offset === lastIndex || occurrence === matches.length ? match : "";
+    });
+    if (keepLast !== selector) {
+      variants.push(keepLast);
+    }
+  }
+
+  const withoutPositions = selector.replace(nthPattern, "");
+  if (withoutPositions !== selector && !variants.includes(withoutPositions)) {
+    variants.push(withoutPositions);
+  }
+  return variants;
 }
 
 function createLocator(page: Page, locator: ElementLocator): Locator {

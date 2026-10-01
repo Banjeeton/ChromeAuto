@@ -84,6 +84,37 @@ describe("Playwright step executor", () => {
     expect(matchingOptions.click).not.toHaveBeenCalled();
   });
 
+  it("relaxes unstable popup positions in recorded dropdown CSS", async () => {
+    const original = createLocator(0);
+    const relaxed = createLocator(1);
+    const selector =
+      "div.el-select-dropdown:nth-of-type(4) > div.el-scrollbar:nth-of-type(1) > ul.el-scrollbar__view > li.el-select-dropdown__item:nth-of-type(1) > span";
+    const relaxedSelector =
+      "div.el-select-dropdown > div.el-scrollbar > ul.el-scrollbar__view > li.el-select-dropdown__item:nth-of-type(1) > span";
+    const page = createPage({
+      locator: vi.fn((value: string) =>
+        value === relaxedSelector ? relaxed : original
+      )
+    });
+    const step: AutomationStep = {
+      id: "legacy-dropdown-option",
+      type: "click",
+      enabled: true,
+      target: {
+        primary: { type: "css", value: selector },
+        fallbacks: []
+      },
+      button: "left",
+      clickCount: 1
+    };
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(page.locator).toHaveBeenCalledWith(relaxedSelector);
+    expect(relaxed.click).toHaveBeenCalledOnce();
+    expect(original.click).not.toHaveBeenCalled();
+  });
+
   it("fills and clears an input instantly", async () => {
     const input = createLocator(1);
     const page = createPage({ getByLabel: vi.fn(() => input) });
