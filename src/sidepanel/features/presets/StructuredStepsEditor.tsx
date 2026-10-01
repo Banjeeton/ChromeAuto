@@ -448,13 +448,20 @@ function SelectFields({ step, path, issues, disabled, onChange }: {
           <span>Selection method</span>
           <select disabled={disabled} onChange={(event) => {
             const by = event.target.value as SelectStep["option"]["by"];
-            onChange({ ...step, option: by === "index" ? { by, value: 0 } : { by, value: "" } });
+            onChange({ ...step, option: by === "index" ? { by, value: 0 } : by === "attribute" ? { by, attribute: "data-name", value: "" } : { by, value: "" } });
           }} value={step.option.by}>
-            <option value="value">Value</option><option value="label">Visible label</option><option value="index">Index</option>
+            <option value="value">Value</option><option value="label">Visible label</option><option value="index">Index</option><option value="attribute">Custom attribute</option>
           </select>
           <FieldIssues issues={issues} path={`${path}/option/by`} />
         </label>
         <NumberOrTextOption disabled={disabled} issues={issues} onChange={onChange} path={`${path}/option/value`} step={step} />
+        {step.option.by === "attribute" && <label className="editor-field">
+          <span>Option attribute</span>
+          <input disabled={disabled} value={step.option.attribute} placeholder="data-name" onChange={(event) => {
+            if (step.option.by === "attribute") onChange({ ...step, option: { ...step.option, attribute: event.target.value } });
+          }} />
+          <FieldIssues issues={issues} path={`${path}/option/attribute`} />
+        </label>}
       </div>
     </>
   );

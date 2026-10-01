@@ -160,6 +160,9 @@ function placeholderCandidates(element: LocatorElement): ElementLocator[] {
 }
 
 function textCandidates(element: LocatorElement): ElementLocator[] {
+  if (element.tagName.toLowerCase() === "select") {
+    return [];
+  }
   const text = normalizedText(element.textContent);
   return text === undefined || text.length > 120
     ? []
@@ -373,6 +376,12 @@ function accessibleName(
     explicitOrImplicitRole(element) === "button"
   ) {
     return value;
+  }
+  // The textContent of a native select is the concatenation of every option,
+  // not its accessible name. Recording it produces a huge role locator that
+  // changes whenever inventory or prices change.
+  if (element.tagName.toLowerCase() === "select") {
+    return undefined;
   }
   return normalizedText(element.textContent);
 }

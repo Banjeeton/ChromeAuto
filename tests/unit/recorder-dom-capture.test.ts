@@ -102,9 +102,27 @@ describe("RecorderDomCapture", () => {
         url: "https://example.com/form",
         kind: "select",
         target: { locators: [{ type: "css", value: "#country" }] },
-        payload: { option: { by: "value", value: "ca" } }
+        payload: { option: { by: "label", value: "Canada" } }
       })
     ]);
+  });
+
+  it("falls back to value when visible select labels are duplicated", () => {
+    const harness = createHarness();
+    const select = new FakeElement("select", { id: "project" });
+    select.selectedIndex = 1;
+    select.options = [
+      { value: "project-old", label: "Project" },
+      { value: "project-current", label: "Project" }
+    ];
+    harness.capture.start(captureSession());
+
+    harness.source.dispatch("change", trustedEvent(select));
+
+    expect(harness.events[0]).toMatchObject({
+      kind: "select",
+      payload: { option: { by: "value", value: "project-current" } }
+    });
   });
 
   it("captures checkbox state changes without duplicate clicks", () => {

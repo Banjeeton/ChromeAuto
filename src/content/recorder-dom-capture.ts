@@ -505,14 +505,6 @@ function readSelect(
     return { by: "index", value: selectedIndex };
   }
 
-  const value = typeof selected.value === "string" ? selected.value : "";
-  if (
-    value.length > 0 &&
-    options.filter((option) => option.value === value).length === 1
-  ) {
-    return { by: "value", value };
-  }
-
   const label =
     typeof selected.label === "string"
       ? selected.label
@@ -528,6 +520,18 @@ function readSelect(
     }).length === 1
   ) {
     return { by: "label", value: label };
+  }
+
+  // Application-generated option values are frequently hashes or temporary
+  // database keys. Prefer the user-visible label because it is much more
+  // likely to survive a reload or a later repeat-cycle pass. Value remains a
+  // fallback for selects whose labels are empty or duplicated.
+  const value = typeof selected.value === "string" ? selected.value : "";
+  if (
+    value.length > 0 &&
+    options.filter((option) => option.value === value).length === 1
+  ) {
+    return { by: "value", value };
   }
 
   return { by: "index", value: selectedIndex };

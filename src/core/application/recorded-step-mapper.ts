@@ -367,6 +367,11 @@ function normalizeSelectOption(value: unknown): SelectOption | undefined {
   if (!isObject(value)) {
     return undefined;
   }
+  if (value.by === "attribute" && typeof value.attribute === "string" &&
+      /^[a-zA-Z_][a-zA-Z0-9_.:-]*$/u.test(value.attribute) &&
+      typeof value.value === "string") {
+    return { by: "attribute", attribute: value.attribute, value: value.value };
+  }
   if (
     (value.by === "value" || value.by === "label") &&
     typeof value.value === "string"

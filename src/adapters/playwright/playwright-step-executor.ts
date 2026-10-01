@@ -157,6 +157,33 @@ async function executeSelectStep(
   timeout: number
 ): Promise<void> {
   switch (step.option.by) {
+    case "attribute": {
+      const startedAt = Date.now();
+      const { attribute, value } = step.option;
+      if (!/^[a-zA-Z_][a-zA-Z0-9_.:-]*$/u.test(attribute)) {
+        throw new Error(`Invalid option attribute name: ${attribute}`);
+      }
+      // Query only options belonging to this select. Do not infer an index
+      // from another select or fall back to a different option on failure.
+      const escaped = value.replace(/[\\"\n\r\f]/gu, (character) =>
+        `\\${character.codePointAt(0)!.toString(16)} `
+      );
+      const option = locator.locator(`option[${attribute}="${escaped}"]`);
+      await option.first().waitFor({ state: "attached", timeout });
+      if (await option.count() !== 1) {
+        throw new Error(`Select option ${attribute}=${JSON.stringify(value)} is ambiguous`);
+      }
+      const handle = await option.elementHandle({ timeout: Math.max(1, timeout - (Date.now() - startedAt)) });
+      if (handle === null) {
+        throw new Error(`Select option ${attribute}=${JSON.stringify(value)} was not found`);
+      }
+      try {
+        await locator.selectOption(handle, { timeout: Math.max(1, timeout - (Date.now() - startedAt)) });
+      } finally {
+        await handle.dispose();
+      }
+      return;
+    }
     case "value":
       await locator.selectOption({ value: step.option.value }, { timeout });
       return;

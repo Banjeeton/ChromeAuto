@@ -89,6 +89,28 @@ describe("stable locator generator", () => {
     expect(JSON.stringify(target)).not.toContain("active");
   });
 
+  it("does not use all option text as the accessible name of a select", () => {
+    const select = new FakeElement(
+      "select",
+      { id: "project_sel" },
+      "Select Project Project A Project B"
+    );
+    const environment = new FakeLocatorEnvironment([select]).resolve(
+      "#project_sel",
+      select
+    );
+
+    const target = generateStableLocatorTarget(select, environment);
+
+    expect(target.locators[0]).toEqual({
+      type: "css",
+      value: "#project_sel"
+    });
+    expect(target.locators).not.toContainEqual(
+      expect.objectContaining({ type: "role" })
+    );
+  });
+
   it("falls back to a verified structural CSS path", () => {
     const panel = new FakeElement("section", { id: "settings-panel" });
     const targetElement = new FakeElement("div");

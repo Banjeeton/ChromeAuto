@@ -87,6 +87,11 @@ export interface InputStep extends AutomationStepBase {
 
 export type SelectOption =
   | {
+      by: "attribute";
+      attribute: string;
+      value: string;
+    }
+  | {
       by: "value" | "label";
       value: string;
     }

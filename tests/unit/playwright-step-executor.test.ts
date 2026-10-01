@@ -17,6 +17,36 @@ const defaults: AutomationDefaults = {
 };
 
 describe("Playwright step executor", () => {
+  it("selects an exact option attribute without relying on its changing value", async () => {
+    const select = createLocator();
+    const option = createLocator();
+    const handle = { dispose: vi.fn(async () => undefined) };
+    const optionHandle = vi.fn(async () => handle);
+    Object.assign(option, { elementHandle: optionHandle });
+    const query = vi.fn(() => option);
+    Object.assign(select, { locator: query });
+    const page = createPage({ locator: vi.fn(() => select) });
+    await executePlaywrightStep(page, createRequest({
+      id: "attribute-select", type: "select", enabled: true,
+      target: { primary: { type: "css", value: "#project_sel" }, fallbacks: [] },
+      option: { by: "attribute", attribute: "data-name", value: 'Project "A"' }
+    }));
+    expect(query).toHaveBeenCalledWith('option[data-name="Project \\22 A\\22 "]');
+    expect(option.waitFor).toHaveBeenCalledWith({ state: "attached", timeout: 5000 });
+    expect(select.selectOption).toHaveBeenCalledWith(handle, { timeout: expect.any(Number) });
+    expect(handle.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("rejects ambiguous option attribute matches instead of selecting the first", async () => {
+    const select = createLocator();
+    Object.assign(select, { locator: vi.fn(() => createLocator(2)) });
+    await expect(executePlaywrightStep(createPage({ locator: vi.fn(() => select) }), createRequest({
+      id: "ambiguous-select", type: "select", enabled: true,
+      target: { primary: { type: "css", value: "#project_sel" }, fallbacks: [] },
+      option: { by: "attribute", attribute: "data-name", value: "Project" }
+    }))).rejects.toThrow("ambiguous");
+    expect(select.selectOption).not.toHaveBeenCalled();
+  });
   it("clicks the first existing fallback with step timing overrides", async () => {
     const primary = createLocator(0);
     const fallback = createLocator(1);

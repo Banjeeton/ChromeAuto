@@ -536,7 +536,9 @@ function SelectFields({
             onChange({
               ...step,
               option:
-                by === "index"
+                by === "attribute"
+                  ? { by, attribute: "data-name", value: step.option.by === "index" ? "" : step.option.value }
+                  : by === "index"
                   ? {
                       by,
                       value:
@@ -556,8 +558,15 @@ function SelectFields({
           <option value="value">value</option>
           <option value="label">label</option>
           <option value="index">index</option>
+          <option value="attribute">Custom attribute</option>
         </select>
       </label>
+      {step.option.by === "attribute" && <label>
+        Option attribute
+        <input aria-label="Option attribute" placeholder="data-name" value={step.option.attribute} onChange={(event) => {
+          if (step.option.by === "attribute") onChange({ ...step, option: { ...step.option, attribute: event.target.value } });
+        }} />
+      </label>}
       <label>
         {step.option.by === "index"
           ? "Option index"
