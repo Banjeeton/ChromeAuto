@@ -2695,6 +2695,52 @@ h2 {
   color: var(--color-text-muted);
 }
 
+.automation-session-details > div {
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+}
+
+.current-step {
+  border-color: #cfcafa;
+  background: var(--color-info-surface);
+}
+
+.session-history {
+  border-top-color: var(--color-border-default);
+  background: transparent;
+}
+
+.session-history-heading h3,
+.session-outcome strong {
+  color: var(--color-text-primary);
+}
+
+.session-history-heading > span,
+.session-outcome > div > span {
+  color: var(--color-text-muted);
+}
+
+.session-outcome {
+  border: 1px solid var(--color-border-default);
+  border-left-width: 3px;
+  background: var(--color-bg-surface);
+}
+
+.session-outcome.completed {
+  border-left-color: var(--color-success);
+  background: var(--color-success-surface);
+}
+
+.session-outcome.stopped {
+  border-left-color: var(--color-warning);
+  background: var(--color-warning-surface);
+}
+
+.session-outcome.failed {
+  border-left-color: var(--color-error);
+  background: var(--color-error-surface);
+}
+
 .stop-all-button {
   width: 100%;
   min-height: 48px;

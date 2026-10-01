@@ -68,4 +68,17 @@ describe("side panel accessibility and responsive style contracts", () => {
     expect(styles).toContain(".current-site-card");
     expect(styles).toContain(".automation-card");
   });
+
+  it("keeps automation status details and recent sessions on light surfaces", () => {
+    expect(styles).toContain(".automation-session-details > div");
+    expect(styles).toContain("background: var(--color-bg-surface)");
+    expect(styles).toContain(".current-step {");
+    expect(styles).toContain("background: var(--color-info-surface)");
+    expect(styles).toContain(".session-outcome.completed");
+    expect(styles).toContain("background: var(--color-success-surface)");
+    expect(styles).toContain(".session-outcome.stopped");
+    expect(styles).toContain("background: var(--color-warning-surface)");
+    expect(styles).toContain(".session-outcome.failed");
+    expect(styles).toContain("background: var(--color-error-surface)");
+  });
 });
