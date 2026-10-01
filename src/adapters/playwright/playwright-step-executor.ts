@@ -219,7 +219,10 @@ async function executeWaitStep(
       return;
 
     case "element": {
-      const locator = await resolveTarget(page, condition.target);
+      // Hidden and detached waits must also be able to address an element that
+      // is currently invisible, so they intentionally bypass actionability
+      // filtering used by interactive steps.
+      const locator = await resolveTarget(page, condition.target, "any");
       await locator.waitFor({ state: condition.state, timeout });
       return;
     }
@@ -250,10 +253,31 @@ function createUrlMatcher(
   return (url) => expression.test(url.href);
 }
 
-async function resolveTarget(page: Page, target: ElementTarget): Promise<Locator> {
-  const locators = [target.primary, ...target.fallbacks].map((locator) =>
-    createLocator(page, locator).first()
-  );
+type TargetVisibility = "visible" | "any";
+
+async function resolveTarget(
+  page: Page,
+  target: ElementTarget,
+  visibility: TargetVisibility = "visible"
+): Promise<Locator> {
+  const locators = [target.primary, ...target.fallbacks].map((locator) => {
+    const candidate = createLocator(page, locator);
+
+    // Custom dropdowns commonly keep a hidden copy of the selected value in
+    // the DOM while rendering the open option list in an overlay. Selecting
+    // `.first()` before filtering can therefore bind a click to the hidden
+    // copy. The DOM order of those copies may change between renders, which
+    // makes the failure appear intermittent. A visible locator is re-evaluated
+    // by Playwright while it auto-waits, so delayed overlay animations remain
+    // deterministic as well.
+    const supportsVisibilityFilter =
+      typeof (candidate as Partial<Locator>).filter === "function";
+
+    return (visibility === "visible" && supportsVisibilityFilter
+      ? candidate.filter({ visible: true })
+      : candidate
+    ).first();
+  });
 
   for (const locator of locators) {
     try {

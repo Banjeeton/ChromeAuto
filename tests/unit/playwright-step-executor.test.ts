@@ -50,6 +50,40 @@ describe("Playwright step executor", () => {
     expect(primary.click).not.toHaveBeenCalled();
   });
 
+  it("clicks the visible dropdown option instead of a hidden duplicate", async () => {
+    const visibleOption = createLocator(1);
+    const matchingOptions = createLocator(2, visibleOption);
+    const page = createPage({
+      getByRole: vi.fn(() => matchingOptions)
+    });
+    const step: AutomationStep = {
+      id: "select-custom-dropdown-option",
+      type: "click",
+      enabled: true,
+      target: {
+        primary: {
+          type: "role",
+          role: "option",
+          name: "No",
+          exact: true
+        },
+        fallbacks: []
+      },
+      button: "left",
+      clickCount: 1
+    };
+
+    await executePlaywrightStep(page, createRequest(step));
+
+    expect(matchingOptions.filter).toHaveBeenCalledWith({ visible: true });
+    expect(visibleOption.click).toHaveBeenCalledWith({
+      button: "left",
+      clickCount: 1,
+      timeout: 5_000
+    });
+    expect(matchingOptions.click).not.toHaveBeenCalled();
+  });
+
   it("fills and clears an input instantly", async () => {
     const input = createLocator(1);
     const page = createPage({ getByLabel: vi.fn(() => input) });
@@ -539,13 +573,15 @@ function createRequest(step: AutomationStep): ExecuteAutomationStepRequest {
   };
 }
 
-function createLocator(count = 1): Locator {
+function createLocator(count = 1, visibleLocator?: Locator): Locator {
   const locator = {
     check: vi.fn(async () => undefined),
     click: vi.fn(async () => undefined),
     count: vi.fn(async () => count),
+    filter: vi.fn(),
     fill: vi.fn(async () => undefined),
     first: vi.fn(),
+    or: vi.fn(),
     press: vi.fn(async () => undefined),
     pressSequentially: vi.fn(async () => undefined),
     selectOption: vi.fn(async () => []),
@@ -553,6 +589,8 @@ function createLocator(count = 1): Locator {
     waitFor: vi.fn(async () => undefined)
   };
   locator.first.mockReturnValue(locator);
+  locator.filter.mockReturnValue(visibleLocator ?? locator);
+  locator.or.mockReturnValue(locator);
   return locator as unknown as Locator;
 }
 
